@@ -33,28 +33,38 @@ DataHandler (Bot-RL-1)
 
 - فرمان اجرای قدیمی برنامه
 # python -m f02_data.data_handler --symbol XAUUSD --base-tf M5 --timeframes M5 M30 H1 -c .\f01_config\config.yaml --format parquet
+
 - فرمان اجرا جدید برنامه 
-#  بدون base_tf ، یعنی براساس آنچه در کانفیگ داده شده:
-# python -m f02_data.data_handler --symbol XAUUSD              --timeframes M5 M30 H1 -c .\f01_config\config.yaml --format parquet
+-  بدون base_tf ، یعنی براساس آنچه در کانفیگ داده شده:
+python -m f02_data.data_handler  `
+    -c .\f01_config\config.yaml  `
+    --symbol XAUUSD              `
+    --timeframes M5 M30 H1       `
+    --format parquet
+
 - فرمان اجرای جدید برنامه
-#  همراه با base_tf
-# python -m f02_data.data_handler --symbol XAUUSD --base-tf M5 --timeframes M5 M30 H1 -c .\f01_config\config.yaml --format parquet
+-  همراه با base_tf
+python -m f02_data.data_handler    `
+    -c .\f01_config\config.yaml    `
+    --symbol XAUUSD --base-tf M1    `
+    --timeframes M1 M5 M15 M30 H1 H4 D1 W1  `
+    --format parquet
 
 """
 
 from __future__ import annotations
-
-import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
 from datetime import datetime, time, timezone
-
+import logging
 import numpy as np
 import pandas as pd
 
+# ماژول‌های داخلی پروژه
 from f10_utils.config_loader import load_config
 
+# --- لاگر ماژول ---
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 

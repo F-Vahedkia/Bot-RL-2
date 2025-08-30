@@ -4,6 +4,8 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
+from .core import rsi, macd
+from typing import Dict
 
 # pivots ساده: قله/دره تاییدشده با پنجره k
 def pivots(series: pd.Series, k: int = 2):
@@ -46,8 +48,6 @@ def divergence_flags(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = "
     # جلوگیری از استفادهٔ همان کندل: shift(+1)
     return bull.shift(1).fillna(0).astype("int8"), bear.shift(1).fillna(0).astype("int8")
 
-from .core import rsi, macd
-from typing import Dict
 
 def registry() -> Dict[str, callable]:
     def make_div_rsi(df, period: int = 14, k: int = 2, mode: str = "classic", **_):
@@ -59,3 +59,4 @@ def registry() -> Dict[str, callable]:
         b, s = divergence_flags(df["close"], line, k=k, mode=mode)
         return {f"div_macd_bull_{fast}_{slow}_{signal}_{k}_{mode}": b, f"div_macd_bear_{fast}_{slow}_{signal}_{k}_{mode}": s}
     return {"div_rsi": make_div_rsi, "div_macd": make_div_macd}
+

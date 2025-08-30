@@ -18,11 +18,13 @@ ConfigLoader (نسخهٔ پیشرفته برای Bot-RL-1)
 """
 
 from __future__ import annotations
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+
 import os
 import copy
 import yaml
 import logging
+
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
@@ -32,19 +34,13 @@ logger = logging.getLogger(__name__)
 # ============================================================
 # ابزارهای کمکی سطح پایین
 # ============================================================
-def _project_root() -> Path:
-    """تشخیص ریشهٔ ریپو: دو سطح بالاتر از این فایل."""
-# return Path(__file__).resolve().parents[2]
-
 # جایگزینِ مقاوم:
-from pathlib import Path
 def _project_root() -> Path:
     here = Path(__file__).resolve()
     for p in [here.parent, *here.parents]:
         if (p / "f01_config").exists() and (p / "f10_utils").exists():
             return p
     return here.parent  # fallback
-
 
 def _default_config_path() -> Path:
     """

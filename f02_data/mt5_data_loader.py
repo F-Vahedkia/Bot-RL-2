@@ -17,15 +17,20 @@ Data Loader برای MT5 (Bot-RL-1)
 - pandas (اجباری)، (اختیاری) pyarrow یا fastparquet برای Parquet
 
 نمونه اجرا (از ریشه‌ی ریپو):
-    python -m f02_data.mt5_data_loader \
-        --config f01_config/config.yaml \
-        --symbols XAUUSD EURUSD \
-        --timeframes M5 H1 \
-        --lookback 5000 \
-        --format csv
+python -m f02_data.mt5_data_loader   `
+    --config f01_config/config.yaml  `
+    --symbols XAUUSD EURUSD          `
+    --timeframes M5 H1               `
+    --format csv
+
+python -m f02_data.mt5_data_loader  `
+    -c .\f01_config\config.yaml     `
+    --symbols XAUUSD                `
+    --timeframes M1 M5 M15 M30 H1 H4 D1 W1 `
+    --lookback 999999                      `
+    --format parquet
 
 اگر آرگومان‌ها را ندهید، از مقادیر بخش download_defaults در config استفاده می‌شود.
-
 
 نکات:
 - با config.yaml فعلی سازگار است (paths.raw_dir, download_defaults.*, mt5_credentials).
@@ -34,11 +39,9 @@ Data Loader برای MT5 (Bot-RL-1)
 - برای بازهٔ تاریخی از --date-from/--date-to استفاده کن؛
       در غیر این صورت از lookback یا مقدار پیش‌فرض کانفیگ می‌گیرد.
 
-- فرمان اجرای برنامه
-# python -m f02_data.mt5_data_loader -c .\f01_config\config.yaml --symbols XAUUSD --timeframes M1 M5 M30 H1 --lookback 1000 --format parquet
 """
-from __future__ import annotations
 
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
@@ -46,13 +49,13 @@ from datetime import datetime, timezone, timedelta
 import json
 import logging
 import argparse
-
 import pandas as pd
 
 # ماژول‌های داخلی پروژه
 from f10_utils.config_loader import load_config, ConfigLoader
 from f02_data.mt5_connector import MT5Connector
 
+# --- لاگر ماژول ---
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -65,7 +68,7 @@ _TF_MINUTES = {
     "D1": 1440, "W1": 10080, "MN1": 43200,
 }
 
-def _lookback_to_range(tf: str, lookback_bars: int) -> tuple[datetime, datetime]:
+def _lookback_to_range_old1(tf: str, lookback_bars: int) -> tuple[datetime, datetime]:
     """
     ورودی: تایم‌فریم و تعداد کندل موردنیاز
     خروجی: date_from/date_to امن برای copy_rates_range
@@ -82,6 +85,41 @@ def _lookback_to_range(tf: str, lookback_bars: int) -> tuple[datetime, datetime]
     date_from = now_utc - timedelta(minutes=delta_min)
     date_to = now_utc
     return date_from, date_to
+
+
+_EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+def _lookback_to_range_old2(tf: str, lookback: int) -> tuple[datetime, datetime]:
+    tf = tf.upper()
+    now_utc = datetime.now(timezone.utc)
+
+    # ضرایب هر بار
+    MIN_MAP = {"M1": 1, "M5": 5, "M15": 15, "M30": 30}
+    HRS_MAP = {"H1": 1, "H4": 4}
+
+    try:
+        if tf in MIN_MAP:
+            delta = timedelta(minutes=MIN_MAP[tf] * lookback)
+        elif tf in HRS_MAP:
+            delta = timedelta(hours=HRS_MAP[tf] * lookback)
+        elif tf == "D1":
+            # سقف امن: حداکثر 200 سال
+            days = min(lookback, 365 * 200)
+            delta = timedelta(days=days)
+        elif tf == "W1":
+            weeks = min(lookback, 52 * 200)
+            delta = timedelta(weeks=weeks)
+        else:
+            # پیش‌فرض امن
+            delta = timedelta(days=min(lookback, 365 * 200))
+    except OverflowError:
+        # در هر صورت اگر overflow شد به یک تاریخ امن برگردیم
+        return _EPOCH_UTC, now_utc
+
+    date_from = now_utc - delta
+    # پایین‌تر از 1970/01/01 نرو
+    if date_from < _EPOCH_UTC:
+        date_from = _EPOCH_UTC
+    return date_from, now_utc
 
 # =====================================================================
 # ساختار برنامه و کمکی‌ها
@@ -168,9 +206,16 @@ def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[in
                 df_old = pd.read_csv(out_path.with_suffix(".csv"), parse_dates=["time"], index_col="time") if out_path.with_suffix(".csv").exists() else pd.DataFrame()
         else:
             df_old = pd.read_csv(out_path, parse_dates=["time"], index_col="time")
+        
         df_old = _normalize_df(df_old)
         before = len(df_old)
-        df_all = pd.concat([df_old, df_new], axis=0)
+        # توضیح فارسی: حذف DFهای خالی برای جلوگیری از FutureWarning و dtype-ambiguity
+        parts = [x for x in (df_old, df_new) if x is not None and not x.empty]
+        if parts:
+            df_all = pd.concat(parts, axis=0)
+        else:
+            df_all = pd.DataFrame(columns=["open","high","low","close","tick_volume","spread"], 
+                                  index=pd.DatetimeIndex([], name="time"))
         df_all = _normalize_df(df_all)
     else:
         before = 0
@@ -206,6 +251,73 @@ def _write_metadata(raw_dir: Path, symbol: str, timeframe: str, rows: int, fmt: 
         json.dump(meta, f, ensure_ascii=False, indent=2)
     return meta_path
 
+
+# توضیح فارسی: محاسبه‌ی زمان آخرین کندل بسته‌شده برای هر TF (UTC floor)
+def _floor_to_last_closed(tf: str, now_utc: datetime) -> datetime:
+    tf = tf.upper().strip()
+    # English: Return the latest *closed* candle time at or before now_utc.
+    if tf.startswith("M"):
+        mins = int(tf[1:]) if tf[1:].isdigit() else _TF_MINUTES.get(tf, 1)
+        m = (now_utc.minute // mins) * mins
+        return now_utc.replace(second=0, microsecond=0, minute=0) + timedelta(minutes=m)
+    if tf.startswith("H"):
+        hrs = int(tf[1:]) if tf[1:].isdigit() else 1
+        h = (now_utc.hour // hrs) * hrs
+        return now_utc.replace(second=0, microsecond=0, minute=0, hour=h)
+    if tf == "D1":
+        return now_utc.replace(second=0, microsecond=0, minute=0, hour=0)
+    if tf == "W1":
+        # هفته‌ی MT5 معمولاً از دوشنبه/یکشنبه به UTC گره می‌خورد؛
+        # ساده: یکشنبه 00:00 اخیر (UTC). (در صورت نیاز بعداً قابل تطبیق است)
+        dow = now_utc.weekday()  # Mon=0..Sun=6
+        # برو به یکشنبه‌ی اخیر
+        delta = (dow + 1) % 7
+        last_sun = now_utc - timedelta(days=delta)
+        return last_sun.replace(second=0, microsecond=0, minute=0, hour=0)
+    # پیش‌فرض امن: کفِ ساعت
+    return now_utc.replace(second=0, microsecond=0, minute=0)
+
+
+# توضیح فارسی: نگاشت lookback→بازه با سقف‌های منطقی و فلورِ date_to
+def _lookback_to_range(tf: str, lookback: int) -> tuple[datetime, datetime]:
+    tf = tf.upper().strip()
+    now_utc = datetime.now(timezone.utc)
+    date_to = _floor_to_last_closed(tf, now_utc)
+
+    # English: reasonable caps per TF to avoid extremely huge ranges.
+    # (قابل تنظیم در آینده)
+    caps = {
+        "M1": 2_000_000, "M5": 1_500_000, "M15": 1_000_000, "M30": 800_000,
+        "H1": 600_000, "H4": 300_000, "D1": 100_000, "W1": 10_000, "MN1": 2_000
+    }
+    lb = int(lookback)
+    cap = caps.get(tf, 365 * 200)  # روزانه/پیش‌فرض
+    lb = min(lb, cap)
+
+    # English: convert lookback bars → timedelta by TF
+    MIN_MAP = {"M1": 1, "M5": 5, "M15": 15, "M30": 30}
+    HRS_MAP = {"H1": 1, "H4": 4}
+    try:
+        if tf in MIN_MAP:
+            delta = timedelta(minutes=MIN_MAP[tf] * lb)
+        elif tf in HRS_MAP:
+            delta = timedelta(hours=HRS_MAP[tf] * lb)
+        elif tf == "D1":
+            delta = timedelta(days=lb)
+        elif tf == "W1":
+            delta = timedelta(weeks=lb)
+        else:
+            delta = timedelta(days=min(lb, 365 * 200))
+    except OverflowError:
+        return _EPOCH_UTC, date_to
+
+    date_from = date_to - delta
+    if date_from < _EPOCH_UTC:
+        date_from = _EPOCH_UTC
+    # English: ensure strict ordering
+    if date_from >= date_to:
+        date_from = date_to - timedelta(days=1)
+    return date_from, date_to
 
 # =====================================================================
 # هسته‌ی دانلود
@@ -265,6 +377,7 @@ class MT5DataLoader:
                     plans.append(DownloadPlan(symbol=s, timeframe=tf, lookback_bars=lb))
         return plans
 
+
     # -----------------------------
     # اجرای طرح دانلود
     # -----------------------------
@@ -285,9 +398,17 @@ class MT5DataLoader:
                     # به‌جای copy_from_pos، بازهٔ امن می‌سازیم تا هرگز بیشتر از موجودی نخواهیم
                     df_range_from, df_range_to = _lookback_to_range(p.timeframe, int(p.lookback_bars or self.default_lookback))
                     df = self.conn.get_candles_range(p.symbol, p.timeframe, df_range_from, df_range_to)
-                    # اگر بیشتر از درخواست برگشت (به ندرت)، برشِ انتهایی می‌گیریم
-                    if p.lookback_bars and len(df) > int(p.lookback_bars):
-                        df = df.tail(int(p.lookback_bars))
+                    
+                    # توضیح فارسی: اگر بازه خالی شد، یک fallback سبک با count-based از دمِ بازار.
+                    if (df is None) or df.empty:
+                        cnt = int(p.lookback_bars or self.default_lookback)
+                        # English: hard cap to avoid extremely big pull
+                        cnt = min(cnt, 500_000)
+                        df = self.conn.get_candles(p.symbol, p.timeframe, cnt)
+                    
+                        # اگر بیشتر از درخواست برگشت (به ندرت)، برشِ انتهایی می‌گیریم
+                        if p.lookback_bars and len(df) > int(p.lookback_bars):
+                            df = df.tail(int(p.lookback_bars))
 
                 df = _normalize_df(df)
 
@@ -362,6 +483,7 @@ def _parse_dt(s: Optional[str]) -> Optional[datetime]:
         return dt.astimezone(timezone.utc)
     except Exception:
         raise ValueError(f"Invalid date format: {s} (example: 2024-01-01T00:00:00Z)")
+
 
 def main() -> int:
     args = _parse_args()

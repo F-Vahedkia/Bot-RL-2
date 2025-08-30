@@ -12,7 +12,7 @@ scripts/check_quick_download.py
 5) چاپ خلاصه‌ی خروجی و متادیتا (rows و زمان آخرین کندل)
 
 روش اجرا (از ریشه‌ی ریپو):
-    python .\f15_scripts\check_quick_download.py -c .\f01_config\config.yaml --symbol XAUUSD --tf M5 --lookback 1000 --format csv
+    python .\f15_scripts\check_quick_download.py -c .\f01_config\config.yaml --symbol XAUUSD --tf M5 --lookback 1000 --format parquet
 اگر آرگومان‌ها را ندهید، مقادیر پیش‌فرض استفاده می‌شود.
 """
  
@@ -69,15 +69,15 @@ def resolve_raw_dir_from_cfg(cfg: Dict[str, Any]) -> Path:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="تست سریع دانلود داده از MT5 (یک نماد/تایم‌فریم).")
+    p = argparse.ArgumentParser(description="Quick download test from MT5 (one symbol/timeframe).")
     p.add_argument("-c", "--config", type=str, default=str(PROJECT_ROOT / "f01_config" / "config.yaml"),
-                   help="مسیر فایل کانفیگ (پیش‌فرض: f01_config/config.yaml)")
-    p.add_argument("--symbol", type=str, default="XAUUSD", help="نماد (پیش‌فرض: XAUUSD)")
+                   help="Config file path (default: f01_config/config.yaml)")
+    p.add_argument("--symbol", type=str, default="XAUUSD", help="Symbol (Default: XAUUSD)")
     p.add_argument("--tf", "--timeframe", dest="timeframe", type=str, default="M5",
-                   help="تایم‌فریم (مثال: M1/M5/M15/M30/H1/H4؛ پیش‌فرض: M5)")
-    p.add_argument("--lookback", type=int, default=1000, help="تعداد کندل‌های انتهایی برای دریافت (پیش‌فرض: 1000)")
+                   help="Timeframe (Example: M1/M5/M15/M30/H1/H4؛ Default: M5)")
+    p.add_argument("--lookback", type=int, default=1000, help="Number of trailing candles to receive (default: 1000)")
     p.add_argument("--format", type=str, default=None, choices=["csv", "parquet"],
-                   help="فرمت ذخیره‌سازی؛ اگر ندهید از config استفاده می‌شود.")
+                   help="Storage format; if not given, config will be used.")
     p.add_argument("--log-level", type=str, default="INFO", help="سطح لاگ: DEBUG/INFO/WARN/ERROR")
     return p.parse_args()
 
@@ -85,7 +85,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     setup_logging(args.log_level)
-    log.info("شروع تست سریع دانلود…")
+    log.info("Starting download speed test...")
 
     try:
         # 1) بارگذاری کانفیگ (ENV فعال)
@@ -105,17 +105,17 @@ def main() -> int:
         # 3) اجرا
         results = loader.run(plans)
         if not results:
-            log.error("هیچ نتیجه‌ای برنگشت. طرح/اتصال را بررسی کنید.")
+            log.error("No results returned. Check the schema/connection.")
             return 2
 
         # 4) گزارش نتیجه
         ok = [r for r in results if "error" not in r]
         bad = [r for r in results if "error" in r]
         for r in ok:
-            log.info("موفق: %s %s → rows_written=+%s total=%s file=%s",
+            log.info("Successful: %s %s → rows_written=+%s total=%s file=%s",
                      r["symbol"], r["timeframe"], r["rows_written"], r["rows_total"], r["file"])
         for r in bad:
-            log.error("ناموفق: %s %s → %s", r["symbol"], r["timeframe"], r["error"])
+            log.error("Failed: %s %s → %s", r["symbol"], r["timeframe"], r["error"])
 
         # 5) اگر موفق بود، چند خط آخر داده را نشان بدهیم
         if ok:
@@ -133,18 +133,18 @@ def main() -> int:
 
             if df is not None and not df.empty:
                 last_ts = df.index.max().tz_convert(timezone.utc) if getattr(df.index, "tz", None) else df.index.max()
-                log.info("آخرین کندل ذخیره‌شده: %s | تعداد کل ردیف‌ها: %d", last_ts, len(df))
+                log.info("Last saved candle: %s | Total number of rows: %d", last_ts, len(df))
                 # نمایش 5 ردیف آخر برای کنترل چشمی
                 tail = df.tail(5)
                 with pd.option_context("display.max_columns", None, "display.width", 120):
-                    print("\n----- آخرین 5 کندل -----\n", tail)
+                    pass #print("\n----- Last 5 Candles -----\n", tail)
             else:
-                log.warning("فایل خروجی خالی است یا خوانده نشد: %s", out_path)
+                log.warning("The output file is empty or could not be read: %s", out_path)
 
         return 0 if ok and not bad else 2
 
     except Exception as ex:
-        log.exception("خطا در اجرای تست: %s", ex)
+        log.exception("Error executing test: %s", ex)
         return 1
 
 

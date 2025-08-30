@@ -8,7 +8,7 @@
 
 version: "1.0.0"
 project:
-  name: "Bot-RL-1"
+  name: "Bot-RL-2"
   timezone: "UTC"
   base_currency: "USD"
   random_seed: 42
@@ -46,11 +46,6 @@ mt5_credentials:
 # ---------------------------
 # دانلود و آماده‌سازی داده
 # ---------------------------
-#data_paths:
-#  # پوشه‌ها برای ذخیره‌سازی خروجی دانلود/پردازش
-#  raw: "f02_data/raw"
-#  processed: "f02_data/processed"
-
 download_defaults:
   # نمادها و تایم‌فریم‌هایی که برای دانلود به‌صورت پیش‌فرض استفاده می‌شوند
   symbols: ["XAUUSD"]
@@ -59,11 +54,13 @@ download_defaults:
   batch_size: 5000
   save_format: "parquet"      # csv | parquet
   align_to_session: true  # هم‌ترازسازی انتهای روز با سشن‌ها
+  data_raw: "f02_data/raw"              # به نظر مورد استفاده نیستند هنوز
+  data_processed: "f02_data/processed"  # به نظر مورد استفاده نیستند هنوز
 
 # ---------------------------
 # کلیدهای مورد استفاده در TradingEnv و DataHandler
 # ---------------------------
-timeframes: ["M1", M5","M03","H4","D1","W1"]  # ← کد فعلی از این کلید استفاده می‌کند
+timeframes: ["M1", M5","M30","H4","D1","W1"]  # ← کد فعلی از این کلید استفاده می‌کند
 n_candles_per_tf: 256                         # ← طول پنجرهٔ هر تایم‌فریم
 n_candles: 256                                # ← بعضی مسیرها همین را می‌خوانند؛ برابر با بالا نگه دارید
 start_date: null                              # ← "2024-01-01" در صورت نیاز
@@ -189,7 +186,7 @@ features:
     lookback_bars: 1500
     cluster_tolerance_pips: 15
   time_features:
-    base_timeframe: "M5"   # پیش‌فرض پروژه برای دیتاست پردازش‌شده
+    #base_timeframe: "M1"   # پیش‌فرض پروژه برای دیتاست پردازش‌شده
     add_hour_of_day: true
     add_day_of_week: true
     add_session_flags: true
@@ -439,7 +436,7 @@ cicd:
 # می‌توانید به‌جای *.py از *.sh استفاده کنید؛ فقط این مسیرها را آپدیت کنید.
 # ----------------------------------------------------------------------
 scripts:
-  download_data: "scripts/run_download.py"       # دانلود/به‌روزرسانی داده‌ها
+  download_data:  "scripts/run_download.py"      # دانلود/به‌روزرسانی داده‌ها
   train:          "scripts/run_train.py"         # آموزش/فاین‌تیون
   backtest:       "scripts/run_backtest.py"      # بک‌تست و گزارش
   deploy:         "scripts/run_deploy.py"        # استقرار مدل/پارامتر

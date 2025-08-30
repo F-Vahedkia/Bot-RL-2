@@ -2,8 +2,13 @@
 # -*- coding: utf-8 -*-
 """Pivotهای کلاسیک، S/R ساده مبتنی بر فراکتال، و فاصله تا سطوح فیبوناچی اخیر"""
 from __future__ import annotations
+from typing import List, Sequence, Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # Pivotهای کلاسیک
 
@@ -73,7 +78,6 @@ def fibo_levels(close, high, low, k: int = 2):
     levels.update(dists)
     return levels
 
-from typing import Dict
 
 def registry() -> Dict[str, callable]:
     def make_pivots(df, **_):
@@ -85,3 +89,139 @@ def registry() -> Dict[str, callable]:
     def make_fibo(df, k: int = 2, **_):
         return fibo_levels(df["close"], df["high"], df["low"], k)
     return {"pivots": make_pivots, "sr": make_sr, "fibo": make_fibo}
+
+# --- New Added ----------------------------------------------------- 060407
+# -*- coding: utf-8 -*-
+"""
+افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
+- round_levels(...): تولید سطوح رُند حول یک لنگر
+- compute_adr(...): محاسبهٔ ADR روزانه و نگاشت به تایم‌استمپ‌های درون‌روزی
+- adr_distance_to_open(...): فاصلهٔ نرمال‌شدهٔ قیمت تا «بازِ روز» با ADR
+- sr_overlap_score(...): امتیاز همپوشانی یک قیمت با سطوح S/R (۰..۱)
+
+نکته‌ها:
+- ورودی‌ها ایندکس زمانی UTC و مرتب فرض شده‌اند.
+- همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
+"""
+
+# =========================
+# Round Levels (e.g., 100, 50)
+# =========================
+def round_levels(anchor: float, step: float, n: int = 10) -> List[float]:
+    """
+    تولید یک «شبکهٔ سطوح رُند» حول مقدار anchor با فاصلهٔ step.
+    مثال: round_levels(1945.3, 10, n=5) → [1895, 1905, ..., 1995]
+
+    پارامترها:
+      anchor: لنگر قیمتی (مثلاً آخرین قیمت)
+      step: فاصلهٔ شبکه (مثلاً 10.0 برای طلا، یا 0.5 …)
+      n: چند سطح به بالا/پایین (دوطرفه)
+
+    خروجی: لیست سطوح رُند (کوچک به بزرگ)
+    """
+    if step <= 0:
+        raise ValueError("step must be positive")
+
+    base = np.floor(anchor / step) * step  # کف رند نزدیک
+    levels = [base + k * step for k in range(-n, n + 1)]
+    return sorted(levels)
+
+
+# =========================
+# ADR (Average Daily Range)
+# =========================
+def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
+    """
+    ADR کلاسیک: میانگینِ (High-Low) روزانه روی پنجرهٔ rolling.
+    - ابتدا OHLC روزانه را می‌سازد (بر اساس resample('1D'))
+    - سپس میانگین rolling از دامنهٔ روزانه را می‌گیرد
+    - در پایان سری ADR روزانه را به تایم‌استمپ‌های درون‌روزی ffill می‌کند
+
+    ورودی: df با ستون‌های high/low (و بهتر است close برای resample صحیح)
+    خروجی: Series با نام 'ADR_{window}' هم‌تراز با df.index
+    """
+    if not {"high", "low"}.issubset(df.columns):
+        raise ValueError("DF must contain at least: high, low")
+
+    # تبدیل به فریم روزانه
+    daily = df[["high", "low"]].copy()
+    daily = daily.tz_convert(tz) if (daily.index.tz is not None) else daily.tz_localize(tz)
+    daily_ohl = pd.DataFrame({
+        "hi": daily["high"].resample("1D", label="left", closed="left").max(),
+        "lo": daily["low"].resample("1D", label="left", closed="left").min(),
+    }).dropna()
+
+    daily_range = (daily_ohl["hi"] - daily_ohl["lo"]).rename("daily_range")
+    adr_daily = daily_range.rolling(window=window, min_periods=max(2, window // 2)).mean()
+    adr_daily.name = f"ADR_{window}"
+
+    # نگاشت ADR روزانه به ایندکس درون‌روزی با ffill
+    adr_intraday = adr_daily.reindex(df.index, method="ffill")
+    return adr_intraday
+
+
+def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> pd.DataFrame:
+    """
+    فاصلهٔ قیمت تا «بازِ روز» نرمال‌شده به ADR.
+    خروجی ستون‌ها:
+      - day_open: بازِ روز (نخستین close هر روز)
+      - dist_abs: |price - day_open|
+      - dist_pct_of_adr: 100 * dist_abs / ADR
+    """
+    if "close" not in df.columns:
+        raise ValueError("DF must contain 'close' to compute day_open distance")
+
+    px = df["close"].copy()
+    px = px.tz_convert(tz) if (px.index.tz is not None) else px.tz_localize(tz)
+
+    # بازِ روز = اولین close هر روز
+    day_open_daily = px.resample("1D", label="left", closed="left").first().rename("day_open")
+    day_open = day_open_daily.reindex(px.index, method="ffill")
+
+    dist_abs = (px - day_open).abs().rename("dist_abs")
+    adr_safe = adr.copy()
+    adr_safe.replace(0.0, np.nan, inplace=True)
+    dist_pct = (100.0 * dist_abs / adr_safe).rename("dist_pct_of_adr")
+
+    out = pd.concat([day_open, dist_abs, dist_pct], axis=1)
+    return out
+
+
+# =========================
+# S/R Overlap Score (0..1)
+# =========================
+def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
+    """
+    امتیاز همپوشانی قیمت با سطوح S/R:
+      - اگر نزدیک‌ترین سطح در فاصلهٔ tol_pct (نسبت به قیمت) باشد → امتیاز ۰..۱ (هرچه نزدیک‌تر، امتیاز بالاتر)
+      - اگر چند سطح داخل tol باشند، یک پاداش کوچک اضافه می‌شود (clip به ۱)
+
+    پارامترها:
+      price: قیمتِ ارزیابی
+      sr_levels: لیست سطوح S/R
+      tol_pct: آستانهٔ نسبی (مثلاً 0.05 یعنی 5%)
+
+    خروجی: نمرهٔ ۰..۱
+    """
+    if not sr_levels:
+        return 0.0
+
+    tol_abs = abs(price) * tol_pct
+    diffs = np.array([price - lv for lv in sr_levels], dtype=float)
+    abs_diffs = np.abs(diffs)
+
+    j = int(np.argmin(abs_diffs))
+    min_dist = float(abs_diffs[j])
+
+    if min_dist > tol_abs or tol_abs == 0.0:
+        return 0.0
+
+    # امتیاز پایه: نزدیکی خطی تا ۱
+    base = 1.0 - (min_dist / tol_abs)
+
+    # پاداش کوچک بابت تعداد سطوح در محدودهٔ tol
+    k = int(np.sum(abs_diffs <= tol_abs))
+    bonus = 0.1 * max(0, k - 1)
+
+    score = min(1.0, max(0.0, base + bonus))
+    return float(score)

@@ -18,10 +18,10 @@ MT5Connector (نسخهٔ حرفه‌ای برای Bot-RL-1)
 """
 
 from __future__ import annotations
-from typing import Optional, Dict, Any, List, Tuple, Union
-from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List   #, Union, Tuple
+from dataclasses import dataclass  #, field
 import time
-import math
+#import math
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -49,7 +49,7 @@ except Exception:
 
 # =====================================================================================
 # ساختار تنظیمات Connector (اختیاری، برای خوانایی و توسعه‌پذیری)
-# =====================================================================================
+# ===================================================================================== OK
 
 @dataclass
 class MT5Credentials:
@@ -65,31 +65,31 @@ class MT5ConnectorOptions:
     backoff_multiplier: float = 1.0      # ضریب backoff (می‌توان 1.2 گذاشت)
     auto_select_symbols: bool = True     # نمادهای کانفیگ را auto-select کند
     check_trade_allowed: bool = False    # در health_check بررسی trade_allowed را هم انجام دهد
-    symbol_activation_timeout: float = 0.5  # مکث کوتاه پس از انتخاب نماد (ثانیه)
+    symbol_activation_timeout: float = 4  # مکث کوتاه پس از انتخاب نماد (ثانیه)
     ensure_on_each_call: bool = True     # قبل از هر fetch یک ensure_connection بزن
 
 # =====================================================================================
 # نگاشت تایم‌فریم‌ها
-# =====================================================================================
+# ===================================================================================== OK
 
 _TF_MAP = {
     # دقیقه
-    "M1": "M1", "1": "M1", "1m": "M1", "m1": "M1",
-    "M2": "M2", "2": "M2", "2m": "M2",
-    "M3": "M3", "3": "M3", "3m": "M3",
-    "M5": "M5", "5": "M5", "5m": "M5", "m5": "M5",
-    "M10": "M10", "10": "M10",
-    "M15": "M15", "15": "M15", "15m": "M15",
-    "M30": "M30", "30": "M30", "30m": "M30",
+    "M1" : "M1" , "1" : "M1" , "1m" : "M1" , "m1" : "M1" ,
+    "M2" : "M2" , "2" : "M2" , "2m" : "M2" , "m2" : "M2" ,
+    "M3" : "M3" , "3" : "M3" , "3m" : "M3" , "m3" : "M3" ,
+    "M5" : "M5" , "5" : "M5" , "5m" : "M5" , "m5" : "M5" ,
+    "M10": "M10", "10": "M10", "10m": "M10", "m10": "M10",
+    "M15": "M15", "15": "M15", "15m": "M15", "m15": "M15",
+    "M30": "M30", "30": "M30", "30m": "M30", "m30": "M30",
     # ساعت
     "H1": "H1", "1h": "H1", "h1": "H1",
-    "H2": "H2", "2h": "H2",
-    "H3": "H3", "3h": "H3",
-    "H4": "H4", "4h": "H4",
+    "H2": "H2", "2h": "H2", "h2": "H2",
+    "H3": "H3", "3h": "H3", "h3": "H3",
+    "H4": "H4", "4h": "H4", "h4": "H4",
     # روز/هفته/ماه
     "D1": "D1", "1d": "D1", "d1": "D1",
     "W1": "W1", "1w": "W1", "w1": "W1",
-    "MN1": "MN1", "1mo": "MN1", "mn1": "MN1",
+    "MN1": "MN1", "1mn": "MN1", "mn1": "MN1",
 }
 
 def _to_mt5_timeframe(tf: str) -> int:
@@ -315,7 +315,7 @@ class MT5Connector:
     # ---------------------------
     # انتخاب/اشتراک نمادها
     # ---------------------------
-    def _auto_select_symbols(self) -> None:
+    def _auto_select_symbols_old1(self) -> None:
         """
         نمادهایی که در کانفیگ آمده‌اند را در ترمینال انتخاب (subscribe) می‌کند تا copy_rates_* کار کند.
         """
@@ -334,6 +334,35 @@ class MT5Connector:
             try:
                 if mt5.symbol_select(sym, True):
                     logger.debug("Symbol selected: %s", sym)
+                    time.sleep(self.opts.symbol_activation_timeout)
+                else:
+                    logger.warning("Failed to select symbol: %s", sym)
+            except Exception:
+                logger.exception("Exception while selecting symbol: %s", sym)
+
+    def _auto_select_symbols(self) -> None:
+        """
+        نمادهایی که در کانفیگ آمده‌اند را در ترمینال انتخاب (subscribe) می‌کند تا copy_rates_* کار کند.
+        """
+        # توضیح فارسی: ابتدا از download_defaults.symbols بخوان؛ اگر نبود از مسیرهای قدیمی‌تر.
+        symbols: List[str] = []
+        try:
+            dd = (self.cfg.get("download_defaults") or {})
+            symbols = list(dd.get("symbols") or [])
+            if not symbols:
+                data = self.cfg.get("data_fetch_defaults", {}) or {}
+                symbols = list(self.cfg.get("symbols", []) or data.get("symbols", []) or [])
+        except Exception:
+            symbols = []
+
+        if not symbols:
+            return
+
+        for sym in symbols:
+            try:
+                ok = mt5.symbol_select(sym, True)
+                if ok:
+                    logger.debug("Symbol selected: %s", sym)  # English log
                     time.sleep(self.opts.symbol_activation_timeout)
                 else:
                     logger.warning("Failed to select symbol: %s", sym)

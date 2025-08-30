@@ -7,11 +7,15 @@
 - zscore، true_range
 """
 from __future__ import annotations
+from typing import Sequence, Optional, Dict, Tuple, List
 import re
 from dataclasses import dataclass
-from typing import Dict
+import logging
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 # کشف تایم‌فریم‌ها از روی نام ستون‌ها
 @dataclass
@@ -68,3 +72,176 @@ def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     tr3 = (low - prev_close).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.astype("float32")
+
+# --- New Added ----------------------------------------------------- 040607
+"""
+افزودنی‌های کم‌خطر برای Utils اندیکاتورها (Bot-RL-2)
+- تشخیص سوئینگ‌ها (بدون SciPy) با فیلترهای prominence و ATR
+- محاسبهٔ ATR (کلاسیک با SMA)
+- زی‌اسکورِ فاصله (zscore_distance)
+- فاصله تا نزدیک‌ترین سطح (nearest_level_distance)
+
+نکته‌ها:
+- همهٔ ورودی/خروجی‌ها با ایندکس زمانی UTC مرتب فرض شده‌اند.
+- پیام‌های لاگ انگلیسی‌اند؛ توضیحات فارسی.
+- نام‌گذاری مطابق «اولین سند اصلاح اندیکاتورها».
+"""
+# =========================
+# Additions for swing/metrics, ATR (SMA-based)
+# =========================
+def compute_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
+    """
+    English: Classic ATR (not Wilder smoothing). Returns a pandas Series aligned with df.index.
+    Persian: محاسبهٔ ATR کلاسیک برای داده‌ای که ستون‌های high/low/close دارد.
+    """
+    # توضیح: انتظار داریم ستون‌های high/low/close موجود باشند.
+    if not {"high", "low", "close"}.issubset(set(df.columns)):
+        raise ValueError("DF must contain columns: high, low, close")
+
+    # True Range
+    prev_close = df["close"].shift(1)
+    tr1 = (df["high"] - df["low"]).abs()
+    tr2 = (df["high"] - prev_close).abs()
+    tr3 = (df["low"] - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    # ATR: میانگین متحرک (ساده) — در آینده می‌توان Wilder یا EMA افزود.
+    atr = tr.rolling(window=window, min_periods=max(2, window // 2)).mean()
+    atr.name = f"ATR_{window}"
+    return atr
+
+# =========================
+# Swing Detection (H/L)
+# =========================
+def detect_swings(
+    price: pd.Series,
+    prominence: Optional[float] = None,
+    min_distance: int = 5,
+    atr: Optional[pd.Series] = None,
+    atr_mult: Optional[float] = None,
+    tf: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    English:
+      Local swing detection without SciPy:
+      - A point is swing-high if it's the maximum in a ±min_distance window.
+      - A point is swing-low  if it's the minimum in a ±min_distance window.
+      - Optional 'prominence' and 'atr_mult * ATR' filters to drop weak swings.
+    Persian:
+      تشخیص قله/کف محلی بدون SciPy:
+      - بیشینه/کمینه در پنجرهٔ ±min_distance
+      - فیلتر اختیاری بر اساس prominence و همچنین آستانهٔ ATR (atr_mult * ATR)
+    """
+    # نکته: price باید ایندکس زمانی UTC و مرتب داشته باشد.
+    
+    
+    """
+    تشخیص قله/کف محلی بدون SciPy:
+      - نقطه swing-high اگر در پنجرهٔ ±min_distance بیشینه باشد.
+      - نقطه swing-low  اگر در پنجرهٔ ±min_distance کمینه باشد.
+      - فیلتر اختیاری با prominence و همچنین آستانهٔ ATR (atr_mult * ATR).
+
+    ورودی‌ها:
+      price: Series اندیس‌گذاری‌شده بر حسب زمان (UTC)
+      prominence: حداقل برجستگی نسبت به لبه‌های پنجره (اختیاری)
+      min_distance: نصفِ اندازهٔ پنجره به دو طرف
+      atr: سری ATR هم‌تراز (اختیاری)
+      atr_mult: اگر داده شود، آستانهٔ حذف سوئینگ‌های ضعیف = atr_mult * ATR
+      tf: نام تایم‌فریم برای متادیتا (اختیاری)
+
+    خروجی:
+      DataFrame با ایندکس زمانی، ستون‌ها: ['price','kind','atr','tf']
+        kind ∈ {'H','L'}
+    """    
+    
+    if not isinstance(price, pd.Series):
+        raise TypeError("price must be a pandas Series indexed by time")
+
+    idx = price.index
+    n = len(price)
+    if n < (2 * min_distance + 1):
+        logger.debug("detect_swings: insufficient length (n=%d, min_distance=%d)", n, min_distance)
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    highs: list[Tuple[pd.Timestamp, float]] = []
+    lows:  list[Tuple[pd.Timestamp, float]] = []
+
+    # پنجره‌ی لغزان برای اکسترمم محلی
+    for i in range(min_distance, n - min_distance):
+        p = price.iloc[i]
+        left = price.iloc[i - min_distance : i]
+        right = price.iloc[i + 1 : i + 1 + min_distance]
+
+        is_high = p >= left.max() and p >= right.max()
+        is_low  = p <= left.min() and p <= right.min()
+
+        if not (is_high or is_low):
+            continue
+
+        # فیلتر prominence ساده: فاصله از نزدیک‌ترین همسایهٔ طرفین
+        if (prominence is not None) and (prominence > 0):
+            prom_left = abs(p - left.iloc[-1])
+            prom_right = abs(p - right.iloc[0])
+            prom_ok = (prom_left >= prominence) and (prom_right >= prominence)
+            if not prom_ok:
+                continue
+
+        # فیلتر مبتنی بر ATR (اگر دادهٔ ATR و ضریب atr_mult داده شده باشد)
+        atr_here = float(atr.iloc[i]) if (atr is not None and pd.notna(atr.iloc[i])) else np.nan
+        if (atr is not None) and (atr_mult is not None) and (atr_mult > 0) and not np.isnan(atr_here):
+            left_edge = left.iloc[-1]
+            right_edge = right.iloc[0]
+            local_prom = max(abs(p - left_edge), abs(p - right_edge))
+            if local_prom < atr_mult * atr_here:
+                continue
+
+        ts = idx[i]
+        if is_high:
+            highs.append((ts, float(p)))
+        if is_low:
+            lows.append((ts, float(p)))
+
+    # خروجی یکدست
+    rows: List[Dict] = []
+    for ts, val in highs:
+        rows.append({"ts": ts, "price": val, "kind": "H", "atr": float(atr.loc[ts]) if atr is not None and ts in atr.index else np.nan, "tf": tf})
+    for ts, val in lows:
+        rows.append({"ts": ts, "price": val, "kind": "L", "atr": float(atr.loc[ts]) if atr is not None and ts in atr.index else np.nan, "tf": tf})
+
+    swings = pd.DataFrame(rows).sort_values("ts").reset_index(drop=True)
+    if not swings.empty:
+        swings.set_index("ts", inplace=True)
+        swings.index = pd.to_datetime(swings.index, utc=True)
+    else:
+        logger.debug("detect_swings: no swings detected")
+    return swings
+
+# =========================
+# Z-Score distance
+# =========================
+def zscore_distance(x: float, mu: float, sigma: float, eps: float = 1e-12) -> float:
+    """
+    English: Return (x - mu) / sigma with small epsilon for stability.
+    Persian: نرمال‌سازی فاصله با زی‌اسکور.
+    """
+    s = abs(sigma) if sigma is not None else 0.0
+    return float((x - mu) / (s + eps))
+
+# =========================
+# Nearest level distance
+# =========================
+def nearest_level_distance(price: float, levels: Sequence[float]) -> Dict[str, float]:
+    """
+    English: Find nearest level to 'price' and return distances (signed/abs) and the level.
+    Persian: نزدیک‌ترین سطح قیمتی به price را برمی‌گرداند.
+    """
+    if not levels:
+        return {"nearest_level": float("nan"), "signed": float("nan"), "abs": float("nan")}
+    # محاسبهٔ فاصله‌ها
+    diffs = [price - lv for lv in levels]
+    j = int(np.argmin([abs(d) for d in diffs]))
+    return {
+        "nearest_level": float(levels[j]),
+        "signed": float(diffs[j]),
+        "abs": float(abs(diffs[j])),
+    }
