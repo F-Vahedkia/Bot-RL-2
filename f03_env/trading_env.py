@@ -16,7 +16,6 @@ import logging
 import numpy as np
 import pandas as pd
 
-from f06_news.filter import NewsGate
 from f10_utils.config_loader import load_config
 from .base_env import BaseTradingEnv, StepResult
 from .rewards import RewardConfig, build_reward_fn
@@ -32,9 +31,7 @@ from .utils import (
     save_scaler,
     load_scaler,
 )
-# --- NEW: NewsGate integration ---
 from f06_news.filter import NewsGate
-# ----------------------------------
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +292,7 @@ class TradingEnv(BaseTradingEnv):
         # توجه: self.ret/logret/atr از کل df_full هستند؛ ایندکس محلی را به ایندکس سراسری نگاشت می‌کنیم
         idx_global = self._current_df.index[self._t]
         t_global = int(self.df_full.index.get_indexer([idx_global])[0])
-
+        #--- بلوک NewsGate
         st = {"freeze": False, "reduce_risk": False, "reason": "no_gate", "events": []}
         if getattr(self, "news_gate", None) is not None:
             ts_utc = pd.to_datetime(idx_global, utc=True)
@@ -306,7 +303,7 @@ class TradingEnv(BaseTradingEnv):
                 new_pos = self._pos
 
             # اگر کاهش ریسک است، ضریب ریسک داخلی را ست کن (در جای محاسبه‌ی سایز استفاده کن)
-            self._news_risk_scale = 0.5 if st.get("reduce_risk") else 1.0
+            self._news_risk_scale = st.get("reduce_scale", 0.5) if st.get("reduce_risk") else 1.0
         else:
             self._news_risk_scale = 1.0
 
@@ -365,7 +362,10 @@ def main() -> int:
         reward_mode=str(args.reward).lower(),
     )
 
-    env = TradingEnv(cfg, env_cfg)
+    from f06_news.integration import make_news_gate
+    gate = make_news_gate(cfg, symbol=args.symbol)
+    env = TradingEnv(cfg, env_cfg, news_gate=gate)
+
     obs, info = env.reset(split=args.split)
 
     total_r = 0.0

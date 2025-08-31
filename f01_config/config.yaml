@@ -33,6 +33,7 @@ paths:
     staging_dir: "f12_models/staging"
     checkpoints_dir: "f12_models/checkpoints"
     experiments_dir: "f12_models/experiments"
+  news_dir: "f02_data/news"
 
 # ---------------------------
 # اتصال به MT5 (کلیدهای موردنیاز کد فعلی)
@@ -394,10 +395,14 @@ safety:
       - { name: "max_drawdown_total", metric: "live/total_drawdown_pct", op: ">=", value: 0.2 }
       - { name: "too_many_trades", metric: "live/trades_per_day", op: ">", value: 120 }
   news_filter:
-    enabled: false
-    high_impact_freeze_minutes_before: 30
-    high_impact_freeze_minutes_after: 15
+    enabled: true
+    high_impact_freeze_minutes_before: 31
+    high_impact_freeze_minutes_after: 16
+    medium_impact_freeze_minutes_before: 16
+    medium_impact_freeze_minutes_after: 11
     sources: []
+    sources: ["forexfactory"]
+    currencies: ["USD","EUR","GBP","JPY"]
 
 # ---------------------------
 # Override اختصاصی هر نماد (مثال)

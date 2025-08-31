@@ -7,7 +7,7 @@
 - zscore، true_range
 """
 from __future__ import annotations
-from typing import Sequence, Optional, Dict, Tuple, List
+from typing import Sequence, Optional, Dict, Tuple, List, Iterable
 import re
 from dataclasses import dataclass
 import logging
@@ -245,3 +245,92 @@ def nearest_level_distance(price: float, levels: Sequence[float]) -> Dict[str, f
         "signed": float(diffs[j]),
         "abs": float(abs(diffs[j])),
     }
+
+
+# --- New Added ----------------------------------------------------- 040608
+def levels_from_recent_legs(
+    ohlc_df: pd.DataFrame,
+    n_legs: int = 10,
+    ratios: Optional[Iterable[float]] = None,
+    prominence: Optional[float] = None,
+    min_distance: int = 5,
+    atr_mult: Optional[float] = 1.0,
+) -> pd.DataFrame:
+    """
+    ساخت سطوح فیبوی رتریسمنت برای «n لگ اخیر» از روی سوئینگ‌های بسته.
+
+    ورودی:
+      - ohlc_df: DataFrame با ستون‌های open/high/low/close (ایندکس UTC مرتب)
+      - n_legs: تعداد لگ‌های اخیر (پیش‌فرض 10)
+      - ratios: نسبت‌های فیبو (اگر None → [0.236,0.382,0.5,0.618,0.786])
+      - prominence/min_distance/atr_mult: پارامترهای فیلتر سوئینگ (برای حذف نویز)
+
+    خروجی:
+      DataFrame ستون‌ها: ['ratio','price','leg_up','leg_idx']
+      - leg_idx: شمارهٔ لگ از انتها (1 = آخرین لگ، 2 = یکی قبل‌تر، ...)
+    """
+    if ratios is None:
+        ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
+
+    # محاسبهٔ ATR برای فیلتر سوئینگ (در صورت نیاز)
+    atr = None
+    try:
+        from .utils import compute_atr as _compute_atr  # اجتناب از import حلقوی
+        atr = _compute_atr(ohlc_df, window=14)
+    except Exception:
+        pass
+
+    close = ohlc_df["close"].astype(float)
+    try:
+        from .utils import detect_swings as _detect_swings
+        swings = _detect_swings(
+            close,
+            prominence=prominence,
+            min_distance=min_distance,
+            atr=atr,
+            atr_mult=atr_mult,
+            tf=None,
+        )
+    except Exception as ex:
+        # اگر detect_swings در دسترس نبود
+        return pd.DataFrame(columns=["ratio", "price", "leg_up", "leg_idx"])
+
+    if swings is None or swings.empty or len(swings) < 2:
+        return pd.DataFrame(columns=["ratio", "price", "leg_up", "leg_idx"])
+
+    s = swings.sort_index()
+    prices = s["price"].astype(float).to_numpy()
+
+    rows: List[dict] = []
+    # از آخرین نقطه شروع می‌کنیم: (i-1 → i) یک لگ
+    # i: اندیس آخرین سوئینگ، i-1: سوئینگ قبلی
+    last_i = len(prices) - 1
+    max_legs = min(n_legs, last_i)  # به تعداد جفت‌ها می‌تونیم لگ بسازیم
+
+    for k in range(1, max_legs + 1):
+        i = last_i - (k - 1)
+        j = i - 1
+        if j < 0:
+            break
+        p1, p2 = prices[j], prices[i]
+        leg_up = p2 > p1
+        low, high = (p1, p2) if leg_up else (p2, p1)
+
+        rng = high - low
+        if rng <= 0:
+            continue
+
+        for r in ratios:
+            # قیمت رتریسمنتِ لگ (استاندارد)
+            price = (high - r * rng) if leg_up else (low + r * rng)
+            rows.append({
+                "ratio": float(r),
+                "price": float(price),
+                "leg_up": bool(leg_up),
+                "leg_idx": int(k),
+            })
+
+    out = pd.DataFrame(rows)
+    if not out.empty:
+        out = out.sort_values(["price", "leg_idx"]).reset_index(drop=True)
+    return out

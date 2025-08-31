@@ -9,19 +9,18 @@ BaseTradingEnv: اسکلت پایهٔ محیط معاملاتی
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
-import gymnasium as gym
-'''
+
 try:
     import gymnasium as gym  # اولویت با gymnasium
     from gymnasium import spaces
 except Exception:
     try:
-        import gym  # fallback
+        import gym  # type: ignore
         from gym import spaces  # type: ignore
     except Exception:
         gym = None  # type: ignore
         spaces = None  # type: ignore
-'''
+
 
 import numpy as np
 
@@ -34,7 +33,9 @@ class StepResult:
     truncated: bool
     info: Dict[str, Any]
 
-class BaseTradingEnv:
+class BaseTradingEnv(gym.Env if gym else object):
+    ...
+
     """
     پایهٔ محیط معاملاتی.
     کلاس‌های مشتق باید متدهای زیر را پیاده‌سازی کنند:
