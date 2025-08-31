@@ -23,6 +23,22 @@ from f06_news.providers.forexfactory_http import ForexFactoryHTTPProvider
 from f06_news.normalizer import normalize_forexfactory_csv, concat_and_dedupe
 from f06_news.dataset import news_dir_path, save_cache
 
+
+def _prune_old(dirpath: pathlib.Path, days: int) -> int:
+    if days <= 0: return 0
+    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=days)
+    removed = 0
+    for p in dirpath.rglob("*"):
+        if p.is_file():
+            mtime = pd.Timestamp(p.stat().st_mtime, unit="s", tz="UTC")
+            if mtime < cutoff:
+                try:
+                    p.unlink(missing_ok=True); removed += 1
+                except Exception:
+                    pass
+    logging.info("Pruned %d old files (> %d days) in %s", removed, days, dirpath)
+    return removed
+
 def _setup_logging(level: str = "INFO") -> None:
     logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO),
                         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -34,6 +50,9 @@ def parse_args():
     p.add_argument("--csvs", nargs="*", default=None, help="Local CSV paths (optional).")
     p.add_argument("--out-dir", default=None, help="Output news dir (default: from config or f02_data/news).")
     p.add_argument("-c", "--config", default=None, help="Path to config.yaml (optional).")
+    p.add_argument("--tz-hint", default="UTC", help="Calendar timezone hint (e.g., Europe/London)")
+    p.add_argument("--retention-days", type=int, default=0,
+                    help="Delete raw/cache files older than N days (0=disabled)")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args()
 
@@ -68,7 +87,8 @@ def main() -> int:
     for p in saved_paths:
         try:
             logging.info("Normalizing: %s", p)
-            frames.append(normalize_forexfactory_csv(str(p)))
+            frames.append(normalize_forexfactory_csv(str(p), tz_hint=args.tz_hint))
+
         except Exception as ex:
             logging.warning("Normalization failed for %s (%s). Skipped.", p, ex)
 
@@ -80,6 +100,11 @@ def main() -> int:
     df = concat_and_dedupe(frames)
     out = save_cache(df, news_dir)
     logging.info("Saved cache: %s | rows=%d", out, len(df))
+
+    if args.retention_days > 0:
+        _prune_old(raw_dir, args.retention_days)
+        _prune_old(news_dir, args.retention_days)
+
     return 0
 
 if __name__ == "__main__":
