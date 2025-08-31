@@ -16,6 +16,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+from f06_news.filter import NewsGate
 from f10_utils.config_loader import load_config
 from .base_env import BaseTradingEnv, StepResult
 from .rewards import RewardConfig, build_reward_fn
@@ -31,6 +32,9 @@ from .utils import (
     save_scaler,
     load_scaler,
 )
+# --- NEW: NewsGate integration ---
+from f06_news.filter import NewsGate
+# ----------------------------------
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +53,45 @@ class EnvConfig:
 
 class TradingEnv(BaseTradingEnv):
     """محیط معاملاتی M1 + فیچرهای MTF برای RL."""
-    def __init__(self, cfg: Dict[str, Any], env_cfg: EnvConfig):
+    def __init__(self, cfg: Dict[str, Any], 
+                 env_cfg: EnvConfig, 
+                 news_gate: Optional[NewsGate] = None):
+        """
+        سازندهٔ محیط معاملاتی.
+        - بارگذاری دیتای پردازش‌شده (Base TF)
+        - انتخاب ستون‌های مشاهده (OHLC/Volume/Spread + فیچرها) با امکان whitelist/blacklist
+        - اعمال splitهای زمانی (train/val/test) از config
+        - نرمال‌سازی (fit روی train → ذخیره در cache، سپس load و استفاده)
+        - آماده‌سازی سری‌های پاداش (ret/logret/atr) و ساخت تابع پاداش
+        - تعریف فضاهای observation/action در صورت وجود gymnasium/gym
+        """
         super().__init__()
         self.cfg = cfg
         self.env_cfg = env_cfg
-        self.paths = paths_from_cfg(cfg)
+        # --- NEW: keep gate + default risk scale ---
+        self.news_gate: Optional[NewsGate] = news_gate
+        self._news_risk_scale: float = 1.0  # Persian: ضریب کاهش ریسک در حالت reduce
+        
+        # -----------------------------
+        # ۱) مسیرها و بارگذاری دیتای پردازش‌شده
+        # -----------------------------
+        self.paths = paths_from_cfg(cfg)  # {'processed': ..., 'cache': ...}
+        # فرمت را به عهدهٔ util بگذاریم (parquet اگر باشد، وگرنه csv)
+        self.df_full = read_processed(
+            symbol=env_cfg.symbol,
+            base_tf=env_cfg.base_tf,
+            cfg=cfg,
+            fmt=None,
+        )
 
-        # بارگذاری دیتای پردازش‌شده + فیچرها
-        self.df_full = read_processed(env_cfg.symbol, env_cfg.base_tf, cfg, fmt="parquet")
+        # اطمینان از وجود ایندکس زمانی و مرتب‌سازی (util همین کار را می‌کند؛ صرفاً دفاعی)
+        self.df_full = self.df_full.sort_index()
+        if self.df_full.index.name != "time":
+            raise ValueError("Processed DataFrame must be indexed by 'time'.")
 
-        # انتخاب ستون‌های مشاهده
+        # -----------------------------------------
+        # ۲) انتخاب ستون‌های مشاهده (Observation)
+        # -----------------------------------------
         sel = FeatureSelect(
             include_ohlc=env_cfg.use_ohlc,
             include_volume=env_cfg.use_volume,
@@ -67,66 +100,117 @@ class TradingEnv(BaseTradingEnv):
             blacklist=env_cfg.features_blacklist,
         )
         self.obs_cols = infer_observation_columns(self.df_full, sel)
-        assert len(self.obs_cols) > 0, "هیچ ستون مشاهده‌ای پیدا نشد؛ config را بررسی کنید."
+        assert len(self.obs_cols) > 0, "هیچ ستون مشاهده‌ای پیدا نشد؛ تنظیمات features/whitelist/blacklist را بررسی کنید."
 
-        # Split زمانی (train/val/test)
+        # -----------------------------------------
+        # ۳) split زمانی (train/val/test) از config
+        # -----------------------------------------
         self.slices = time_slices(cfg)
         if not self.slices:
             # اگر در کانفیگ split تعریف نشده، کل داده train فرض می‌شود
             t0, t1 = self.df_full.index[0], self.df_full.index[-1]
             self.slices = {"train": (t0, t1)}
 
-        # نرمال‌سازی (fit روی train)
+        # -----------------------------------------
+        # ۴) نرمال‌سازی: fit روی train → ذخیره/بارگذاری
+        # -----------------------------------------
+        self.scaler = None
         self.scaler_tag = f"{env_cfg.symbol}_{env_cfg.base_tf}_v1"
-        self.scaler = load_scaler(self.paths["cache"], self.scaler_tag)
-        if env_cfg.normalize and (self.scaler is None):
-            tr_a, tr_b = self.slices.get("train", (self.df_full.index[0], self.df_full.index[-1]))
-            df_tr = self.df_full.loc[(self.df_full.index >= tr_a) & (self.df_full.index <= tr_b), self.obs_cols]
-            self.scaler = fit_scaler(df_tr, self.obs_cols)
-            save_scaler(self.scaler, self.paths["cache"], self.scaler_tag)
+        if env_cfg.normalize:
+            loaded = load_scaler(self.paths["cache"], self.scaler_tag)
+            if loaded is None:
+                # fit روی بازهٔ train
+                a, b = self.slices["train"]
+                df_train = slice_df_by_range(self.df_full[self.obs_cols], a, b)
+                if df_train.empty:
+                    # اگر بازهٔ train خالی شد، از کل دیتاست fit می‌کنیم (حالت دفاعی)
+                    df_train = self.df_full[self.obs_cols]
+                self.scaler = fit_scaler(df_train, self.obs_cols)
+                save_scaler(self.scaler, self.paths["cache"], self.scaler_tag)
+            else:
+                self.scaler = loaded
 
-        # سری‌های بازده/ATR برای پاداش
-        close = self.df_full[f"{env_cfg.base_tf}__close"] if f"{env_cfg.base_tf}__close" in self.df_full.columns else self.df_full["M1_close"]
+        # -------------------------------------------------
+        # ۵) سری‌های کمکی برای پاداش: بازده، لگ‌ریت و ATR
+        #     (بدون look-ahead؛ در step از اندیس t+1 خوانده می‌شود)
+        # -------------------------------------------------
+        tf = env_cfg.base_tf.upper()
+
+        # انتخاب مقاومِ ستون‌های OHLC برای TF پایه (در برابر یک/دوداش‌خط زیرخط)
+        def _pick(field: str) -> str:
+            cand1 = f"{tf}_{field}"      # مثل M1_close
+            cand2 = f"{tf}__{field}"     # مثل M1__close (اگر جایی این نامگذاری باشد)
+            if cand1 in self.df_full.columns: return cand1
+            if cand2 in self.df_full.columns: return cand2
+            # fallback: نخستین ستونی که به _field ختم می‌شود (برای ایمن‌سازی)
+            for c in self.df_full.columns:
+                if c.lower().endswith(f"_{field}"):
+                    return c
+            raise KeyError(f"ستون {field} برای TF {tf} یافت نشد.")
+
+        close_col = _pick("close")
+        high_col  = _pick("high")
+        low_col   = _pick("low")
+
+        close = self.df_full[close_col].astype("float32")
+        # pct_change در اندیس i بازده از i-1→i است؛ در step با t+1 می‌خوانیم تا بازده t→t+1 باشد.
         self.ret = close.pct_change().fillna(0.0).astype("float32")
         self.logret = np.log(close / close.shift(1)).fillna(0.0).astype("float32")
-        # ATR را اگر داریم از فیچرها بخوانیم، وگرنه ساده محاسبه کنیم
-        atr_col = f"{env_cfg.base_tf}__atr_14"
-        if atr_col in self.df_full.columns:
-            self.atr = self.df_full[atr_col].astype("float32")
+
+        # اگر ATR از قبل (به‌صورت فیچر) موجود بود، همان را بردار؛ وگرنه محاسبهٔ ساده
+        atr_feat = f"{tf}__atr_14"
+        if atr_feat in self.df_full.columns:
+            self.atr = self.df_full[atr_feat].astype("float32")
         else:
-            high = self.df_full.get(f"{env_cfg.base_tf}__high") or self.df_full.filter(like="_high").iloc[:, 0]
-            low = self.df_full.get(f"{env_cfg.base_tf}__low") or self.df_full.filter(like="_low").iloc[:, 0]
             prev_close = close.shift(1)
-            tr = pd.concat([(high - low).abs(), (high - prev_close).abs(), (low - prev_close).abs()], axis=1).max(axis=1)
+            tr = np.maximum.reduce([
+                (self.df_full[high_col] - self.df_full[low_col]).abs().values,
+                (self.df_full[high_col] - prev_close).abs().values,
+                (self.df_full[low_col]  - prev_close).abs().values,
+            ])
+            tr = pd.Series(tr, index=self.df_full.index)
             self.atr = tr.ewm(alpha=1.0/14, adjust=False, min_periods=14).mean().astype("float32")
 
-        # ساخت تابع پاداش
+        # -----------------------------
+        # ۶) ساخت تابع پاداش
+        # -----------------------------
+        tr_cfg = (cfg.get("trading") or {})
+        costs = (tr_cfg.get("costs") or {})
         rcfg = RewardConfig(
-            mode=self.env_cfg.reward_mode,
-            cost_spread_pts=float(((self.cfg.get("trading") or {}).get("costs") or {}).get("spread_pts", 0)),
-            cost_commission_per_lot=float(((self.cfg.get("trading") or {}).get("costs") or {}).get("commission_per_lot", 0.0)),
-            cost_slippage_pts=float(((self.cfg.get("trading") or {}).get("costs") or {}).get("slippage_pts", 0)),
-            point_value=float(((self.cfg.get("trading") or {}).get("costs") or {}).get("point_value", 0.01)),
+            mode=env_cfg.reward_mode,  # 'pnl' | 'logret' | 'atr_norm'
+            cost_spread_pts=float(costs.get("spread_pts", 0.0)),
+            cost_commission_per_lot=float(costs.get("commission_per_lot", 0.0)),
+            cost_slippage_pts=float(costs.get("slippage_pts", 0.0)),
+            point_value=float(costs.get("point_value", 0.01)),
         )
         series = {"ret": self.ret, "logret": self.logret, "atr": self.atr}
         self.reward_fn = build_reward_fn(rcfg.mode, series, rcfg)
 
-        # فضای اکشن/مشاهده (اگر gym نصب است)
+        # --------------------------------
+        # ۷) فضاهای مشاهده/اکشن (اختیاری)
+        # --------------------------------
         try:
             from gymnasium import spaces  # type: ignore
-            self.action_space = spaces.Discrete(3)  # {-1,0,+1}
-            self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(env_cfg.window_size, len(self.obs_cols)), dtype=np.float32)
+            self.action_space = spaces.Discrete(3)  # {-1, 0, +1}
+            self.observation_space = spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(int(env_cfg.window_size), len(self.obs_cols)),
+                dtype=np.float32,
+            )
         except Exception:
+            # اگر gym/gymnasium نصب نبود، فقط فیلدها مقداردهی نمی‌شوند
             pass
 
-        # حالت داخلی
-        self._t0: int = 0
-        self._t1: int = 0
-        self._t: int = 0
-        self._pos: int = 0
-        self._done_hard: bool = False
-        self._last_reward: float = 0.0
-        self._current_df: pd.DataFrame = self.df_full
+        # -----------------------------
+        # ۸) وضعیت داخلی اولیهٔ اپیزود
+        # -----------------------------
+        self._current_df = self.df_full  # در reset بر اساس split برش می‌دهیم
+        self._t0 = 0
+        self._t1 = len(self._current_df) - 1
+        self._t = 0
+        self._pos = 0               # -1/0/+1
+        self._last_reward = 0.0
+        self._done_hard = False
 
     # --- کمکی‌ها ---
     def _make_obs(self, t: int) -> np.ndarray:
@@ -168,6 +252,19 @@ class TradingEnv(BaseTradingEnv):
         self._t0 = 0
         self._t1 = len(self._current_df) - 1
 
+    def _news_status(self, ts) -> Dict[str, Any]:
+        """وضعیت گیت خبری در لحظهٔ ts (UTC)."""
+        if self.news_gate is None:
+            return {"freeze": False, "reduce_risk": False, "reason": "no_gate", "events": []}
+        try:
+            ts = pd.to_datetime(ts, utc=True)
+            return self.news_gate.status(ts)
+        except Exception as ex:
+            # Persian: اگر گِیت خطا داد، محیط را از کار نینداز
+            import logging
+            logging.warning("News gate error: %s", ex)
+            return {"freeze": False, "reduce_risk": False, "reason": "error", "events": []}
+
     # --- API استاندارد ---
     def reset(self, seed: Optional[int] = None, split: str = "train") -> Tuple[np.ndarray, Dict[str, Any]]:
         super().seed(seed)
@@ -199,6 +296,20 @@ class TradingEnv(BaseTradingEnv):
         idx_global = self._current_df.index[self._t]
         t_global = int(self.df_full.index.get_indexer([idx_global])[0])
 
+        st = {"freeze": False, "reduce_risk": False, "reason": "no_gate", "events": []}
+        if getattr(self, "news_gate", None) is not None:
+            ts_utc = pd.to_datetime(idx_global, utc=True)
+            st = self.news_gate.status(ts_utc)
+
+            # اگر فریز است، پوزیشن جدید را همان قبلی نگه دار (HOLD اجباری)
+            if st.get("freeze") and new_pos != self._pos:
+                new_pos = self._pos
+
+            # اگر کاهش ریسک است، ضریب ریسک داخلی را ست کن (در جای محاسبه‌ی سایز استفاده کن)
+            self._news_risk_scale = 0.5 if st.get("reduce_risk") else 1.0
+        else:
+            self._news_risk_scale = 1.0
+
         reward = 0.0
         if t_global + 1 <= len(self.df_full) - 1:
             reward = self.reward_fn(self._pos, t_global + 1)  # پاداش بر اساس پوزیشنِ فعلی در گام گذشته
@@ -214,6 +325,8 @@ class TradingEnv(BaseTradingEnv):
 
         obs = self._make_obs(self._t)
         info = {"t": int(self._t), "pos": int(self._pos), "reward": float(reward)}
+        info["news_gate"] = st
+
         if terminated:
             self._done_hard = True
         return StepResult(obs, float(reward), bool(terminated), bool(truncated), info)
@@ -221,6 +334,7 @@ class TradingEnv(BaseTradingEnv):
     # رندرِ متنی ساده (اختیاری)
     def render(self) -> None:
         print(f"t={self._t} pos={self._pos} last_reward={self._last_reward:.6f}")
+
 
 # --- CLI تست دود ---
 
