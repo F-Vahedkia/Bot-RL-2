@@ -12,7 +12,7 @@ project:
   timezone: "UTC"
   base_currency: "USD"
   random_seed: 42
-  enable_env_override: true   # در loader رعایت شده است
+  enable_env_override: true   # در config_loader.py رعایت شده است
 
 # ---------------------------
 # مسیرها و نگهداشت آرتیفکت‌ها
@@ -50,7 +50,7 @@ mt5_credentials:
 download_defaults:
   # نمادها و تایم‌فریم‌هایی که برای دانلود به‌صورت پیش‌فرض استفاده می‌شوند
   symbols: ["XAUUSD"]
-  timeframes: ["M1","M5","M30","H4","D1", "W1"]
+  timeframes: ["M1","M5","M30","H4","D1","W1"]
   lookback_bars: 20000
   batch_size: 5000
   save_format: "parquet"      # csv | parquet
@@ -61,7 +61,7 @@ download_defaults:
 # ---------------------------
 # کلیدهای مورد استفاده در TradingEnv و DataHandler
 # ---------------------------
-timeframes: ["M1", M5","M30","H4","D1","W1"]  # ← کد فعلی از این کلید استفاده می‌کند
+timeframes: ["M1","M5","M30","H4","D1","W1"]  # ← کد فعلی از این کلید استفاده می‌کند
 n_candles_per_tf: 256                         # ← طول پنجرهٔ هر تایم‌فریم
 n_candles: 256                                # ← بعضی مسیرها همین را می‌خوانند؛ برابر با بالا نگه دارید
 start_date: null                              # ← "2024-01-01" در صورت نیاز
@@ -182,6 +182,47 @@ features:
         enabled: true
         levels_r_multiple: [1.0, 2.0]
         portions: [0.5, 0.5]
+  
+    # === PATCH: features.fibonacci (only additions; keep all existing lines) ===
+    # نسبت‌های پیش‌فرض رتریسمنت (قابل ویرایش در آینده)
+    retracement_ratios: [0.236, 0.382, 0.5, 0.618, 0.786, 0.886]
+
+    # نسبت‌های پیش‌فرض اکستنشن (قابل ویرایش در آینده)
+    extension_ratios: [1.272, 1.618, 2.0, 2.618, 3.618]
+
+    # نسبت‌های «زون طلایی» برای تابع golden_zone_cfg
+    golden_zone:
+      ratios: [0.382, 0.618]
+
+    # پارامترهای خوشه‌سازی برای fib_cluster_cfg
+    cluster:
+      tol_pct: 0.08           # تلورانس درصدی نزدیکی سطوح
+      prefer_ratio: 0.618     # نسبت مرجح (اگر وزن دهی نیاز دارد)
+      tf_weights:             # وزن‌دهی اختیاری تایم‌فریم‌ها
+        M15: 0.5
+        H1: 1.0
+        H4: 1.5
+        D1: 2.0
+      w_trend: 10.0           # وزن مؤلفهٔ روند (مثلاً شیب MA)
+      w_rsi: 10.0             # وزن مؤلفهٔ RSI zone
+      w_sr: 10.0              # وزن همپوشانی سطوح SR
+      sr_tol_pct: 0.05        # تلورانس همپوشانی با SR
+      adaptive_tol:
+        enabled: true        # برای شروع اگر می‌خواهید فعال باشد؛ در غیر این‌صورت false بگذارید
+        mode: "ADR"          # "ADR" یا "ATR"
+        k: 1.00              # ضریب scale برای تبدیل (vol / ref_price) به tol_pct
+        min_pct: 0.02        # حداقل درصد تلورانس (مثلاً 2%)
+        max_pct: 0.15        # حداکثر درصد تلورانس (مثلاً 15%)
+        
+    # برای هم‌خوانی با fib_ext_targets_cfg (اختیاری؛ تداخلی با order_planner ندارد)
+    sl_atr_mult: 1.5
+    leg_selection:
+      max_legs_per_tf: 3     # چند لگ آخر از هر TF وارد خوشه‌سازی شود
+      lookback_bars: 2000    # حداکثر پنجره جست‌وجوی لگ‌ها (در صورت نیاز آینده)
+      prefer_body: false     # true: بدنه‌محور، false: سایه‌محور (برای توسعه‌های بعدی)
+      prominence_min: null   # آستانه پرامیننس (اختیاری، فعلاً استفاده نمی‌شود)
+  # === پایان پچ ==============================================================
+
   support_resistance:
     enabled: true
     lookback_bars: 1500

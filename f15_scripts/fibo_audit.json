@@ -1,0 +1,2294 @@
+[
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\fibonacci.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "_fib_levels_for_leg",
+        "args": [
+          {
+            "name": "low",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "ratios",
+            "annotation": "Sequence[float]",
+            "default": "DEFAULT_RETR_RATIOS"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "_last_valid_leg",
+        "args": [
+          {
+            "name": "swings",
+            "annotation": "pd.DataFrame",
+            "default": null
+          }
+        ],
+        "returns": "Tuple[pd.Timestamp, pd.Timestamp, float, float]",
+        "is_async": false
+      },
+      {
+        "name": "golden_zone",
+        "args": [
+          {
+            "name": "swings",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "ratios",
+            "annotation": "Tuple[float, float]",
+            "default": "(0.382, 0.618)"
+          },
+          {
+            "name": "extra_ratios",
+            "annotation": "Sequence[float]",
+            "default": "DEFAULT_RETR_RATIOS"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "fib_cluster",
+        "args": [
+          {
+            "name": "tf_levels",
+            "annotation": "Dict[str, pd.DataFrame]",
+            "default": null
+          },
+          {
+            "name": "tol_pct",
+            "annotation": "float",
+            "default": "0.08"
+          },
+          {
+            "name": "prefer_ratio",
+            "annotation": "float",
+            "default": "0.618"
+          },
+          {
+            "name": "tf_weights",
+            "annotation": "Optional[Dict[str, float]]",
+            "default": "None"
+          },
+          {
+            "name": "ma_slope",
+            "annotation": "Optional[pd.Series]",
+            "default": "None"
+          },
+          {
+            "name": "rsi_zone_score",
+            "annotation": "Optional[pd.Series]",
+            "default": "None"
+          },
+          {
+            "name": "sr_levels",
+            "annotation": "Optional[Sequence[float]]",
+            "default": "None"
+          },
+          {
+            "name": "ref_time",
+            "annotation": "Optional[pd.Timestamp]",
+            "default": "None"
+          },
+          {
+            "name": "w_trend",
+            "annotation": "float",
+            "default": "10.0"
+          },
+          {
+            "name": "w_rsi",
+            "annotation": "float",
+            "default": "10.0"
+          },
+          {
+            "name": "w_sr",
+            "annotation": "float",
+            "default": "10.0"
+          },
+          {
+            "name": "sr_tol_pct",
+            "annotation": "float",
+            "default": "0.05"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "fib_ext_targets",
+        "args": [
+          {
+            "name": "entry_price",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "leg_low",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "leg_high",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "side",
+            "annotation": "str",
+            "default": null
+          },
+          {
+            "name": "ext_ratios",
+            "annotation": "Sequence[float]",
+            "default": "DEFAULT_EXT_RATIOS"
+          },
+          {
+            "name": "sl_atr",
+            "annotation": "Optional[float]",
+            "default": "None"
+          },
+          {
+            "name": "sl_atr_mult",
+            "annotation": "float",
+            "default": "1.5"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": [
+      {
+        "name": "DEFAULT_RETR_RATIOS",
+        "value_repr": "(0.236, 0.382, 0.5, 0.618, 0.786)"
+      },
+      {
+        "name": "DEFAULT_EXT_RATIOS",
+        "value_repr": "(1.272, 1.618, 2.0)"
+      }
+    ]
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\levels.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "pivots_classic",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "fractal_points",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "k",
+            "annotation": "int",
+            "default": "2"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "sr_distance",
+        "args": [
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "k",
+            "annotation": "int",
+            "default": "2"
+          },
+          {
+            "name": "lookback",
+            "annotation": "int",
+            "default": "500"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "fibo_levels",
+        "args": [
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "k",
+            "annotation": "int",
+            "default": "2"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      },
+      {
+        "name": "round_levels",
+        "args": [
+          {
+            "name": "anchor",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "step",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "10"
+          }
+        ],
+        "returns": "List[float]",
+        "is_async": false
+      },
+      {
+        "name": "compute_adr",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "window",
+            "annotation": "int",
+            "default": "14"
+          },
+          {
+            "name": "tz",
+            "annotation": "str",
+            "default": "'UTC'"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "adr_distance_to_open",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "adr",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "tz",
+            "annotation": "str",
+            "default": "'UTC'"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "sr_overlap_score",
+        "args": [
+          {
+            "name": "price",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "sr_levels",
+            "annotation": "Sequence[float]",
+            "default": null
+          },
+          {
+            "name": "tol_pct",
+            "annotation": "float",
+            "default": "0.05"
+          }
+        ],
+        "returns": "float",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\__init__.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "_setup_logging",
+        "args": [
+          {
+            "name": "level",
+            "annotation": "str",
+            "default": "'INFO'"
+          }
+        ],
+        "returns": "None",
+        "is_async": false
+      },
+      {
+        "name": "main",
+        "args": [],
+        "returns": "int",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\__main__.py",
+    "classes": [],
+    "functions": [],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\core.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "sma",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": null
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "ema",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": null
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "wma",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": null
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "rsi",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "roc",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "10"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "atr",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "macd",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "fast",
+            "annotation": "int",
+            "default": "12"
+          },
+          {
+            "name": "slow",
+            "annotation": "int",
+            "default": "26"
+          },
+          {
+            "name": "signal",
+            "annotation": "int",
+            "default": "9"
+          }
+        ],
+        "returns": "Tuple[pd.Series, pd.Series, pd.Series]",
+        "is_async": false
+      },
+      {
+        "name": "bollinger",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          },
+          {
+            "name": "k",
+            "annotation": "float",
+            "default": "2.0"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "keltner",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          },
+          {
+            "name": "m",
+            "annotation": "float",
+            "default": "2.0"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "stochastic",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          },
+          {
+            "name": "d",
+            "annotation": "int",
+            "default": "3"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "cci",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "mfi",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "obv",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": "pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "williams_r",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "heikin_ashi",
+        "args": [
+          {
+            "name": "open_",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "parabolic_sar",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "af_start",
+            "annotation": "float",
+            "default": "0.02"
+          },
+          {
+            "name": "af_step",
+            "annotation": "float",
+            "default": "0.02"
+          },
+          {
+            "name": "af_max",
+            "annotation": "float",
+            "default": "0.2"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "IndicatorMap",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\divergences.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "pivots",
+        "args": [
+          {
+            "name": "series",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "k",
+            "annotation": "int",
+            "default": "2"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "divergence_flags",
+        "args": [
+          {
+            "name": "price",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "osc",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "k",
+            "annotation": "int",
+            "default": "2"
+          },
+          {
+            "name": "mode",
+            "annotation": "str",
+            "default": "'classic'"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\engine.py",
+    "classes": [
+      {
+        "name": "EngineConfig",
+        "bases": [],
+        "methods": []
+      },
+      {
+        "name": "IndicatorEngine",
+        "bases": [],
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "cfg",
+                "annotation": "EngineConfig",
+                "default": null
+              },
+              {
+                "name": "registry",
+                "annotation": "Dict[str, Any]",
+                "default": null
+              }
+            ],
+            "returns": null,
+            "is_async": false
+          },
+          {
+            "name": "_available_tfs",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              }
+            ],
+            "returns": "List[str]",
+            "is_async": false
+          },
+          {
+            "name": "_apply_one",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "base_df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              },
+              {
+                "name": "tf",
+                "annotation": "str",
+                "default": null
+              },
+              {
+                "name": "spec_str",
+                "annotation": "str",
+                "default": null
+              }
+            ],
+            "returns": "Dict[str, pd.Series]",
+            "is_async": false
+          },
+          {
+            "name": "apply_all",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              },
+              {
+                "name": "base_tf_fallback",
+                "annotation": "Optional[str]",
+                "default": "None"
+              }
+            ],
+            "returns": "pd.DataFrame",
+            "is_async": false
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "_available_timeframes",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          }
+        ],
+        "returns": "List[str]",
+        "is_async": false
+      },
+      {
+        "name": "_get_ohlc_view",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "tf",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "_ensure_utc_index",
+        "args": [
+          {
+            "name": "x",
+            "annotation": "pd.DataFrame | pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame | pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "_merge_on_base",
+        "args": [
+          {
+            "name": "base",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "feat",
+            "annotation": "pd.DataFrame | pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "_compute_feature_df_v2",
+        "args": [
+          {
+            "name": "df_in",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "ps",
+            "annotation": "ParsedSpec",
+            "default": null
+          },
+          {
+            "name": "base_tf",
+            "annotation": "str",
+            "default": null
+          },
+          {
+            "name": "view_cache",
+            "annotation": "Dict[str, pd.DataFrame]",
+            "default": null
+          }
+        ],
+        "returns": "Optional[pd.DataFrame]",
+        "is_async": false
+      },
+      {
+        "name": "run_specs_v2",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "specs",
+            "annotation": "Iterable[str]",
+            "default": null
+          },
+          {
+            "name": "base_tf",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\engine_old1_.py",
+    "classes": [
+      {
+        "name": "EngineConfig",
+        "bases": [],
+        "methods": []
+      },
+      {
+        "name": "IndicatorEngine",
+        "bases": [],
+        "methods": [
+          {
+            "name": "__init__",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "cfg",
+                "annotation": "EngineConfig",
+                "default": null
+              },
+              {
+                "name": "registry",
+                "annotation": "Dict[str, Any]",
+                "default": null
+              }
+            ],
+            "returns": null,
+            "is_async": false
+          },
+          {
+            "name": "_available_tfs",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              }
+            ],
+            "returns": "List[str]",
+            "is_async": false
+          },
+          {
+            "name": "_apply_one",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "base_df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              },
+              {
+                "name": "tf",
+                "annotation": "str",
+                "default": null
+              },
+              {
+                "name": "spec_str",
+                "annotation": "str",
+                "default": null
+              }
+            ],
+            "returns": "Dict[str, pd.Series]",
+            "is_async": false
+          },
+          {
+            "name": "apply_all",
+            "args": [
+              {
+                "name": "self",
+                "annotation": null,
+                "default": null
+              },
+              {
+                "name": "df",
+                "annotation": "pd.DataFrame",
+                "default": null
+              },
+              {
+                "name": "base_tf_fallback",
+                "annotation": "Optional[str]",
+                "default": "None"
+              }
+            ],
+            "returns": "pd.DataFrame",
+            "is_async": false
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "_available_timeframes",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          }
+        ],
+        "returns": "List[str]",
+        "is_async": false
+      },
+      {
+        "name": "_get_ohlc_view",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "tf",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "_ensure_utc_index",
+        "args": [
+          {
+            "name": "x",
+            "annotation": "pd.DataFrame | pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame | pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "_merge_features_on_base",
+        "args": [
+          {
+            "name": "base",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "feat",
+            "annotation": "pd.DataFrame | pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "_apply_spec_v2",
+        "args": [
+          {
+            "name": "df_in",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "spec_str",
+            "annotation": "str",
+            "default": null
+          },
+          {
+            "name": "base_tf",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "run_specs_v2",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "specs",
+            "annotation": "Iterable[str]",
+            "default": null
+          },
+          {
+            "name": "base_tf",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\extras_channel.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "donchian",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "chaikin_volatility",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "10"
+          },
+          {
+            "name": "roc",
+            "annotation": "int",
+            "default": "10"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\extras_trend.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "supertrend",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "period",
+            "annotation": "int",
+            "default": "10"
+          },
+          {
+            "name": "multiplier",
+            "annotation": "float",
+            "default": "3.0"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "adx_di",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "aroon",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "25"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "kama",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "10"
+          },
+          {
+            "name": "fast",
+            "annotation": "int",
+            "default": "2"
+          },
+          {
+            "name": "slow",
+            "annotation": "int",
+            "default": "30"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "dema",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "tema",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "hma",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "ichimoku",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "tenkan",
+            "annotation": "int",
+            "default": "9"
+          },
+          {
+            "name": "kijun",
+            "annotation": "int",
+            "default": "26"
+          },
+          {
+            "name": "span_b",
+            "annotation": "int",
+            "default": "52"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "ma_slope",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "price_col",
+            "annotation": "str",
+            "default": "'close'"
+          },
+          {
+            "name": "window",
+            "annotation": "int",
+            "default": "20"
+          },
+          {
+            "name": "method",
+            "annotation": "Literal['sma', 'ema']",
+            "default": "'ema'"
+          },
+          {
+            "name": "norm",
+            "annotation": "Literal['stdev', 'price', 'none']",
+            "default": "'stdev'"
+          },
+          {
+            "name": "eps",
+            "annotation": "float",
+            "default": "1e-12"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "_rsi_from_close",
+        "args": [
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "period",
+            "annotation": "int",
+            "default": "14"
+          },
+          {
+            "name": "eps",
+            "annotation": "float",
+            "default": "1e-12"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "rsi_zone",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "price_col",
+            "annotation": "str",
+            "default": "'close'"
+          },
+          {
+            "name": "period",
+            "annotation": "int",
+            "default": "14"
+          },
+          {
+            "name": "overbought",
+            "annotation": "float",
+            "default": "70.0"
+          },
+          {
+            "name": "oversold",
+            "annotation": "float",
+            "default": "30.0"
+          },
+          {
+            "name": "mid",
+            "annotation": "float",
+            "default": "50.0"
+          },
+          {
+            "name": "band",
+            "annotation": "float",
+            "default": "5.0"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\parser.py",
+    "classes": [
+      {
+        "name": "Spec",
+        "bases": [],
+        "methods": []
+      },
+      {
+        "name": "ParsedSpec",
+        "bases": [],
+        "methods": []
+      }
+    ],
+    "functions": [
+      {
+        "name": "_parse_args_list",
+        "args": [
+          {
+            "name": "arg_str",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "List[Any]",
+        "is_async": false
+      },
+      {
+        "name": "parse_spec",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "Spec",
+        "is_async": false
+      },
+      {
+        "name": "_split_top_level_commas",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "List[str]",
+        "is_async": false
+      },
+      {
+        "name": "_parse_value",
+        "args": [
+          {
+            "name": "token",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "Any",
+        "is_async": false
+      },
+      {
+        "name": "_parse_args_kwargs",
+        "args": [
+          {
+            "name": "argstr",
+            "annotation": "Optional[str]",
+            "default": null
+          }
+        ],
+        "returns": "Tuple[List[Any], Dict[str, Any]]",
+        "is_async": false
+      },
+      {
+        "name": "parse_spec_v2",
+        "args": [
+          {
+            "name": "spec",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "ParsedSpec",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\patterns.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "engulfing_flags",
+        "args": [
+          {
+            "name": "open_",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "doji_flag",
+        "args": [
+          {
+            "name": "open_",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "thresh",
+            "annotation": "float",
+            "default": "0.1"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "pinbar_flags",
+        "args": [
+          {
+            "name": "open_",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "ratio",
+            "annotation": "float",
+            "default": "2.0"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\registry.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "build_registry",
+        "args": [],
+        "returns": "Registry",
+        "is_async": false
+      },
+      {
+        "name": "get_indicator_v2",
+        "args": [
+          {
+            "name": "name",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "Optional[Callable[..., Any]]",
+        "is_async": false
+      },
+      {
+        "name": "list_all_indicators_v2",
+        "args": [
+          {
+            "name": "include_legacy",
+            "annotation": "bool",
+            "default": "True"
+          }
+        ],
+        "returns": "Dict[str, str]",
+        "is_async": false
+      },
+      {
+        "name": "get_indicator_v2",
+        "args": [
+          {
+            "name": "name",
+            "annotation": "str",
+            "default": null
+          }
+        ],
+        "returns": "Optional[Callable[..., Any]]",
+        "is_async": false
+      },
+      {
+        "name": "list_all_indicators_v2",
+        "args": [
+          {
+            "name": "include_legacy",
+            "annotation": "bool",
+            "default": "True"
+          }
+        ],
+        "returns": "Dict[str, str]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\utils.py",
+    "classes": [
+      {
+        "name": "TFView",
+        "bases": [],
+        "methods": []
+      }
+    ],
+    "functions": [
+      {
+        "name": "detect_timeframes",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          }
+        ],
+        "returns": "Dict[str, TFView]",
+        "is_async": false
+      },
+      {
+        "name": "slice_tf",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "view",
+            "annotation": "TFView",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "nan_guard",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "zscore",
+        "args": [
+          {
+            "name": "s",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "window",
+            "annotation": "int",
+            "default": null
+          },
+          {
+            "name": "min_periods",
+            "annotation": "int | None",
+            "default": "None"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "true_range",
+        "args": [
+          {
+            "name": "high",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": "pd.Series",
+            "default": null
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "compute_atr",
+        "args": [
+          {
+            "name": "df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "window",
+            "annotation": "int",
+            "default": "14"
+          }
+        ],
+        "returns": "pd.Series",
+        "is_async": false
+      },
+      {
+        "name": "detect_swings",
+        "args": [
+          {
+            "name": "price",
+            "annotation": "pd.Series",
+            "default": null
+          },
+          {
+            "name": "prominence",
+            "annotation": "Optional[float]",
+            "default": "None"
+          },
+          {
+            "name": "min_distance",
+            "annotation": "int",
+            "default": "5"
+          },
+          {
+            "name": "atr",
+            "annotation": "Optional[pd.Series]",
+            "default": "None"
+          },
+          {
+            "name": "atr_mult",
+            "annotation": "Optional[float]",
+            "default": "None"
+          },
+          {
+            "name": "tf",
+            "annotation": "Optional[str]",
+            "default": "None"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      },
+      {
+        "name": "zscore_distance",
+        "args": [
+          {
+            "name": "x",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "mu",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "sigma",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "eps",
+            "annotation": "float",
+            "default": "1e-12"
+          }
+        ],
+        "returns": "float",
+        "is_async": false
+      },
+      {
+        "name": "nearest_level_distance",
+        "args": [
+          {
+            "name": "price",
+            "annotation": "float",
+            "default": null
+          },
+          {
+            "name": "levels",
+            "annotation": "Sequence[float]",
+            "default": null
+          }
+        ],
+        "returns": "Dict[str, float]",
+        "is_async": false
+      },
+      {
+        "name": "levels_from_recent_legs",
+        "args": [
+          {
+            "name": "ohlc_df",
+            "annotation": "pd.DataFrame",
+            "default": null
+          },
+          {
+            "name": "n_legs",
+            "annotation": "int",
+            "default": "10"
+          },
+          {
+            "name": "ratios",
+            "annotation": "Optional[Iterable[float]]",
+            "default": "None"
+          },
+          {
+            "name": "prominence",
+            "annotation": "Optional[float]",
+            "default": "None"
+          },
+          {
+            "name": "min_distance",
+            "annotation": "int",
+            "default": "5"
+          },
+          {
+            "name": "atr_mult",
+            "annotation": "Optional[float]",
+            "default": "1.0"
+          }
+        ],
+        "returns": "pd.DataFrame",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  },
+  {
+    "module_path": "E:\\Bot-RL-2\\f04_features\\indicators\\volume.py",
+    "classes": [],
+    "functions": [
+      {
+        "name": "vwap_daily",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": null,
+            "default": null
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "vwap_rolling",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "100"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "adl",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": null,
+            "default": null
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "cmf",
+        "args": [
+          {
+            "name": "high",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "low",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "close",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "volume",
+            "annotation": null,
+            "default": null
+          },
+          {
+            "name": "n",
+            "annotation": "int",
+            "default": "20"
+          }
+        ],
+        "returns": null,
+        "is_async": false
+      },
+      {
+        "name": "registry",
+        "args": [],
+        "returns": "Dict[str, callable]",
+        "is_async": false
+      }
+    ],
+    "registry_calls": [],
+    "fib_constants": []
+  }
+]

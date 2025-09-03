@@ -2,12 +2,13 @@
 # f04_features/fibonacci_3.py
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Sequence
+from typing import Any, Dict, List, Tuple, Optional, Sequence
 import logging
 import numpy as np
 import pandas as pd
 
 from f04_features.indicators.levels import sr_overlap_score
+from f10_utils.config_loader import ConfigLoader
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -327,4 +328,327 @@ def fib_ext_targets(
 
     df = pd.DataFrame(targets).sort_values("price").reset_index(drop=True)
     return df
+
+
+
+# === [PATCH] f04_features/indicators/fibonacci.py :: Config-aware wrappers === pach_1
+# -*- coding: utf-8 -*-
+# توجه: این بخش را در ابتدای فایل (پس از importهای موجود) اضافه کنید یا نزدیک بخش ثابت‌ها.
+# هدف: افزودن خوانش اختیاری پارامترها از config.yaml «بدون تغییر» منطق توابع موجود.
+#  - هیچ رفتار قبلی را نمی‌شکنیم؛ فقط توابع wrapper جدید می‌سازیم که از کانفیگ بخوانند.
+#  - اگر کلیدهای کانفیگ موجود نباشند، به مقادیر پیش‌فرض فعلی برمی‌گردیم.
+#  - پیام‌های اجرایی (log) انگلیسی هستند؛ توضیحات فارسی.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# راهنمای ساختار کلیدهای کانفیگ (اختیاری):
+# features:
+#   fibonacci:
+#     retracement_ratios: [0.236, 0.382, 0.5, 0.618, 0.786, 0.886]
+#     extension_ratios:   [1.272, 1.618, 2.0, 2.618, 3.618]
+#     sl_atr_mult:        1.5
+#     golden_zone:
+#       ratios: [0.382, 0.618]
+#     cluster:
+#       tol_pct:       0.08
+#       prefer_ratio:  0.618
+#       tf_weights:    {"M15":0.5, "H1":1.0, "H4":1.5, "D1":2.0}
+#       w_trend:       10.0
+#       w_rsi:         10.0
+#       w_sr:          10.0
+#       sr_tol_pct:    0.05
+#
+# نکته: اگر هر کلیدی موجود نباشد، به پیش‌فرض‌های فعلی ماژول برمی‌گردیم.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _deep_get(d: Dict[str, Any], path: str, default: Any = None) -> Any:
+    """دسترسی امن به مسیرهای تو در توی دیکشنری با dot-notation؛ در نبود کلید، مقدار پیش‌فرض برمی‌گردد."""
+    cur: Any = d
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+
+def _load_fibo_cfg() -> Dict[str, Any]:
+    """
+    بارگذاری کل کانفیگ و استخراج زیربخش فیبوناچی.
+    اگر لودر/فایل موجود نباشد یا خطایی رخ دهد، دیکشنری خالی بازمی‌گردد.
+    """
+    try:
+        cfg_all: Dict[str, Any] = ConfigLoader().get_all()
+    except Exception as e:
+        # پیام انگلیسی برای log
+        logger.debug("Failed to load config for Fibonacci wrappers: %s", e)
+        return {}
+    fib = _deep_get(cfg_all, "features.fibonacci", {}) or {}
+    if not isinstance(fib, dict):
+        fib = {}
+    return fib
+
+
+# ----------------------------------------------------------------------
+# Wrapper 1: golden_zone_cfg  → خواندن پارامترها از config و فراخوانی golden_zone
+# ----------------------------------------------------------------------
+def golden_zone_cfg(
+    swings,  # pd.DataFrame
+    ratios: Optional[Tuple[float, float]] = None,
+    extra_ratios: Optional[Sequence[float]] = None,
+):
+    """
+    نسخهٔ کانفیگ‌محور برای golden_zone:
+      - اگر ratios/extra_ratios داده نشود، از config.yaml خوانده می‌شود.
+      - در صورت نبود کلیدها در کانفیگ، از پیش‌فرض‌های اصلی ماژول استفاده می‌گردد.
+
+    ورودی‌ها:
+        swings: دیتافریم سوئینگ‌ها
+        ratios: نسبت‌های بازگشتی اصلی زون طلایی (اختیاری؛ اگر None → از کانفیگ/پیش‌فرض)
+        extra_ratios: سایر نسبت‌های رتریسمنت برای محاسبات تکمیلی (اختیاری)
+
+    خروجی:
+        pd.DataFrame مطابق خروجی تابع اصلی golden_zone
+    """
+    fib_cfg = _load_fibo_cfg()
+
+    # نسبت‌های زون طلایی: اولویت با آرگومان تابع → سپس کانفیگ → سپس پیش‌فرض فعلی
+    gz_ratios = ratios
+    if gz_ratios is None:
+        cfg_gz = fib_cfg.get("golden_zone", {}) if isinstance(fib_cfg, dict) else {}
+        if isinstance(cfg_gz, dict):
+            cfg_r = cfg_gz.get("ratios")
+            if isinstance(cfg_r, (list, tuple)) and len(cfg_r) == 2:
+                gz_ratios = (float(cfg_r[0]), float(cfg_r[1]))
+
+    if gz_ratios is None:
+        # fallback به پیش‌فرض تابع اصلی (0.382, 0.618)
+        gz_ratios = (0.382, 0.618)
+
+    # نسبت‌های رتریسمنت تکمیلی
+    extra = extra_ratios
+    if extra is None:
+        cfg_extra = fib_cfg.get("retracement_ratios")
+        if isinstance(cfg_extra, (list, tuple)) and cfg_extra:
+            extra = tuple(float(x) for x in cfg_extra)
+
+    if extra is None:
+        # fallback به ثابت‌های فعلی ماژول (DEFAULT_RETR_RATIOS)
+        try:
+            extra = DEFAULT_RETR_RATIOS  # noqa: F821  (در همین فایل تعریف شده)
+        except NameError:
+            extra = (0.236, 0.382, 0.5, 0.618, 0.786)
+
+    logger.info("Golden zone (config-driven) → ratios=%s, extra=%s", gz_ratios, extra)
+    return golden_zone(swings=swings, ratios=gz_ratios, extra_ratios=extra)  # noqa: F821
+
+
+# ----------------------------------------------------------------------
+# Wrapper 2: fib_cluster_cfg  → خواندن پارامترها از config و فراخوانی fib_cluster
+# ----------------------------------------------------------------------
+# نسخهٔ به‌روزِ رَپر: پارامترهای اختیاری ref_price/adr_value/atr_value اضافه شد
+def fib_cluster_cfg(
+    tf_levels: Dict[str, "pd.DataFrame"],  # type: ignore[name-defined]
+    tol_pct: Optional[float] = None,
+    prefer_ratio: Optional[float] = None,
+    tf_weights: Optional[Dict[str, float]] = None,
+    ma_slope: Optional["pd.Series"] = None,      # type: ignore[name-defined]
+    rsi_zone_score: Optional["pd.Series"] = None, # type: ignore[name-defined]
+    sr_levels: Optional[Sequence[float]] = None,
+    ref_time: Optional["pd.Timestamp"] = None,    # type: ignore[name-defined]
+    w_trend: Optional[float] = None,
+    w_rsi: Optional[float] = None,
+    w_sr: Optional[float] = None,
+    sr_tol_pct: Optional[float] = None,
+
+    # ⬇️ ورودی‌های اختیاری برای حالت Adaptive (تغییر جدید)
+    ref_price: Optional[float] = None,  # قیمت مرجع (اگر None باشد، تلاش می‌کنیم از tf_levels حدس بزنیم)
+    adr_value: Optional[float] = None,  # مقدار ADR (مثلاً پیپ/نقطه)
+    atr_value: Optional[float] = None,  # مقدار ATR (مثلاً پیپ/نقطه)
+):
+    """
+    نسخهٔ کانفیگ‌محور برای fib_cluster (به‌روزرسانی‌شده با Adaptive tol_pct):
+      - اگر tol_pct آرگومان داشته باشیم، همان استفاده می‌شود (اولویت اول).
+      - اگر tol_pct آرگومان None باشد:
+          * ابتدا مقدار ثابت از کانفیگ خوانده می‌شود (cluster.tol_pct).
+          * اگر Adaptive Tol در کانفیگ فعال باشد، و ورودی کافی داشته باشیم،
+            tol_pct بر اساس ADR یا ATR محاسبه و جایگزین می‌شود.
+      - سایر پارامترها مانند گذشته از آرگومان → کانفیگ → پیش‌فرض پر می‌شوند.
+    """
+    fib_cfg = _load_fibo_cfg()
+    cluster_cfg = fib_cfg.get("cluster", {}) if isinstance(fib_cfg, dict) else {}
+
+    # 1) مقدار پایهٔ tol_pct (ثابت) از آرگومان یا کانفیگ
+    tol = tol_pct if tol_pct is not None else float(cluster_cfg.get("tol_pct", 0.08))
+
+    # 2) سایر پارامترها (بدون تغییر)
+    pr  = prefer_ratio if prefer_ratio is not None else float(cluster_cfg.get("prefer_ratio", 0.618))
+    tfw = tf_weights  if tf_weights  is not None else cluster_cfg.get("tf_weights")
+    wtr = w_trend     if w_trend     is not None else float(cluster_cfg.get("w_trend", 10.0))
+    wr  = w_rsi       if w_rsi       is not None else float(cluster_cfg.get("w_rsi", 10.0))
+    wsr = w_sr        if w_sr        is not None else float(cluster_cfg.get("w_sr", 10.0))
+    srt = sr_tol_pct  if sr_tol_pct  is not None else float(cluster_cfg.get("sr_tol_pct", 0.05))
+
+    # 3) اگر Adaptive Tol فعال است، تلاش برای محاسبه tol_pct انطباقی
+    adapt_cfg = cluster_cfg.get("adaptive_tol", {}) if isinstance(cluster_cfg, dict) else {}
+    if isinstance(adapt_cfg, dict) and bool(adapt_cfg.get("enabled", False)) and tol_pct is None:
+        mode = str(adapt_cfg.get("mode", "ADR")).upper()   # ADR | ATR
+        k = float(adapt_cfg.get("k", 1.0))                 # ضریب مقیاس
+        min_pct = float(adapt_cfg.get("min_pct", 0.02))    # حداقل درصد
+        max_pct = float(adapt_cfg.get("max_pct", 0.15))    # حداکثر درصد
+
+        # ref_price را اگر داده نشده، سعی می‌کنیم حدس بزنیم (ممکن است نتیجه ندهد)
+        rp = ref_price if ref_price is not None else _infer_ref_price_from_tf_levels(tf_levels, ref_time)
+
+        # انتخاب منبع نوسان
+        vol_value = None
+        if mode == "ADR":
+            vol_value = adr_value
+        elif mode == "ATR":
+            vol_value = atr_value
+
+        # محاسبه tol انطباقی در صورت داشتن ورودی کافی
+        tol_adaptive = _compute_adaptive_tol_pct(rp, vol_value, k=k, min_pct=min_pct, max_pct=max_pct)
+        if tol_adaptive is not None:
+            logger.info(
+                "Adaptive tol_pct enabled → mode=%s k=%.3f ref=%.5f vol=%.5f → tol_pct=%.5f",
+                mode, k, float(rp), float(vol_value), tol_adaptive
+            )
+            tol = tol_adaptive
+        else:
+            logger.info(
+                "Adaptive tol_pct enabled but insufficient inputs (mode=%s). Falling back to fixed tol_pct=%.5f",
+                mode, tol
+            )
+
+    logger.info(
+        "Fibo cluster (config-driven) → tol=%.5f prefer=%.3f tfw=%s w_trend=%.2f w_rsi=%.2f w_sr=%.2f sr_tol=%.3f",
+        tol, pr, str(tfw), wtr, wr, wsr, srt
+    )
+
+    return fib_cluster(  # noqa: F821
+        tf_levels=tf_levels,
+        tol_pct=tol,
+        prefer_ratio=pr,
+        tf_weights=tfw,
+        ma_slope=ma_slope,
+        rsi_zone_score=rsi_zone_score,
+        sr_levels=sr_levels,
+        ref_time=ref_time,
+        w_trend=wtr,
+        w_rsi=wr,
+        w_sr=wsr,
+        sr_tol_pct=srt,
+    )
+
+
+# ----------------------------------------------------------------------
+# Wrapper 3: fib_ext_targets_cfg  → خواندن پارامترها از config و فراخوانی fib_ext_targets
+# ----------------------------------------------------------------------
+def fib_ext_targets_cfg(
+    entry_price: float,
+    leg_low: float,
+    leg_high: float,
+    side: str,
+    ext_ratios: Optional[Sequence[float]] = None,
+    sl_atr: Optional[float] = None,
+    sl_atr_mult: Optional[float] = None,
+):
+    """
+    نسخهٔ کانفیگ‌محور برای fib_ext_targets:
+      - اگر ext_ratios/sl_atr_mult داده نشود، از کانفیگ خوانده می‌شود.
+      - در نبود کلیدها، به پیش‌فرض‌های فعلی تابع اصلی بازمی‌گردیم.
+    """
+    fib_cfg = _load_fibo_cfg()
+
+    exts = ext_ratios
+    if exts is None:
+        cfg_exts = fib_cfg.get("extension_ratios")
+        if isinstance(cfg_exts, (list, tuple)) and cfg_exts:
+            exts = tuple(float(x) for x in cfg_exts)
+
+    if exts is None:
+        try:
+            exts = DEFAULT_EXT_RATIOS  # noqa: F821
+        except NameError:
+            exts = (1.272, 1.618, 2.0)
+
+    sl_mult = sl_atr_mult
+    if sl_mult is None:
+        cfg_slm = fib_cfg.get("sl_atr_mult")
+        if isinstance(cfg_slm, (int, float)):
+            sl_mult = float(cfg_slm)
+
+    if sl_mult is None:
+        sl_mult = 1.5  # پیش‌فرض فعلی تابع اصلی
+
+    logger.info("Fibo ext targets (config-driven) → ext=%s sl_atr_mult=%.3f", str(exts), sl_mult)
+
+    return fib_ext_targets(  # noqa: F821
+        entry_price=entry_price,
+        leg_low=leg_low,
+        leg_high=leg_high,
+        side=side,
+        ext_ratios=exts,
+        sl_atr=sl_atr,
+        sl_atr_mult=sl_mult,
+    )
+
+# ────────────────────────────────────────────────────────────────────────────── Pach_2
+# Adaptive tol_pct for fib_cluster (Option 1)
+# - اگر در کانفیگ فعال باشد و ورودی لازم را داشته باشیم، tol_pct بر اساس ADR یا ATR محاسبه می‌شود.
+# - اگر ورودی کافی نبود، به مقدار ثابت (config/پیش‌فرض) برمی‌گردیم.
+# - هیچ تغییری در تابع اصلی fib_cluster نمی‌دهیم؛ فقط رَپر fib_cluster_cfg را هوشمند می‌کنیم.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _infer_ref_price_from_tf_levels(
+    tf_levels: Dict[str, "pd.DataFrame"],  # type: ignore[name-defined]
+    ref_time: Optional["pd.Timestamp"] = None  # type: ignore[name-defined]
+) -> Optional[float]:
+    """
+    تلاش ابتدایی برای حدس ref_price از روی tf_levels:
+      - tf_levels معمولاً خروجی سطوح است، نه قیمت. بنابراین اغلب ref_price از اینجا قابل‌استخراج نیست.
+      - این تابع برای سازگاری آینده گذاشته شده؛ اگر دیتافریم‌ها ستونی مانند 'close' داشته باشند، از آخرین مقدار استفاده می‌کند.
+      - در غیر این صورت None برمی‌گرداند و رَپر از مقدار ثابت tol_pct استفاده می‌کند.
+
+    توجه: این حدس‌زدن اختیاری است و اگر به نتیجه نرسیم، رفتار قبلی حفظ می‌شود.
+    """
+    try:
+        for _, df in tf_levels.items():
+            if hasattr(df, "columns"):
+                cols = [c.lower() for c in df.columns]
+                if "close" in cols:
+                    # اگر ref_time داریم، نزدیک‌ترین مقدار قبل یا در ref_time را برداشت می‌کنیم
+                    if hasattr(df, "index") and df.index.size > 0 and ref_time is not None:
+                        # فیلتر تا ref_time
+                        subset = df.loc[df.index <= ref_time]
+                        if subset.shape[0] > 0:
+                            return float(subset["close"].iloc[-1])
+                    # در غیر این صورت آخرین مقدار
+                    return float(df["close"].iloc[-1])
+    except Exception as e:
+        logger.debug("Could not infer ref price from tf_levels: %s", e)
+    return None
+
+
+def _compute_adaptive_tol_pct(
+    ref_price: Optional[float],
+    vol_value: Optional[float],
+    k: float,
+    min_pct: float,
+    max_pct: float
+) -> Optional[float]:
+    """
+    محاسبه tol_pct انطباقی:
+      tol_pct = clip( (vol_value / ref_price) * k , [min_pct, max_pct] )
+
+    اگر هرکدام از ref_price یا vol_value نداشتیم، None برمی‌گردانیم.
+    """
+    if ref_price is None or vol_value is None:
+        return None
+    try:
+        raw = (float(vol_value) / float(ref_price)) * float(k)
+        # محدودسازی در بازهٔ [min_pct, max_pct]
+        return max(min(raw, max_pct), min_pct)
+    except Exception as e:
+        logger.debug("Adaptive tol_pct computation failed: %s", e)
+        return None
 

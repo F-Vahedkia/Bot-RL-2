@@ -25,7 +25,7 @@ python -m f02_data.mt5_data_loader   `
 
 python -m f02_data.mt5_data_loader  `
     -c .\f01_config\config.yaml     `
-    --symbols XAUUSD                `
+    --symbols XAUUSD EURUSD GBPUSD  `
     --timeframes M1 M5 M15 M30 H1 H4 D1 W1 `
     --lookback 999999                      `
     --format parquet
