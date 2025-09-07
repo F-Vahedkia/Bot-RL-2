@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 # پارسر/رجیستری نسخهٔ جدید (v2)
-from f04_features.indicators.parser import parse_spec_v2, ParsedSpec
-from f04_features.indicators.registry import get_indicator_v2
+from .parser import parse_spec_v2, ParsedSpec
+from .registry import get_indicator_v2
 
 # ابزارهای موتور قدیمی (برای سازگاری عقب‌رو)
 from .utils import detect_timeframes, slice_tf, nan_guard

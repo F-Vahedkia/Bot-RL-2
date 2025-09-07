@@ -1,7 +1,8 @@
+# f15_scripts/check_mt5_credentials.py
 # -*- coding: utf-8 -*-
-#!/usr/bin/env python
+
 """
-scripts/check_mt5_credentials.py
+f15_scripts/check_mt5_credentials.py
 تستِ اتصال MT5 با بارگذاری کانفیگِ صریح (بدون Override از ENV)
 
 کارها:
@@ -55,7 +56,7 @@ def main() -> int:
         # 1) بارگذاری صریح کانفیگ، بدون ENV override
         cfg = load_config(args.config, enable_env_override=False)
         creds = (cfg.get("mt5_credentials") or {})
-        log.info("mt5_credentials از کانفیگ: %s", {
+        log.info("mt5_credentials from config: %s", {
             "login": creds.get("login"),
             "server": creds.get("server"),
             "terminal_path": creds.get("terminal_path") or creds.get("path"),
@@ -66,20 +67,20 @@ def main() -> int:
         conn = MT5Connector(config=cfg)
         ok = conn.initialize()
         if not ok:
-            log.critical("اتصال/ورود به MT5 ناموفق بود. لطفاً login/password/server/terminal_path را بررسی کنید.")
+            log.critical("Connection/login to MT5 failed. Please check login/password/server/terminal_path.")
             return 2
 
         # 3) گزارش سلامت (اختیاری: چک تیک یک نماد برای اندازه‌گیری تاخیر)
         health = conn.health_check(sample_symbol=args.symbol)
-        log.info("گزارش سلامت: %s", health)
+        log.info("Health Report: %s", health)
 
         # 4) پایان
         conn.shutdown()
-        log.info("✅ تست موفق بود.")
+        log.info("✅ The test was successful.")
         return 0
 
     except Exception as ex:
-        logging.getLogger("check_mt5").exception("خطا: %s", ex)
+        logging.getLogger("check_mt5").exception("error: %s", ex)
         return 1
 
 if __name__ == "__main__":

@@ -19,13 +19,13 @@ Data Loader برای MT5 (Bot-RL-1)
 نمونه اجرا (از ریشه‌ی ریپو):
 python -m f02_data.mt5_data_loader   `
     --config f01_config/config.yaml  `
-    --symbols XAUUSD EURUSD          `
-    --timeframes M5 H1               `
+    --symbols XAUUSD                 `
+    --timeframes M1 M5 M30 H1        `
     --format csv
 
 python -m f02_data.mt5_data_loader  `
     -c .\f01_config\config.yaml     `
-    --symbols XAUUSD                `
+    --symbols XAUUSD EURUSD GBPUSD  `
     --timeframes M1 M5 M15 M30 H1 H4 D1 W1 `
     --lookback 999999                      `
     --format parquet

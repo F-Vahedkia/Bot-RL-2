@@ -4,6 +4,7 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
+from typing import Dict
 
 # VWAP با ریست روزانه (UTC)
 def vwap_daily(high, low, close, volume):
@@ -35,8 +36,6 @@ def cmf(high, low, close, volume, n: int = 20):
     den = volume.rolling(n, min_periods=n).sum().replace(0, np.nan)
     return (num/den).astype("float32")
 
-from typing import Dict
-
 def registry() -> Dict[str, callable]:
     def make_vwap_daily(df, **_):
         return {"vwap_daily": vwap_daily(df["high"], df["low"], df["close"], df["volume"])}
@@ -52,3 +51,13 @@ def registry() -> Dict[str, callable]:
         "adl": make_adl,
         "cmf": make_cmf,
     }
+
+
+'''
+vwap_daily(high, low, close, volume)
+def vwap_rolling(high, low, close, volume, n: int = 100)
+def adl(high, low, close, volume):
+def cmf(high, low, close, volume, n: int = 20):
+def registry() -> Dict[str, callable]:
+'''
+

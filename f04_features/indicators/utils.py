@@ -7,12 +7,20 @@
 - zscore، true_range
 """
 from __future__ import annotations
-from typing import Sequence, Optional, Dict, Tuple, List, Iterable
+from typing import Sequence, Optional, Dict, Tuple, List, Iterable, Any
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 import numpy as np
 import pandas as pd
+
+# وزن‌دهی — نام ستون‌های قابل‌قبول (اولین موجود انتخاب می‌شود)
+DEFAULT_MA_SLOPE_CANDIDATES: List[str] = [
+    "__ma_slope@M5", "__ma_slope@H1", "__ma_slope@H4"
+]
+DEFAULT_RSI_SCORE_CANDIDATES: List[str] = [
+    "__rsi_zone@H1__rsi_zone_score", "__rsi_zone@H4__rsi_zone_score"
+]
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -24,6 +32,123 @@ class TFView:
     cols: Dict[str, str]  # map: std_name -> df_column_name
 
 _TF_REGEX = re.compile(r"^(?P<tf>[A-Z0-9]+)_(?P<field>open|high|low|close|tick_volume|spread)$", re.IGNORECASE)
+
+
+# ======================================================================================= start
+# FiboTestConfig: پیکربندی تستِ مستقل از scripts  (Test-only, not runtime defaults)
+# ----------------------------------------------------------------------
+# توضیح آموزشی (فارسی):
+# این کلاس فقط برای سناریوهای تست/وایرینگ سبک استفاده می‌شود تا وابستگی به f15_scripts
+# حذف شود. اگر فولدر scripts پاک شود، این کلاس هنوز داخل هسته باقی می‌ماند.
+# - مقادیر پیش‌فرض مطابق بلوک «پیکربندی تست» قبلی هستند.
+# - بعداً اگر کلیدهای متناظر از قبل در config.yaml موجود باشند، می‌توانیم همین کلاس
+#   را از روی کانفیگ پُر کنیم (طبق قانون کانفیگ شما: اگر کلید موجود بود، تکراری نسازیم).
+# - پیام‌های اجرایی در این کلاس نداریم؛ فقط داده و هِلپرهای سبک.
+# ======================================================================
+@dataclass
+class FiboTestConfig:
+    # مسیر دیتاست پردازش‌شده (در صورت نیاز برای سناریوی تست)
+    DATA_FILE: str = r"f02_data/processed/XAUUSD/M1.parquet"
+
+    # تایم‌فریم‌ها و پنجرهٔ برش دادهٔ اخیر
+    TFS: List[str] = field(default_factory=lambda: ["H1", "H4"])
+    TAILS: Dict[str, int] = field(default_factory=lambda: {"H1": 1500, "H4": 1000})
+    N_LEGS: int = 10  # تعداد لگ‌های اخیر برای هر TF
+
+    # پارامترهای خوشه‌بندی فیبو (درصدها به واحد percent هستند)
+    TOL_PCT: float = 0.20          # پنجرهٔ همگرایی خوشه‌ها (٪)
+    PREFER_RATIO: float = 0.618    # نسبت مرجح
+
+    # پارامترهای سطوح رُند S/R
+    SR_STEP: float = 10.0          # گام سطوح رُند (مثلاً XAUUSD≈10)
+    SR_COUNT: int = 25             # تعداد سطوح رُند حول قیمت آخر
+    SR_TOL_PCT: float = 0.05       # تلورانس نسبی برای همپوشانی با S/R
+
+    # وزن‌دهی مؤلفه‌های کانفلوئنس
+    W_TREND: float = 10.0          # وزن ترند (MA slope)
+    W_RSI: float = 10.0            # وزن RSI zone
+    W_SR: float = 10.0             # وزن همپوشانی S/R
+
+    # ------------------------ هِلپرهای مصرف ------------------------
+    def sr_levels(self, ref_price: float) -> List[float]:
+        """
+        توضیح آموزشی (فارسی):
+          بر اساس قیمت مرجع، سطوح رُند را به‌صورت متقارن می‌سازد تا
+          به fib_cluster / fib_cluster_cfg پاس بدهیم.
+        """
+        return round_levels(ref=ref_price, step=self.SR_STEP, count=self.SR_COUNT)
+
+    def to_cluster_kwargs(self) -> Dict[str, Any]:
+        """
+        توضیح آموزشی (فارسی):
+          پارامترهای مرتبط با خوشه‌بندی را در قالب یک دیکشنری آماده می‌کند
+          تا به wrapper یا خود fib_cluster پاس داده شوند.
+        """
+        return {
+            "tol_pct": self.TOL_PCT,
+            "prefer_ratio": self.PREFER_RATIO,
+            # وزن‌ها و تلورانس SR معمولاً در امضای wrapper مصرف می‌شوند:
+            "w_trend": self.W_TREND,
+            "w_rsi": self.W_RSI,
+            "w_sr": self.W_SR,
+            "sr_tol_pct": self.SR_TOL_PCT,
+        }
+
+# ======================================================================
+# هِلپر عمومی S/R: تولید سطوح رُندِ متقارن پیرامون ref
+# ======================================================================
+def round_levels(ref: float, step: float, count: int) -> List[float]:
+    """
+    توضیح آموزشی (فارسی):
+      حول قیمت مرجع، مجموعه‌ای از سطوح رُند با گام ثابت تولید می‌کند.
+      خروجی: [ref - k*step, ..., ref, ..., ref + k*step] با طول count
+    """
+    if count <= 0 or step <= 0:
+        return []
+    half = count // 2
+    start = ref - half * step
+    return [start + i * step for i in range(count)]
+
+''' نمونه استفاده:
+# از هسته:
+from f04_features.indicators.utils import FiboTestConfig
+
+cfg = FiboTestConfig()
+# مثالِ استفاده:
+cluster_kwargs = cfg.to_cluster_kwargs()
+sr_levels = cfg.sr_levels(ref_price=last_close_price)
+# سپس این‌ها را به fib_cluster_cfg / fib_cluster پاس بده.
+'''
+# ======================================================================================= end
+
+
+"""استخراج نمای استاندارد OHLC از ستون‌های دارای prefix همان TF."""
+def ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
+    cols = {}
+    for k in ["open", "high", "low", "close", "tick_volume", "spread"]:
+        c = f"{tf}_{k}"
+        if c in df.columns:
+            cols[k] = df[c]
+    out = pd.DataFrame(cols).dropna(how="all")
+    if out.empty:
+        raise ValueError(f"OHLC for TF={tf} not found")
+    out.index = pd.to_datetime(out.index, utc=True)
+    out.sort_index(inplace=True)
+    return out
+
+"""
+یک هلپر عمومی برای انتخاب اولین ستون موجود از چند نامِ کاندید.
+اولین ستونی که در دیتافریم موجود است را برمی‌گرداند؛ در غیر این‌صورت None.
+"""
+def pick_first_existing(df: pd.DataFrame, candidates: Sequence[str]) -> Optional[pd.Series]:
+
+    for c in candidates:
+        if c in df.columns:
+            s = df[c]
+            if s is not None and len(s) > 0:
+                return s
+    return None
+
 
 def detect_timeframes(df: pd.DataFrame) -> Dict[str, TFView]:
     buckets: Dict[str, Dict[str, str]] = {}

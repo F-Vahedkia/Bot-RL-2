@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 from typing import Literal, Optional, Dict
-from .core import atr, ema, sma, wma
 import logging
 import numpy as np
 import pandas as pd
+
+from .core import atr, ema, sma, wma
+from f04_features.indicators.core import rsi as rsi_core
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -157,6 +159,7 @@ def ma_slope(
 # =========================
 # RSI Zone flags/score
 # =========================
+'''
 def _rsi_from_close(close: pd.Series, period: int = 14, eps: float = 1e-12) -> pd.Series:
     """
     محاسبهٔ RSI ساده بدون وابستگی بیرونی (SMA-based):
@@ -173,7 +176,7 @@ def _rsi_from_close(close: pd.Series, period: int = 14, eps: float = 1e-12) -> p
     rsi = 100.0 - (100.0 / (1.0 + rs))
     rsi.name = f"RSI_{period}"
     return rsi
-
+'''
 
 def rsi_zone(
     df: pd.DataFrame,
@@ -197,7 +200,8 @@ def rsi_zone(
         raise ValueError(f"DF must contain column '{price_col}'")
 
     close = df[price_col].astype(float)
-    rsi = _rsi_from_close(close, period=period)
+    #rsi = _rsi_from_close(close, period=period)
+    rsi = rsi_core(close, period=period)
 
     is_ob = (rsi >= overbought)
     is_os = (rsi <= oversold)

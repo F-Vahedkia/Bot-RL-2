@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # f02_data/data_handler.py
 r"""
-DataHandler (Bot-RL-1)
+DataHandler (Bot-RL-2)
 ----------------------
 هدف:
 - دادهٔ خام هر تایم‌فریم را از data/raw/<SYMBOL>/<TF>.(csv|parquet) می‌خوانَد،
@@ -39,22 +39,23 @@ DataHandler (Bot-RL-1)
 python -m f02_data.data_handler  `
     -c .\f01_config\config.yaml  `
     --symbol XAUUSD              `
-    --timeframes M5 M30 H1       `
+    --timeframes M1 M5 M30 H1    `
     --format parquet
 
 - فرمان اجرای جدید برنامه
 -  همراه با base_tf
 python -m f02_data.data_handler    `
     -c .\f01_config\config.yaml    `
-    --symbol XAUUSD --base-tf M1    `
-    --timeframes M1 M5 M15 M30 H1 H4 D1 W1  `
+    --symbol XAUUSD                `
+    --base-tf H1                   `
+    --timeframes H1 H4 D1 W1       `
     --format parquet
 
 """
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Iterable, Tuple
 from pathlib import Path
 from datetime import datetime, time, timezone
 import logging

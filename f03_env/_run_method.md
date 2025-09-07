@@ -11,3 +11,4 @@ python -m f03_env.trading_env --symbol XAUUSD -c .\f01_config\config.yaml --base
 
 # 3) تست دود با پاداش atr_norm (به نوسان وابسته)
 python -m f03_env.trading_env --symbol XAUUSD -c .\f01_config\config.yaml --base-tf M1 --window 128 --steps 512 --split train --reward atr_norm --normalize
+python -m f03_env.trading_env --symbol XAUUSD -c .\f01_config\config.yaml --base-tf M5 --window 128 --steps 512 --split train --reward atr_norm --normalize

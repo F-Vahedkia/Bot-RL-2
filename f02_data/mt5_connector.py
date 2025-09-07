@@ -35,8 +35,8 @@ logger.addHandler(logging.NullHandler())
 try:
     import MetaTrader5 as mt5  # type: ignore
     _HAS_MT5 = True
-except Exception as ex:  # pragma: no cover
-    mt5 = None  # type: ignore
+except Exception as ex:        # pragma: no cover
+    mt5 = None                 # type: ignore
     _HAS_MT5 = False
     logger.error("MetaTrader5 package not available: %s", ex)
 

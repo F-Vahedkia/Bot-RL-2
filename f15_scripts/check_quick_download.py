@@ -12,7 +12,12 @@ scripts/check_quick_download.py
 5) چاپ خلاصه‌ی خروجی و متادیتا (rows و زمان آخرین کندل)
 
 روش اجرا (از ریشه‌ی ریپو):
-    python .\f15_scripts\check_quick_download.py -c .\f01_config\config.yaml --symbol XAUUSD --tf M5 --lookback 1000 --format parquet
+python .\f15_scripts\check_quick_download.py `
+    -c .\f01_config\config.yaml  `
+    --symbol USDCAD  `
+    --tf M5  `
+    --lookback 1000  `
+    --format parquet
 اگر آرگومان‌ها را ندهید، مقادیر پیش‌فرض استفاده می‌شود.
 """
  

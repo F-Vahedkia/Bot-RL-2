@@ -4,7 +4,7 @@
 اندیکاتورهای پایه (Bot-RL-1) – بدون look-ahead
 """
 from __future__ import annotations
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Literal
 import numpy as np
 import pandas as pd
 from .utils import true_range
@@ -23,6 +23,7 @@ def wma(s: pd.Series, n: int) -> pd.Series:
 
 # اسیلاتورها
 
+'''
 def rsi(close: pd.Series, n: int = 14) -> pd.Series:
     delta = close.diff()
     up = delta.clip(lower=0.0)
@@ -32,6 +33,46 @@ def rsi(close: pd.Series, n: int = 14) -> pd.Series:
     rs = roll_up / (roll_down.replace(0, np.nan))
     out = 100.0 - (100.0 / (1.0 + rs))
     return out.astype("float32")
+'''
+# ============================================================
+# Canonical RSI (core-level)  — مرجع واحد
+# ============================================================
+def rsi(
+    close: pd.Series,
+    length: int = 14,
+    method: Literal["ema", "wilders"] = "ema"
+) -> pd.Series:
+    """
+    توضیح آموزشی (فارسی):
+      این پیاده‌سازی «نسخهٔ مرجع» RSI در هسته است تا همهٔ ماژول‌ها از همین استفاده کنند.
+      - ورودی: سری قیمت بسته‌شدن.
+      - طول: پیش‌فرض 14.
+      - method: 'ema' (پیش‌فرض) یا 'wilders' (تقریب کلاسیک RSI).
+      خروجی: سری RSI با طول برابر ورودی.
+
+    English:
+      Canonical RSI implementation for the whole project.
+      Returns a pandas Series aligned with `close`.
+    """
+    if close is None or len(close) == 0:
+        return pd.Series(dtype=float)
+
+    c = pd.Series(close).astype(float)
+    delta = c.diff()
+
+    if method.lower() == "wilders":
+        # Wilder's smoothing (EMA with alpha=1/length)
+        gain = delta.clip(lower=0).ewm(alpha=1/length, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1/length, adjust=False).mean()
+    else:
+        # EMA-like smoothing (پیش‌فرض)
+        gain = delta.clip(lower=0).ewm(alpha=1/length, adjust=False).mean()
+        loss = (-delta.clip(upper=0)).ewm(alpha=1/length, adjust=False).mean()
+
+    rs = gain / loss.replace(0, np.nan)
+    out = (100 - (100 / (1 + rs))).fillna(50.0)
+    return out.rename("RSI")
+
 
 def roc(close: pd.Series, n: int = 10) -> pd.Series:
     return (close.pct_change(n) * 100.0).astype("float32")

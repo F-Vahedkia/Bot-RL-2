@@ -1,14 +1,22 @@
+# f04_features/indicators/fibonacci.py
 # -*- coding: utf-8 -*-
-# f04_features/fibonacci_3.py
+
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Sequence
+from typing import Any, Dict, List, Tuple, Optional, Sequence, Iterable
 import logging
 import numpy as np
 import pandas as pd
 
+from f04_features.indicators.core import rsi as rsi_core
 from f04_features.indicators.levels import sr_overlap_score
-
+from f10_utils.config_loader import ConfigLoader
+from f04_features.indicators.utils import (
+    levels_from_recent_legs,  # هِلپر «n لگ اخیر»
+    compute_atr,              # برای last_leg_levels
+    detect_swings,            # برای last_leg_levels
+    ohlc_view,
+)
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -72,6 +80,162 @@ def _last_valid_leg(swings: pd.DataFrame) -> Tuple[pd.Timestamp, pd.Timestamp, f
     t1, p1 = pd.to_datetime(times[-2]), float(prices[-2])
     t2, p2 = pd.to_datetime(times[-1]), float(prices[-1])
     return t1, t2, p1, p2
+
+''' از ATR و swings برای «آخرین لگ معتبر» سطوح رتریسمنت می‌سازد؛ کاملاً فیبو-محور است. '''
+def last_leg_levels(
+    ohlc_df: pd.DataFrame,
+    prominence: float | None = None,
+    min_distance: int = 5,
+    atr_mult: float | None = 1.0,
+    ratios: Iterable[float] = DEFAULT_RETR_RATIOS,
+) -> pd.DataFrame:
+    """ساخت سطوح رتریسمنت برای «آخرین لگ معتبر» از روی سوئینگ‌های بسته."""
+    close = ohlc_df["close"].astype(float)
+    atr = compute_atr(ohlc_df, window=14)
+    swings = detect_swings(
+        close, prominence=prominence, min_distance=min_distance,
+        atr=atr, atr_mult=atr_mult, tf=None
+    )
+    if swings is None or swings.empty or len(swings) < 2:
+        return pd.DataFrame(columns=["ratio", "price", "leg_up"])
+    s = swings.sort_index()
+    p1, p2 = float(s["price"].iloc[-2]), float(s["price"].iloc[-1])
+    leg_up = p2 > p1
+    low, high = (p1, p2) if leg_up else (p2, p1)
+
+    rows = []
+    rng = high - low
+    for r in ratios:
+        # قیمت رتریسمنت استاندارد: در لگ صعودی از بالا رو به پایین، در لگ نزولی بالعکس
+        price = (high - r * rng) if leg_up else (low + r * rng)
+        rows.append({"ratio": float(r), "price": float(price), "leg_up": bool(leg_up)})
+    return pd.DataFrame(rows)
+
+
+""" برای هر TF، ویوی OHLC می‌سازد، «n لگ اخیر» را به سطح فیبو تبدیل و دیکشنری """
+def build_tf_levels_recent(
+    df: pd.DataFrame,
+    tfs: Iterable[str],
+    tails: Dict[str, int],
+    n_legs: int,
+) -> Dict[str, pd.DataFrame]:
+    """ساخت سطوح فیبو از n لگ اخیر برای هر TF داده‌شده."""
+    out: Dict[str, pd.DataFrame] = {}
+    for tf in tfs:
+        view = ohlc_view(df, tf)
+        if tf in tails and tails[tf] and tails[tf] > 0:
+            view = view.tail(int(tails[tf]))
+        out[tf] = levels_from_recent_legs(view, n_legs=n_legs, min_distance=5, atr_mult=1.0)
+    return out
+
+
+# ------------------------------------------------------------
+# Advanced leg selection (filters + cap) and levels builder
+# ------------------------------------------------------------
+'''
+نکته‌ها:
+1- این پچ رفتار هیچ تابع موجودی را نمی‌شکند؛
+    فقط ابزار انتخاب لگ/تبدیل سطوح را «داخل همین ماژول» اضافه می‌کند.
+2- مصرفش در وایرینگ: به‌جای ساخت سطوح از N لگ خام،
+    اول select_legs_from_swings(...) را صدا بزن،
+    سپس نتیجه را با levels_from_legs(...) به ورودی fib_cluster بده.
+
+(مثال مصرف در وایرینگ فعلی‌ات نزدیک به همین منطق است:
+ساخت لگ‌ها و تبدیل به levels
+؛ فقط اینجا فیلترها و سقف تعداد، داخل ماژول شده‌اند.
+'''
+def select_legs_from_swings(
+    swings: pd.DataFrame,
+    *,
+    max_legs: int = 3,
+    min_prominence: float | None = None,   # حداقل برجستگی لگ بر حسب «قیمت»
+    min_length_pct: float | None = None,   # حداقل طول لگ نسبت به قیمت مرجع (مثلاً 0.002 = 0.2%)
+    max_age_bars: int | None = None,       # حداکثر فاصلهٔ لگ تا انتهای سری (بر حسب «ردیف/بار»)
+    body_vs_wick: str = "auto",            # "auto" | "body" | "wick" (در این نسخه آموزشی، فقط auto)
+) -> List[dict]:
+    """
+    توضیح آموزشی (فارسی):
+      این تابع از جدول سوئینگ‌ها (ایندکس زمانی، ستون‌های price/kind∈{H,L}) لگ‌های مجاور H↔L می‌سازد،
+      سپس با فیلترهای سبک آن‌ها را محدود می‌کند و «تا سقف max_legs» برمی‌گرداند (جدید→قدیم).
+
+    English:
+      Build adjacent H↔L legs from swings DataFrame, apply light filters, and cap to `max_legs`.
+    """
+    if swings is None or swings.empty:
+        return []
+
+    s = swings.sort_index()
+    kinds = s["kind"].values
+    prices = s["price"].astype(float).values
+    times = s.index
+
+    legs: List[dict] = []
+    # از انتها به ابتدا: به‌دنبال جفت‌های مجاور L..H یا H..L
+    for i in range(len(s) - 1, 0, -1):
+        k2, k1 = kinds[i], kinds[i - 1]
+        if {k1, k2} != {"H", "L"}:
+            continue
+
+        t1, p1 = pd.to_datetime(times[i - 1], utc=True), float(prices[i - 1])
+        t2, p2 = pd.to_datetime(times[i], utc=True), float(prices[i])
+        leg_up = (p2 > p1)
+        low, high = (p1, p2) if leg_up else (p2, p1)
+        extent = abs(high - low)
+
+        # فیلتر 1: حداقل برجستگی مطلق
+        if min_prominence is not None and extent < float(min_prominence):
+            continue
+
+        # فیلتر 2: حداقل طول نسبی نسبت به قیمت مرجع (قیمت انتهایی لگ)
+        ref_px = max(min(p1, p2), 1e-9)  # محافظت از تقسیم بر صفر
+        if min_length_pct is not None and (extent / ref_px) < float(min_length_pct):
+            continue
+
+        # فیلتر 3: سن لگ بر حسب بار (اختیاری)
+        if max_age_bars is not None:
+            age_bars = (len(s) - 1) - i  # فاصلهٔ لگ از آخرین سطر
+            if age_bars > int(max_age_bars):
+                continue
+
+        legs.append({
+            "from_ts": t1, "to_ts": t2,
+            "low": low, "high": high,
+            "leg_up": bool(leg_up),
+            "extent": extent,
+        })
+        if len(legs) >= int(max_legs):
+            break
+
+    return legs
+
+
+def levels_from_legs(
+    legs: List[dict],
+    ratios: Sequence[float] = DEFAULT_RETR_RATIOS
+) -> pd.DataFrame:
+    """
+    توضیح آموزشی (فارسی):
+      این تابع از هر لگ انتخاب‌شده، سطوح رتریسمنت می‌سازد و همه را کنار هم در یک DataFrame
+      ادغام می‌کند تا بتوان مستقیم به fib_cluster داد.
+
+    English:
+      Convert selected legs to retracement levels usable by `fib_cluster`.
+    """
+    out_rows: List[dict] = []
+    for lg in legs:
+        low, high, leg_up = float(lg["low"]), float(lg["high"]), bool(lg["leg_up"])
+        retr = _fib_levels_for_leg(low, high, ratios=ratios)
+        for _, r in retr.iterrows():
+            out_rows.append({
+                "ratio": float(r["ratio"]),
+                "price": float(r["price"]),
+                "leg_up": bool(leg_up),
+                # اطلاعات اختیاری برای دیباگ:
+                "from_ts": lg["from_ts"], "to_ts": lg["to_ts"]
+            })
+    if not out_rows:
+        return pd.DataFrame(columns=["ratio", "price", "leg_up"])
+    return pd.DataFrame(out_rows).sort_values("price").reset_index(drop=True)
 
 
 # ------------------------------------------------------------
@@ -328,3 +492,758 @@ def fib_ext_targets(
     df = pd.DataFrame(targets).sort_values("price").reset_index(drop=True)
     return df
 
+'''
+# === [PATCH] f04_features/indicators/fibonacci.py :: Config-aware wrappers === pach_1
+# -*- coding: utf-8 -*-
+# توجه: این بخش را در ابتدای فایل (پس از importهای موجود) اضافه کنید یا نزدیک بخش ثابت‌ها.
+# هدف: افزودن خوانش اختیاری پارامترها از config.yaml «بدون تغییر» منطق توابع موجود.
+#  - هیچ رفتار قبلی را نمی‌شکنیم؛ فقط توابع wrapper جدید می‌سازیم که از کانفیگ بخوانند.
+#  - اگر کلیدهای کانفیگ موجود نباشند، به مقادیر پیش‌فرض فعلی برمی‌گردیم.
+#  - پیام‌های اجرایی (log) انگلیسی هستند؛ توضیحات فارسی.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# راهنمای ساختار کلیدهای کانفیگ (اختیاری):
+# features:
+#   fibonacci:
+#     retracement_ratios: [0.236, 0.382, 0.5, 0.618, 0.786, 0.886]
+#     extension_ratios:   [1.272, 1.618, 2.0, 2.618, 3.618]
+#     sl_atr_mult:        1.5
+#     golden_zone:
+#       ratios: [0.382, 0.618]
+#     cluster:
+#       tol_pct:       0.08
+#       prefer_ratio:  0.618
+#       tf_weights:    {"M15":0.5, "H1":1.0, "H4":1.5, "D1":2.0}
+#       w_trend:       10.0
+#       w_rsi:         10.0
+#       w_sr:          10.0
+#       sr_tol_pct:    0.05
+#
+# نکته: اگر هر کلیدی موجود نباشد، به پیش‌فرض‌های فعلی ماژول برمی‌گردیم.
+# ──────────────────────────────────────────────────────────────────────────────
+'''
+
+def _deep_get(d: Dict[str, Any], path: str, default: Any = None) -> Any:
+    """دسترسی امن به مسیرهای تو در توی دیکشنری با dot-notation؛ در نبود کلید، مقدار پیش‌فرض برمی‌گردد."""
+    cur: Any = d
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+
+def _load_fibo_cfg() -> Dict[str, Any]:
+    """
+    بارگذاری کل کانفیگ و استخراج زیربخش فیبوناچی.
+    اگر لودر/فایل موجود نباشد یا خطایی رخ دهد، دیکشنری خالی بازمی‌گردد.
+    """
+    try:
+        cfg_all: Dict[str, Any] = ConfigLoader().get_all()
+    except Exception as e:
+        # پیام انگلیسی برای log
+        logger.debug("Failed to load config for Fibonacci wrappers: %s", e)
+        return {}
+    fib = _deep_get(cfg_all, "features.fibonacci", {}) or {}
+    if not isinstance(fib, dict):
+        fib = {}
+    return fib
+
+
+# ----------------------------------------------------------------------
+# Wrapper 1: golden_zone_cfg  → خواندن پارامترها از config و فراخوانی golden_zone
+# ----------------------------------------------------------------------
+def golden_zone_cfg(
+    swings,  # pd.DataFrame
+    ratios: Optional[Tuple[float, float]] = None,
+    extra_ratios: Optional[Sequence[float]] = None,
+):
+    """
+    نسخهٔ کانفیگ‌محور برای golden_zone:
+      - اگر ratios/extra_ratios داده نشود، از config.yaml خوانده می‌شود.
+      - در صورت نبود کلیدها در کانفیگ، از پیش‌فرض‌های اصلی ماژول استفاده می‌گردد.
+
+    ورودی‌ها:
+        swings: دیتافریم سوئینگ‌ها
+        ratios: نسبت‌های بازگشتی اصلی زون طلایی (اختیاری؛ اگر None → از کانفیگ/پیش‌فرض)
+        extra_ratios: سایر نسبت‌های رتریسمنت برای محاسبات تکمیلی (اختیاری)
+
+    خروجی:
+        pd.DataFrame مطابق خروجی تابع اصلی golden_zone
+    """
+    fib_cfg = _load_fibo_cfg()
+
+    # نسبت‌های زون طلایی: اولویت با آرگومان تابع → سپس کانفیگ → سپس پیش‌فرض فعلی
+    gz_ratios = ratios
+    if gz_ratios is None:
+        cfg_gz = fib_cfg.get("golden_zone", {}) if isinstance(fib_cfg, dict) else {}
+        if isinstance(cfg_gz, dict):
+            cfg_r = cfg_gz.get("ratios")
+            if isinstance(cfg_r, (list, tuple)) and len(cfg_r) == 2:
+                gz_ratios = (float(cfg_r[0]), float(cfg_r[1]))
+
+    if gz_ratios is None:
+        # fallback به پیش‌فرض تابع اصلی (0.382, 0.618)
+        gz_ratios = (0.382, 0.618)
+
+    # نسبت‌های رتریسمنت تکمیلی
+    extra = extra_ratios
+    if extra is None:
+        cfg_extra = fib_cfg.get("retracement_ratios")
+        if isinstance(cfg_extra, (list, tuple)) and cfg_extra:
+            extra = tuple(float(x) for x in cfg_extra)
+
+    if extra is None:
+        # fallback به ثابت‌های فعلی ماژول (DEFAULT_RETR_RATIOS)
+        try:
+            extra = DEFAULT_RETR_RATIOS  # noqa: F821  (در همین فایل تعریف شده)
+        except NameError:
+            extra = (0.236, 0.382, 0.5, 0.618, 0.786)
+
+    logger.info("Golden zone (config-driven) → ratios=%s, extra=%s", gz_ratios, extra)
+    return golden_zone(swings=swings, ratios=gz_ratios, extra_ratios=extra)  # noqa: F821
+
+
+# ------------------------------------------------------------
+# Adaptive tolerance (ATR/ADR) + config-aware wrapper for fib_cluster
+# ------------------------------------------------------------
+'''
+نحوهٔ مصرف در وایرینگ (فقط جایگزینی یک خط):
+در check_wiring_fib_cluster.py هر جا fib_cluster(...) را مستقیم صدا می‌زنی،
+برای حالت کانفیگ-محور کافی است به‌جای آن fibonacci.fib_cluster_cfg(...) را صدا بزنی تا
+tol به‌شکل انطباقی/فیکس محاسبه و پاس شود (باقی پارامترها همانند قبل):
+'''
+def _adaptive_tol_pct_from_df(
+    df: pd.DataFrame,
+    *,
+    mode: str = "FIXED",      # "FIXED" | "ATR" | "ADR"
+    fixed_pct: float = 0.08,  # درصد (مثلاً 0.08 = 0.08%)
+    atr_mult: float = 1.0,
+    adr_mult: float = 1.0,
+    ref_price: Optional[float] = None,
+) -> float:
+    """
+    توضیح آموزشی (فارسی):
+      این تابع تلورانس نسبی خوشه‌بندی را بر اساس نوسان محاسبه می‌کند.
+      اگر ستون موردنیاز (ATR/ADR) در df نباشد، به مقدار ثابت (fixed_pct) برمی‌گردیم.
+
+    English:
+      Compute clustering tolerance (% of price) using ATR/ADR adaptively.
+      Falls back to fixed_pct if needed columns are missing.
+    """
+    try:
+        mode_u = str(mode or "FIXED").upper()
+        # ref price: آخرین close اگر مقدار ندادیم
+        if ref_price is None:
+            if "close" in df.columns and len(df["close"]) > 0:
+                ref_price = float(df["close"].iloc[-1])
+            else:
+                return float(fixed_pct)
+
+        ref_price = max(float(ref_price), 1e-9)
+
+        if mode_u == "ATR":
+            if "ATR" in df.columns and df["ATR"].dropna().size:
+                atr_val = float(df["ATR"].dropna().iloc[-1])
+                tol = (atr_val / ref_price) * 100.0 * float(atr_mult)
+                return float(tol)
+            return float(fixed_pct)
+
+        if mode_u == "ADR":
+            # ADR = Average Daily Range (به واحد قیمت)
+            for col in ("ADR", "adr", "__ADR", "__adr"):
+                if col in df.columns and df[col].dropna().size:
+                    adr_val = float(df[col].dropna().iloc[-1])
+                    tol = (adr_val / ref_price) * 100.0 * float(adr_mult)
+                    return float(tol)
+            return float(fixed_pct)
+
+        # FIXED
+        return float(fixed_pct)
+    except Exception:
+        # ایمنی در برابر هر خطای پیش‌بینی‌نشده
+        return float(fixed_pct)
+
+
+def fib_cluster_cfg(
+    tf_levels: Dict[str, pd.DataFrame],
+    *,
+    # می‌توانی tol_pct را override کنی؛ اگر None باشد از config/df محاسبه می‌شود
+    tol_pct: Optional[float] = None,
+    prefer_ratio: Optional[float] = None,
+    tf_weights: Optional[Dict[str, float]] = None,
+    ma_slope: Optional[pd.Series] = None,
+    rsi_zone_score: Optional[pd.Series] = None,
+    sr_levels: Optional[Sequence[float]] = None,
+    ref_time: Optional[pd.Timestamp] = None,
+) -> pd.DataFrame:
+    """
+    توضیح آموزشی (فارسی):
+      این wrapper پارامترهای خوشه‌بندی را از config.yaml می‌خواند و در صورت
+      خالی بودن tol_pct، آن را به‌صورت انطباقی از داده محاسبه می‌کند (ATR/ADR→٪).
+      اگر ATR/ADR در دسترس نباشد، با تلورانس ثابت کار می‌کند.
+
+    English:
+      Config-aware wrapper for fib_cluster. Computes adaptive tol_pct (ATR/ADR)
+      with safe fallback to fixed percentage.
+    """
+    fib_cfg = _load_fibo_cfg() if '_load_fibo_cfg' in globals() else {}
+    clus_cfg = fib_cfg.get("cluster", {}) if isinstance(fib_cfg, dict) else {}
+
+    # خواندن پارامترها از config (در نبود، به پیش‌فرض‌ها می‌افتد)
+    prefer_ratio_ = float(clus_cfg.get("prefer_ratio", 0.618)) if prefer_ratio is None else float(prefer_ratio)
+    tf_weights_   = clus_cfg.get("tf_weights", None) if tf_weights is None else tf_weights
+    w_trend_      = float(clus_cfg.get("w_trend", 10.0))
+    w_rsi_        = float(clus_cfg.get("w_rsi", 10.0))
+    w_sr_         = float(clus_cfg.get("w_sr", 10.0))
+    sr_tol_pct_   = float(clus_cfg.get("sr_tol_pct", 0.05))
+
+    # tol: اگر آرگومان ندادی، از کانفیگ/داده محاسبه می‌کنیم
+    if tol_pct is None:
+        mode      = str(clus_cfg.get("tol_mode", "FIXED")).upper()
+        fixed_pct = float(clus_cfg.get("tol_pct", 0.08))     # درصد
+        atr_mult  = float(clus_cfg.get("atr_mult", 1.0))
+        adr_mult  = float(clus_cfg.get("adr_mult", 1.0))
+
+        # برای محاسبه tol به یک df مرجع نیاز داریم؛ بهترین گزینه TF با بیشترین اعضای سطح
+        ref_df: Optional[pd.DataFrame] = None
+        for tf, df in (tf_levels or {}).items():
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                # انتظار داریم این df ها فقط «سطوح» باشند و ستون close نداشته باشند؛
+                # بنابراین اگر close نداشتند، tol را بر اساس FIXED می‌گذاریم.
+                ref_df = df
+                break
+
+        # اگر df سطوح close ندارد، تلاش کن یک df کانتکست بیرونی پاس دهی (در wiring)
+        # اینجا به‌صورت ایمن اگر ref_df مناسب نبود، به fixed می‌افتیم:
+        if (ref_df is None) or ("close" not in ref_df.columns):
+            tol_pct_ = fixed_pct
+        else:
+            tol_pct_ = _adaptive_tol_pct_from_df(
+                ref_df, mode=mode, fixed_pct=fixed_pct,
+                atr_mult=atr_mult, adr_mult=adr_mult,
+                ref_price=None
+            )
+    else:
+        tol_pct_ = float(tol_pct)
+
+    # فراخوانی هستهٔ اصلی
+    return fib_cluster(
+        tf_levels=tf_levels,
+        tol_pct=tol_pct_,
+        prefer_ratio=prefer_ratio_,
+        tf_weights=tf_weights_,
+        ma_slope=ma_slope,
+        rsi_zone_score=rsi_zone_score,
+        sr_levels=sr_levels,
+        ref_time=ref_time,
+        w_trend=w_trend_,
+        w_rsi=w_rsi_,
+        w_sr=w_sr_,
+        sr_tol_pct=sr_tol_pct_,
+    )
+
+
+
+# ----------------------------------------------------------------------
+# Wrapper 2: fib_cluster_cfg  → خواندن پارامترها از config و فراخوانی fib_cluster
+# ----------------------------------------------------------------------
+# نسخهٔ به‌روزِ رَپر: پارامترهای اختیاری ref_price/adr_value/atr_value اضافه شد
+'''
+def fib_cluster_cfg_legacy(
+    tf_levels: Dict[str, "pd.DataFrame"],  # type: ignore[name-defined]
+    tol_pct: Optional[float] = None,
+    prefer_ratio: Optional[float] = None,
+    tf_weights: Optional[Dict[str, float]] = None,
+    ma_slope: Optional["pd.Series"] = None,      # type: ignore[name-defined]
+    rsi_zone_score: Optional["pd.Series"] = None, # type: ignore[name-defined]
+    sr_levels: Optional[Sequence[float]] = None,
+    ref_time: Optional["pd.Timestamp"] = None,    # type: ignore[name-defined]
+    w_trend: Optional[float] = None,
+    w_rsi: Optional[float] = None,
+    w_sr: Optional[float] = None,
+    sr_tol_pct: Optional[float] = None,
+
+    # ⬇️ ورودی‌های اختیاری برای حالت Adaptive (تغییر جدید)
+    ref_price: Optional[float] = None,  # قیمت مرجع (اگر None باشد، تلاش می‌کنیم از tf_levels حدس بزنیم)
+    adr_value: Optional[float] = None,  # مقدار ADR (مثلاً پیپ/نقطه)
+    atr_value: Optional[float] = None,  # مقدار ATR (مثلاً پیپ/نقطه)
+):
+    """
+    نسخهٔ کانفیگ‌محور برای fib_cluster (به‌روزرسانی‌شده با Adaptive tol_pct):
+      - اگر tol_pct آرگومان داشته باشیم، همان استفاده می‌شود (اولویت اول).
+      - اگر tol_pct آرگومان None باشد:
+          * ابتدا مقدار ثابت از کانفیگ خوانده می‌شود (cluster.tol_pct).
+          * اگر Adaptive Tol در کانفیگ فعال باشد، و ورودی کافی داشته باشیم،
+            tol_pct بر اساس ADR یا ATR محاسبه و جایگزین می‌شود.
+      - سایر پارامترها مانند گذشته از آرگومان → کانفیگ → پیش‌فرض پر می‌شوند.
+    """
+    fib_cfg = _load_fibo_cfg()
+    cluster_cfg = fib_cfg.get("cluster", {}) if isinstance(fib_cfg, dict) else {}
+
+    # 1) مقدار پایهٔ tol_pct (ثابت) از آرگومان یا کانفیگ
+    tol = tol_pct if tol_pct is not None else float(cluster_cfg.get("tol_pct", 0.08))
+
+    # 2) سایر پارامترها (بدون تغییر)
+    pr  = prefer_ratio if prefer_ratio is not None else float(cluster_cfg.get("prefer_ratio", 0.618))
+    tfw = tf_weights  if tf_weights  is not None else cluster_cfg.get("tf_weights")
+    wtr = w_trend     if w_trend     is not None else float(cluster_cfg.get("w_trend", 10.0))
+    wr  = w_rsi       if w_rsi       is not None else float(cluster_cfg.get("w_rsi", 10.0))
+    wsr = w_sr        if w_sr        is not None else float(cluster_cfg.get("w_sr", 10.0))
+    srt = sr_tol_pct  if sr_tol_pct  is not None else float(cluster_cfg.get("sr_tol_pct", 0.05))
+
+    # 3) اگر Adaptive Tol فعال است، تلاش برای محاسبه tol_pct انطباقی
+    adapt_cfg = cluster_cfg.get("adaptive_tol", {}) if isinstance(cluster_cfg, dict) else {}
+    if isinstance(adapt_cfg, dict) and bool(adapt_cfg.get("enabled", False)) and tol_pct is None:
+        mode = str(adapt_cfg.get("mode", "ADR")).upper()   # ADR | ATR
+        k = float(adapt_cfg.get("k", 1.0))                 # ضریب مقیاس
+        min_pct = float(adapt_cfg.get("min_pct", 0.02))    # حداقل درصد
+        max_pct = float(adapt_cfg.get("max_pct", 0.15))    # حداکثر درصد
+
+        # ref_price را اگر داده نشده، سعی می‌کنیم حدس بزنیم (ممکن است نتیجه ندهد)
+        rp = ref_price if ref_price is not None else _infer_ref_price_from_tf_levels(tf_levels, ref_time)
+
+        # انتخاب منبع نوسان
+        vol_value = None
+        if mode == "ADR":
+            vol_value = adr_value
+        elif mode == "ATR":
+            vol_value = atr_value
+
+        # محاسبه tol انطباقی در صورت داشتن ورودی کافی
+        tol_adaptive = _compute_adaptive_tol_pct(rp, vol_value, k=k, min_pct=min_pct, max_pct=max_pct)
+        if tol_adaptive is not None:
+            logger.info(
+                "Adaptive tol_pct enabled → mode=%s k=%.3f ref=%.5f vol=%.5f → tol_pct=%.5f",
+                mode, k, float(rp), float(vol_value), tol_adaptive
+            )
+            tol = tol_adaptive
+        else:
+            logger.info(
+                "Adaptive tol_pct enabled but insufficient inputs (mode=%s). Falling back to fixed tol_pct=%.5f",
+                mode, tol
+            )
+
+    logger.info(
+        "Fibo cluster (config-driven) → tol=%.5f prefer=%.3f tfw=%s w_trend=%.2f w_rsi=%.2f w_sr=%.2f sr_tol=%.3f",
+        tol, pr, str(tfw), wtr, wr, wsr, srt
+    )
+
+    return fib_cluster(  # noqa: F821
+        tf_levels=tf_levels,
+        tol_pct=tol,
+        prefer_ratio=pr,
+        tf_weights=tfw,
+        ma_slope=ma_slope,
+        rsi_zone_score=rsi_zone_score,
+        sr_levels=sr_levels,
+        ref_time=ref_time,
+        w_trend=wtr,
+        w_rsi=wr,
+        w_sr=wsr,
+        sr_tol_pct=srt,
+    )
+'''
+
+# ----------------------------------------------------------------------
+# Wrapper 3: fib_ext_targets_cfg  → خواندن پارامترها از config و فراخوانی fib_ext_targets
+# ----------------------------------------------------------------------
+'''
+def fib_ext_targets_cfg_legacy(
+    entry_price: float,
+    leg_low: float,
+    leg_high: float,
+    side: str,
+    ext_ratios: Optional[Sequence[float]] = None,
+    sl_atr: Optional[float] = None,
+    sl_atr_mult: Optional[float] = None,
+):
+    """
+    نسخهٔ کانفیگ‌محور برای fib_ext_targets:
+      - اگر ext_ratios/sl_atr_mult داده نشود، از کانفیگ خوانده می‌شود.
+      - در نبود کلیدها، به پیش‌فرض‌های فعلی تابع اصلی بازمی‌گردیم.
+    """
+    fib_cfg = _load_fibo_cfg()
+
+    exts = ext_ratios
+    if exts is None:
+        cfg_exts = fib_cfg.get("extension_ratios")
+        if isinstance(cfg_exts, (list, tuple)) and cfg_exts:
+            exts = tuple(float(x) for x in cfg_exts)
+
+    if exts is None:
+        try:
+            exts = DEFAULT_EXT_RATIOS  # noqa: F821
+        except NameError:
+            exts = (1.272, 1.618, 2.0)
+
+    sl_mult = sl_atr_mult
+    if sl_mult is None:
+        cfg_slm = fib_cfg.get("sl_atr_mult")
+        if isinstance(cfg_slm, (int, float)):
+            sl_mult = float(cfg_slm)
+
+    if sl_mult is None:
+        sl_mult = 1.5  # پیش‌فرض فعلی تابع اصلی
+
+    logger.info("Fibo ext targets (config-driven) → ext=%s sl_atr_mult=%.3f", str(exts), sl_mult)
+
+    return fib_ext_targets(  # noqa: F821
+        entry_price=entry_price,
+        leg_low=leg_low,
+        leg_high=leg_high,
+        side=side,
+        ext_ratios=exts,
+        sl_atr=sl_atr,
+        sl_atr_mult=sl_mult,
+    )
+'''
+# ────────────────────────────────────────────────────────────────────────────── Pach_2
+# Adaptive tol_pct for fib_cluster (Option 1)
+# - اگر در کانفیگ فعال باشد و ورودی لازم را داشته باشیم، tol_pct بر اساس ADR یا ATR محاسبه می‌شود.
+# - اگر ورودی کافی نبود، به مقدار ثابت (config/پیش‌فرض) برمی‌گردیم.
+# - هیچ تغییری در تابع اصلی fib_cluster نمی‌دهیم؛ فقط رَپر fib_cluster_cfg را هوشمند می‌کنیم.
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _infer_ref_price_from_tf_levels(
+    tf_levels: Dict[str, "pd.DataFrame"],  # type: ignore[name-defined]
+    ref_time: Optional["pd.Timestamp"] = None  # type: ignore[name-defined]
+) -> Optional[float]:
+    """
+    تلاش ابتدایی برای حدس ref_price از روی tf_levels:
+      - tf_levels معمولاً خروجی سطوح است، نه قیمت. بنابراین اغلب ref_price از اینجا قابل‌استخراج نیست.
+      - این تابع برای سازگاری آینده گذاشته شده؛ اگر دیتافریم‌ها ستونی مانند 'close' داشته باشند، از آخرین مقدار استفاده می‌کند.
+      - در غیر این صورت None برمی‌گرداند و رَپر از مقدار ثابت tol_pct استفاده می‌کند.
+
+    توجه: این حدس‌زدن اختیاری است و اگر به نتیجه نرسیم، رفتار قبلی حفظ می‌شود.
+    """
+    try:
+        for _, df in tf_levels.items():
+            if hasattr(df, "columns"):
+                cols = [c.lower() for c in df.columns]
+                if "close" in cols:
+                    # اگر ref_time داریم، نزدیک‌ترین مقدار قبل یا در ref_time را برداشت می‌کنیم
+                    if hasattr(df, "index") and df.index.size > 0 and ref_time is not None:
+                        # فیلتر تا ref_time
+                        subset = df.loc[df.index <= ref_time]
+                        if subset.shape[0] > 0:
+                            return float(subset["close"].iloc[-1])
+                    # در غیر این صورت آخرین مقدار
+                    return float(df["close"].iloc[-1])
+    except Exception as e:
+        logger.debug("Could not infer ref price from tf_levels: %s", e)
+    return None
+
+
+def _compute_adaptive_tol_pct(
+    ref_price: Optional[float],
+    vol_value: Optional[float],
+    k: float,
+    min_pct: float,
+    max_pct: float
+) -> Optional[float]:
+    """
+    محاسبه tol_pct انطباقی:
+      tol_pct = clip( (vol_value / ref_price) * k , [min_pct, max_pct] )
+
+    اگر هرکدام از ref_price یا vol_value نداشتیم، None برمی‌گردانیم.
+    """
+    if ref_price is None or vol_value is None:
+        return None
+    try:
+        raw = (float(vol_value) / float(ref_price)) * float(k)
+        # محدودسازی در بازهٔ [min_pct, max_pct]
+        return max(min(raw, max_pct), min_pct)
+    except Exception as e:
+        logger.debug("Adaptive tol_pct computation failed: %s", e)
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ────────────────────────────────────────────────────────────────────────────── added 040612
+
+# ====== ساختار پارامترهای پیکربندی فیبو ======
+@dataclass
+class FiboParams:
+    retracement_ratios: List[float]
+    extension_ratios: List[float]
+    prefer_ratio: float
+    tol_mode: str
+    tol_fixed_pct: float
+    tol_atr_mult: float
+    tol_adr_mult: float
+    leg_selection: Dict[str, Any]
+    w_base: float
+    w_sr: float
+    w_ma: float
+    w_rsi: float
+    rsi_len: int
+    rsi_ob: float
+    rsi_os: float
+
+
+def _merge_overrides(base: Dict[str, Any], symbol: str, tf: str) -> Dict[str, Any]:
+    """ترکیب تنظیمات پایه با overrideهای per-TF و per-symbol (اولویت با نماد، بعد TF)."""
+    cfg = dict(base)
+    sym_ovr = (base.get("symbol_overrides") or {}).get(symbol) or {}
+    tf_ovr = (base.get("tf_overrides") or {}).get(tf) or {}
+    # نماد بر TF اولویت دارد؛ سپس روی cfg اعمال می‌کنیم
+    def deep_update(dst, src):
+        for k, v in src.items():
+            if isinstance(v, dict) and isinstance(dst.get(k), dict):
+                deep_update(dst[k], v)
+            else:
+                dst[k] = v
+    deep_update(cfg, tf_ovr)
+    deep_update(cfg, sym_ovr)
+    return cfg
+
+
+def _load_fibo_params(global_cfg: Dict[str, Any], symbol: str, tf: str) -> FiboParams:
+    """خواندن پارامترهای فیبو از config با درنظرگرفتن overrideهای per-symbol و per-TF."""
+    fibo_cfg = global_cfg.get("features", {}).get("fibonacci", {}) or {}
+    fibo_cfg = _merge_overrides(fibo_cfg, symbol, tf)
+
+    ratios_r = fibo_cfg.get("retracement_ratios", [0.236, 0.382, 0.5, 0.618, 0.786, 0.886])
+    ratios_e = fibo_cfg.get("extension_ratios", [1.272, 1.618, 2.0, 2.618, 3.618])
+    prefer = fibo_cfg.get("prefer_ratio", 0.618)
+
+    tol_cfg = fibo_cfg.get("tol", {}) or {}
+    tol_mode = str(tol_cfg.get("mode", "ADR")).upper()
+    tol_fixed = float(tol_cfg.get("fixed_pct", 0.0025))
+    tol_atr = float(tol_cfg.get("atr_mult", 1.0))
+    tol_adr = float(tol_cfg.get("adr_mult", 1.0))
+
+    leg_sel = fibo_cfg.get("leg_selection", {}) or {}
+    w_cfg = fibo_cfg.get("confluence_weights", {}) or {}
+    rsi_cfg = fibo_cfg.get("rsi", {}) or {}
+
+    return FiboParams(
+        retracement_ratios=ratios_r,
+        extension_ratios=ratios_e,
+        prefer_ratio=prefer,
+        tol_mode=tol_mode,
+        tol_fixed_pct=tol_fixed,
+        tol_atr_mult=tol_atr,
+        tol_adr_mult=tol_adr,
+        leg_selection=leg_sel,
+        w_base=float(w_cfg.get("base", 1.0)),
+        w_sr=float(w_cfg.get("sr_overlap", 0.5)),
+        w_ma=float(w_cfg.get("ma_slope", 0.25)),
+        w_rsi=float(w_cfg.get("rsi_zone", 0.25)),
+        rsi_len=int(rsi_cfg.get("length", 14)),
+        rsi_ob=float(rsi_cfg.get("overbought", 70)),
+        rsi_os=float(rsi_cfg.get("oversold", 30)),
+    )
+
+
+# ====== ابزارهای کمکی RSI و tol انطباقی ======
+
+
+
+def _adaptive_tol_pct(df: pd.DataFrame, params: FiboParams, adr_col: str = "ADR") -> float:
+    """محاسبهٔ tol درصدی بر اساس حالت انتخاب شده: FIXED/ATR/ADR."""
+    if params.tol_mode == "FIXED":
+        return params.tol_fixed_pct
+    if params.tol_mode == "ATR":
+        atr = df.get("ATR")
+        if atr is None or atr.dropna().empty:
+            logger.warning("ATR not found for adaptive tolerance; fallback to fixed.")
+            return params.tol_fixed_pct
+        px = df["close"]
+        tol = (atr.iloc[-1] / px.iloc[-1]) * params.tol_atr_mult
+        return float(tol)
+    # ADR (پیش‌فرض)
+    adr = df.get(adr_col)
+    if adr is None or adr.dropna().empty:
+        logger.warning("ADR not found for adaptive tolerance; fallback to fixed.")
+        return params.tol_fixed_pct
+    px = df["close"]
+    tol = (adr.iloc[-1] / px.iloc[-1]) * params.tol_adr_mult
+    return float(tol)
+
+
+# ====== انتخاب لگ‌های معتبر با فیلترهای پیشرفته ======
+def _select_legs(swings: pd.DataFrame, df: pd.DataFrame, params: FiboParams) -> List[Tuple[int, int]]:
+    """
+    انتخاب لگ‌ها از جدول سوئینگ‌ها با فیلتر:
+    - min_prominence: حداقل برجستگی لگ (اختلاف high/low)
+    - min_length_pct: حداقل طول لگ نسبت به قیمت
+    - max_age_bars: لگ‌های خیلی قدیمی حذف شوند
+    - body_vs_wick: جهت محاسبه طول لگ (بدنه/سایه/خودکار)
+    خروجی: فهرست (idx_low, idx_high) به ترتیب جدید→قدیم تا max_legs_per_tf
+    """
+    max_legs = int(params.leg_selection.get("max_legs_per_tf", 3))
+    min_prom = float(params.leg_selection.get("min_prominence", 0.0))
+    min_len_pct = float(params.leg_selection.get("min_length_pct", 0.0))
+    max_age = int(params.leg_selection.get("max_age_bars", 10_000))
+    body_mode = str(params.leg_selection.get("body_vs_wick", "auto")).lower()
+
+    legs: List[Tuple[int, int]] = []
+    # فرض: swings شامل ستون‌های ['idx_low','idx_high','low','high','bar'] یا مشابه
+    for _, row in swings.sort_values("bar", ascending=False).iterrows():
+        i_low = int(row["idx_low"]); i_high = int(row["idx_high"])
+        lo = float(row["low"]); hi = float(row["high"])
+        if (df.index[-1] - df.index[i_high]).days * 1440 + (df.index[-1] - df.index[i_high]).seconds/60 > max_age:
+            continue
+        extent = hi - lo
+        if extent < min_prom:
+            continue
+        # طول لگ بر اساس بدنه/سایه (برای سادگی همین extent؛ بعداً می‌توان body-based کرد)
+        px = df["close"].iloc[i_high]
+        if extent / max(px, 1e-9) < min_len_pct:
+            continue
+        legs.append((i_low, i_high))
+        if len(legs) >= max_legs:
+            break
+    return legs
+
+
+# ====== امتیازدهی RSI zone برای خوشه‌ها ======
+def _rsi_zone_score(df: pd.DataFrame, params: FiboParams) -> float:
+    """
+    امتیاز RSI zone: اگر RSI نزدیک overbought/oversold باشد، بازگشتی/ادامه‌دار بودن را تقویت/تضعیف می‌کند.
+    خروجی در [0..1] نرمالیزه می‌شود.
+    """
+    rsi = rsi_core(df["close"], params.rsi_len).iloc[-1]
+    if rsi >= params.rsi_ob:
+        return 1.0  # Near overbought
+    if rsi <= params.rsi_os:
+        return 1.0  # Near oversold
+    # خطی بین OS..OB
+    span = params.rsi_ob - params.rsi_os
+    if span <= 0:
+        return 0.5
+    return 1.0 - abs((rsi - (params.rsi_os + span/2)) / (span/2))
+
+
+# ====== Wrapperهای config-driven (بهبود یافته) ======
+def fib_cluster_cfg(df_by_tf: Dict[str, pd.DataFrame],
+                    swings_by_tf: Dict[str, pd.DataFrame],
+                    global_cfg: Dict[str, Any],
+                    symbol: str) -> pd.DataFrame:
+    """
+    خوشه‌بندی چند-TF با پارامترهای پیکربندی‌شده:
+    - tol انطباقی (FIXED/ATR/ADR)
+    - انتخاب لگ‌های معتبر به‌صورت پیشرفته
+    - امتیازدهی Confluence با وزن‌های SR/MA/RSI
+    Log messages are in English per project convention.
+    """
+    out_rows = []
+    for tf, df in df_by_tf.items():
+        params = _load_fibo_params(global_cfg, symbol, tf)
+        tol_pct = _adaptive_tol_pct(df, params)
+
+        # انتخاب لگ‌ها
+        swings = swings_by_tf[tf]
+        legs = _select_legs(swings, df, params)
+
+        # محاسبه نسبت/سطوح برای هر لگ و تولید نقاط کاندید
+        candidates = []  # [(price, ratio, leg_idx), ...]
+        for li, (i_low, i_high) in enumerate(legs):
+            lo = float(df["low"].iloc[i_low]); hi = float(df["high"].iloc[i_high])
+            for r in params.retracement_ratios:
+                price = hi - r * (hi - lo)
+                candidates.append((price, r, li))
+
+        # خوشه‌سازی ساده: گروه‌بندی قیمت‌ها با تلورانس نسبی tol_pct
+        candidates.sort(key=lambda x: x[0])
+        clusters: List[Dict[str, Any]] = []
+        for price, ratio, li in candidates:
+            if not clusters:
+                clusters.append({"prices": [price], "ratios": [ratio], "members": 1})
+                continue
+            p_mean = np.mean(clusters[-1]["prices"])
+            if abs(price - p_mean) / max(p_mean, 1e-9) <= tol_pct:
+                c = clusters[-1]
+                c["prices"].append(price); c["ratios"].append(ratio); c["members"] += 1
+            else:
+                clusters.append({"prices": [price], "ratios": [ratio], "members": 1})
+
+        # امتیازدهی پایه + تقویت با RSI/MA/SR (در صورت موجود بودن داده‌های مربوطه)
+        rsi_score = _rsi_zone_score(df, params)
+        for c in clusters:
+            price_mean = float(np.mean(c["prices"]))
+            base_score = params.w_base * c["members"]
+
+            # hookهای SR/MA اختیاری؛ اگر در df ستون یا متریک آماده باشد استفاده می‌شود.
+            sr_score = 0.0
+            if "SR_OVERLAP" in df.columns:
+                sr_score = float(df["SR_OVERLAP"].iloc[-1])  # 0..1
+            ma_slope_score = 0.0
+            if "MA_SLOPE" in df.columns:
+                ma_slope_score = float(np.tanh(df["MA_SLOPE"].iloc[-1]))  # normalize
+
+            final_score = (
+                base_score
+                + params.w_sr * sr_score
+                + params.w_ma * ma_slope_score
+                + params.w_rsi * rsi_score
+            )
+
+            out_rows.append({
+                "tf": tf,
+                "price_mean": price_mean,
+                "price_min": float(np.min(c["prices"])),
+                "price_max": float(np.max(c["prices"])),
+                "ratios": list(sorted(set(map(lambda x: round(x, 3), c["ratios"])))),
+                "members": int(c["members"]),
+                "score": float(final_score),
+                "tol_pct": float(tol_pct),
+                "prefer_ratio_dist": float(min(abs(r - params.prefer_ratio) for r in c["ratios"]))
+            })
+
+        logger.info(f"[FIB] TF={tf} produced {len(clusters)} clusters (tol_pct={tol_pct:.5f})")
+
+    out = pd.DataFrame(out_rows).sort_values(["score", "members"], ascending=[False, False]).reset_index(drop=True)
+    return out
+
+
+def fib_ext_targets_cfg(last_leg: Tuple[float, float],
+                        global_cfg: Dict[str, Any],
+                        symbol: str,
+                        tf: str) -> pd.DataFrame:
+    """
+    تولید تارگت‌های Extension با نسبت‌های پیکربندی‌شده و خروجی مناسب Order Planner.
+    """
+    params = _load_fibo_params(global_cfg, symbol, tf)
+    lo, hi = last_leg
+    targets = []
+    for r in params.extension_ratios:
+        # مثال ساده: تارگت‌های ادامه روند صعودی
+        tgt = hi + r * (hi - lo)
+        targets.append({"tf": tf, "ratio": r, "target_price": tgt})
+    df = pd.DataFrame(targets)
+    logger.info(f"[FIB] Generated {len(df)} extension targets for {symbol}/{tf}.")
+    return df
+
+
+
+__all__ = ["fib_cluster_cfg", "fib_ext_targets_cfg"]
+
+'''
+_fib_levels_for_leg
+_last_valid_leg
+select_legs_from_swings
+levels_from_legs
+golden_zone
+fib_cluster
+fib_ext_targets
+_deep_get
+_load_fibo_cfg
+golden_zone_cfg
+_adaptive_tol_pct_from_df
+fib_cluster_cfg
+(fib_cluster_cfg_legacy)
+(fib_ext_targets_cfg_legacy)
+_infer_ref_price_from_tf_levels
+_compute_adaptive_tol_pct
+_merge_overrides
+_load_fibo_params
+_adaptive_tol_pct
+_select_legs
+_rsi_zone_score
+fib_cluster_cfg
+fib_ext_targets_cfg
+
+'''
