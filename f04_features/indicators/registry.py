@@ -12,9 +12,15 @@ import logging
 
 # توجه: مسیرها را با ساختار جدید هماهنگ کرده‌ایم (داخل indicators/)
 from f04_features.indicators.fibonacci import golden_zone, fib_cluster, fib_ext_targets
+from f04_features.indicators.fibonacci import (
+    golden_zone, fib_cluster, fib_ext_targets,
+    levels_from_legs, select_legs_from_swings, #_select_legs,
+    _infer_ref_price_from_tf_levels, _compute_adaptive_tol_pct,
+    _adaptive_tol_pct, #_rsi_zone_score
+)
+
 from f04_features.indicators.extras_trend import ma_slope, rsi_zone
 # (در صورت نیاز بعداً: از levels/utils هم import می‌کنیم)
-# from f04_features.indicators.levels import round_levels, compute_adr, adr_distance_to_open, sr_overlap_score
 from f04_features.indicators.levels import round_levels, compute_adr, adr_distance_to_open, sr_overlap_score
 
 logger = logging.getLogger(__name__)
@@ -46,78 +52,28 @@ def build_registry() -> Registry:
     reg.update(div_reg())
     return reg
 
-# --- New Added ----------------------------------------------------- 040607
-# -*- coding: utf-8 -*-
 """
 افزودنی‌های رجیستری (Bot-RL-2)
 - ADV_INDICATOR_REGISTRY: ثبت اندیکاتورهای جدید (فیبو/ترند)
 - get_indicator_v2 / list_all_indicators_v2: بدون شکستن APIهای قبلی
-"""
-# -----------------------------
-# رجیستریِ افزوده (حلقهٔ جدید)
-# -----------------------------
-ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
-    # فیبوناچی (ویژگی‌های سطح بالا)
-    "golden_zone": golden_zone,
-    "fib_cluster": fib_cluster,
-    "fib_ext_targets": fib_ext_targets,
 
-    # ترندی/ممنتوم سبک (برای وزن‌دهی Confluence)
-    "ma_slope": ma_slope,
-    "rsi_zone": rsi_zone,
-    # در آینده (اختیاری) می‌توان موارد levels/utils را هم به شکل اندیکاتور ثبت کرد.
-}
-
-
-def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:
-    """
-    دریافت تابع اندیکاتور از رجیستری جدید؛
-    اگر یافت نشد، تلاش می‌کنیم از رجیستری قبلی (در صورت وجود) بخوانیم.
-    """
-    key = str(name).strip()
-    if key in ADV_INDICATOR_REGISTRY:
-        return ADV_INDICATOR_REGISTRY[key]
-
-    # تلاش برای رجیستری‌های قدیمی (اگر در فایل حاضر موجود باشد)
-    try:
-        # فرض: نام رجیستری قدیمی INDICATOR_REGISTRY بوده
-        fn = (globals().get("INDICATOR_REGISTRY") or {}).get(key)
-        if fn is not None:
-            return fn
-    except Exception:
-        pass
-
-    logger.warning("Indicator not found in v2 registries: %s", name)
-    return None
-
-
-def list_all_indicators_v2(include_legacy: bool = True) -> Dict[str, str]:
-    """
-    لیست همهٔ اندیکاتورها (کلید → منبع)، بدون شکستن رجیستری قبلی.
-    """
-    out: Dict[str, str] = {}
-    for k in ADV_INDICATOR_REGISTRY.keys():
-        out[k] = "advanced"
-    if include_legacy:
-        try:
-            legacy = globals().get("INDICATOR_REGISTRY") or {}
-            for k in legacy.keys():
-                out.setdefault(k, "legacy")
-        except Exception:
-            pass
-    return out
-
-
-# --- New Added ----------------------------------------------------- 040608
-"""
 افزودنی‌های رجیستری (Bot-RL-2) — نسخهٔ گسترش‌یافته
+رجیستری جدید (advanced) — افزایشی
 """
-# رجیستری جدید (advanced) — افزایشی
 ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
     # فیبوناچی
     "golden_zone": golden_zone,
     "fib_cluster": fib_cluster,
     "fib_ext_targets": fib_ext_targets,
+
+    # فیبو — هِلپرهای پیشرفته/آماده برای استفادهٔ مستقیم
+    "levels_from_legs": levels_from_legs,
+    "select_legs_from_swings": select_legs_from_swings,
+    #"_select_legs": _select_legs,
+    "_infer_ref_price_from_tf_levels": _infer_ref_price_from_tf_levels,
+    "_compute_adaptive_tol_pct": _compute_adaptive_tol_pct,
+    "_adaptive_tol_pct": _adaptive_tol_pct,
+    #"_rsi_zone_score": _rsi_zone_score,
 
     # ترندی/ممنتوم سبک
     "ma_slope": ma_slope,

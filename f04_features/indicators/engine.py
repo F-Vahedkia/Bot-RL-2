@@ -15,7 +15,6 @@ from .registry import get_indicator_v2
 
 # ابزارهای موتور قدیمی (برای سازگاری عقب‌رو)
 from .utils import detect_timeframes, slice_tf, nan_guard
-from .parser import parse_spec
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -61,9 +60,14 @@ class IndicatorEngine:
         """
         import inspect  # فقط برای تشخیص پارامترهای تابع
 
-        spec = parse_spec(spec_str)
-        if spec.name not in self.registry:
-            raise ValueError(f"Unknown indicator: {spec.name} (spec={spec_str})")
+        # spec = parse_spec(spec_str)
+        # if spec.name not in self.registry:
+            # raise ValueError(f"Unknown indicator: {spec.name} (spec={spec_str})")
+        ps = parse_spec_v2(spec_str)
+        name = (ps.name or '').lower()
+        if name not in self.registry:
+            raise ValueError(f"Unknown indicator: {ps.name} (spec={spec_str})")
+
 
         views = detect_timeframes(base_df)
         if tf not in views:
@@ -72,11 +76,13 @@ class IndicatorEngine:
         # برشِ دیتای مربوط به TF و استانداردسازی نام ستون‌ها به open/high/low/close/volume
         sdf = slice_tf(base_df, views[tf])
 
-        fn = self.registry[spec.name]
+        # fn = self.registry[spec.name]
+        fn = self.registry[name]
         fn_params = list(inspect.signature(fn).parameters.keys())
 
         # آماده‌سازی آرگومان‌ها از روی Spec
-        args = list(spec.args)  # کپی ایمن
+        # args = list(spec.args)  # کپی ایمن
+        args = list(ps.args)  # کپی ایمن
         col_token = None
         if args and isinstance(args[0], str) and args[0].lower() in {"open", "high", "low", "close", "volume"}:
             col_token = args.pop(0).lower()
@@ -99,7 +105,8 @@ class IndicatorEngine:
 
         features: Dict[str, pd.Series] = {}
         for spec_str in self.cfg.specs:
-            tf = parse_spec(spec_str).tf or base_tf
+            # tf = parse_spec(spec_str).tf or base_tf
+            tf = parse_spec_v2(spec_str).timeframe or base_tf
             vals = self._apply_one(df, tf, spec_str)
             features.update(vals)
 

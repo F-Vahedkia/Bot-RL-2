@@ -27,12 +27,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # یک ل�
 # ------------------------------------------------------------
 # ایمپورت‌ها
 # ------------------------------------------------------------
-from typing import Dict, List
+from typing import Dict, List, Iterable
 import pandas as pd
 
 from f04_features.indicators import fibonacci
 from f04_features.indicators.fibonacci import (
-    build_tf_levels_recent,
+    # build_tf_levels_recent,
     fib_cluster,
     last_leg_levels,
     # DEFAULT_RETR_RATIOS,  # در این نسخه استفاده نشده؛ در صورت نیاز آزاد کنید
@@ -57,6 +57,26 @@ data_file = cfg.DATA_FILE         # دیتاست پردازش‌شده‌ی data
 tfs = cfg.TFS                     # تایم‌فریم‌های هدف
 tails = cfg.TAILS                 # برش پنجره‌ی اخیر برای هر TF
 n_legs = cfg.N_LEGS               # تعداد لگ‌های اخیر برای هر TF
+
+
+""" برای هر TF، ویوی OHLC می‌سازد، «n لگ اخیر» را به سطح فیبو تبدیل و دیکشنری """
+# این فایل فقط در check_wiring_fib_cluster.py استفاده میشود.
+def build_tf_levels_recent(
+    df: pd.DataFrame,
+    tfs: Iterable[str],
+    tails: Dict[str, int],
+    n_legs: int,
+) -> Dict[str, pd.DataFrame]:
+    """ساخت سطوح فیبو از n لگ اخیر برای هر TF داده‌شده."""
+    out: Dict[str, pd.DataFrame] = {}
+    for tf in tfs:
+        view = ohlc_view(df, tf)
+        if tf in tails and tails[tf] and tails[tf] > 0:
+            view = view.tail(int(tails[tf]))
+        out[tf] = levels_from_recent_legs(view, n_legs=n_legs, min_distance=5, atr_mult=1.0)
+    return out
+
+
 
 # ------------------------------------------------------------
 # اجرای اصلی

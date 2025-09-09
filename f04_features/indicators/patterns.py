@@ -146,3 +146,11 @@ def detect_ab_equal_cd(swings: pd.DataFrame, ratio_tol: float = 0.05) -> Optiona
 
     logger.info("[ABCD] no pattern within tolerance (err=%.4f, tol=%.4f)", err, ratio_tol)
     return None
+
+def abc_projection_adapter_from_abcd(abcd: dict):
+    if not abcd: 
+        return None
+    A,B,C,D = (abcd["points"][k]["price"] for k in ("A","B","C","D"))
+    length_AB = abs(B - A)
+    proj_ratio = (abs(D - C) / length_AB) if length_AB else None
+    return {"A":A,"B":B,"C":C,"D_real":D,"length_AB":length_AB,"proj_ratio":proj_ratio,"err_pct":abcd.get("error")}
