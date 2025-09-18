@@ -25,18 +25,20 @@ DEFAULT_RSI_SCORE_CANDIDATES: List[str] = [
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# کشف تایم‌فریم‌ها از روی نام ستون‌ها
+""" --------------------------------------------------------------------------- OK C1
+کشف تایم‌فریم‌ها از روی نام ستون‌ها
+"""
 @dataclass
 class TFView:
     tf: str
-    cols: Dict[str, str]  # map: std_name -> df_column_name
-
+    cols: Dict[str, str]  # mapping: standard_name -> df_column_name
+                          #        :        "open" -> "H1_open"
 _TF_REGEX = re.compile(r"^(?P<tf>[A-Z0-9]+)_(?P<field>open|high|low|close|tick_volume|spread)$", re.IGNORECASE)
 
 
-# ======================================================================================= start
+""" --------------------------------------------------------------------------- OK C2
 # FiboTestConfig: پیکربندی تستِ مستقل از scripts  (Test-only, not runtime defaults)
-# ----------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 # توضیح آموزشی (فارسی):
 # این کلاس فقط برای سناریوهای تست/وایرینگ سبک استفاده می‌شود تا وابستگی به f15_scripts
 # حذف شود. اگر فولدر scripts پاک شود، این کلاس هنوز داخل هسته باقی می‌ماند.
@@ -44,16 +46,19 @@ _TF_REGEX = re.compile(r"^(?P<tf>[A-Z0-9]+)_(?P<field>open|high|low|close|tick_v
 # - بعداً اگر کلیدهای متناظر از قبل در config.yaml موجود باشند، می‌توانیم همین کلاس
 #   را از روی کانفیگ پُر کنیم (طبق قانون کانفیگ شما: اگر کلید موجود بود، تکراری نسازیم).
 # - پیام‌های اجرایی در این کلاس نداریم؛ فقط داده و هِلپرهای سبک.
-# ======================================================================
+# -----------------------------------------------------------------------------
+"""
 @dataclass
 class FiboTestConfig:
     # مسیر دیتاست پردازش‌شده (در صورت نیاز برای سناریوی تست)
-    DATA_FILE: str = r"f02_data/processed/XAUUSD/M1.parquet"
+    DATA_FILE: str = r"f02_data/processed/XAUUSD/H1.parquet"
 
     # تایم‌فریم‌ها و پنجرهٔ برش دادهٔ اخیر
-    TFS: List[str] = field(default_factory=lambda: ["H1", "H4"])
-    TAILS: Dict[str, int] = field(default_factory=lambda: {"H1": 1500, "H4": 1000})
-    N_LEGS: int = 10  # تعداد لگ‌های اخیر برای هر TF
+    TFS: List[str] = field(default_factory=lambda: 
+                            ["M1", "M5", "M30", "H1", "H4", "D1", "W1"])
+    TAILS: Dict[str, int] = field(default_factory=lambda: 
+                            {"M1": 1000, "M5": 1000, "M30": 1000, "H1": 500, "H4": 500, "D1": 500, "W1":200})
+    N_LEGS: int = 5                # تعداد لگ‌های اخیر برای هر TF
 
     # پارامترهای خوشه‌بندی فیبو (درصدها به واحد percent هستند)
     TOL_PCT: float = 0.20          # پنجرهٔ همگرایی خوشه‌ها (٪)
@@ -94,36 +99,47 @@ class FiboTestConfig:
             "sr_tol_pct": self.SR_TOL_PCT,
         }
 
-# ======================================================================
-# هِلپر عمومی S/R: تولید سطوح رُندِ متقارن پیرامون ref
-# ======================================================================
-def round_levels(ref: float, step: float, count: int) -> List[float]:
+
+""" --------------------------------------------------------------------------- OK Func1
+"""
+def _deep_get(d: Dict[str, Any], path: str, default: Any = None) -> Any:
+    """دسترسی امن به مسیرهای تو در توی دیکشنری با dot-notation؛ در نبود کلید، مقدار پیش‌فرض برمی‌گردد."""
+    cur: Any = d
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return default
+        cur = cur[part]
+    return cur
+
+
+""" --------------------------------------------------------------------------- OK Func2
+هِلپر عمومی S/R: تولید سطوح رُندِ متقارن پیرامون ref
+"""
+def round_levels(anchor: float, step: float, n: int = 10) -> List[float]:
     """
-    توضیح آموزشی (فارسی):
-      حول قیمت مرجع، مجموعه‌ای از سطوح رُند با گام ثابت تولید می‌کند.
-      خروجی: [ref - k*step, ..., ref, ..., ref + k*step] با طول count
+    تولید یک «شبکهٔ سطوح رُند» حول مقدار anchor با فاصلهٔ step.
+    مثال: round_levels(1945.3, 10, n=5) → [1895, 1905, ..., 1995]
+
+    پارامترها:
+      anchor: لنگر قیمتی (مثلاً آخرین قیمت)
+      step: فاصلهٔ شبکه (مثلاً 10.0 برای طلا، یا 0.5 …)
+      n: چند سطح به بالا/پایین (دوطرفه)
+
+    خروجی: لیست سطوح رُند (کوچک به بزرگ)
     """
-    if count <= 0 or step <= 0:
-        return []
-    half = count // 2
-    start = ref - half * step
-    return [start + i * step for i in range(count)]
+    if step <= 0:
+        raise ValueError("step must be positive")
 
-''' نمونه استفاده:
-# از هسته:
-from f04_features.indicators.utils import FiboTestConfig
-
-cfg = FiboTestConfig()
-# مثالِ استفاده:
-cluster_kwargs = cfg.to_cluster_kwargs()
-sr_levels = cfg.sr_levels(ref_price=last_close_price)
-# سپس این‌ها را به fib_cluster_cfg / fib_cluster پاس بده.
-'''
-# ======================================================================================= end
+    base = np.floor(anchor / step) * step  # کف رند نزدیک
+    levels = [base + k * step for k in range(-n, n + 1)]
+    return sorted(levels)
 
 
-"""استخراج نمای استاندارد OHLC از ستون‌های دارای prefix همان TF."""
-def ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
+""" --------------------------------------------------------------------------- OK Func3
+استخراج نمای استانداردِ OHLC برای TF خواسته‌شده از روی ستون‌های پیشونددار.
+خروجی: DataFrame با ستون‌های ['open','high','low','close','tick_volume','spread'] (هر کدام که موجود باشد)
+"""
+def get_ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
     cols = {}
     for k in ["open", "high", "low", "close", "tick_volume", "spread"]:
         c = f"{tf}_{k}"
@@ -136,7 +152,8 @@ def ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
     out.sort_index(inplace=True)
     return out
 
-"""
+
+""" --------------------------------------------------------------------------- OK Func4
 یک هلپر عمومی برای انتخاب اولین ستون موجود از چند نامِ کاندید.
 اولین ستونی که در دیتافریم موجود است را برمی‌گرداند؛ در غیر این‌صورت None.
 """
@@ -150,6 +167,20 @@ def pick_first_existing(df: pd.DataFrame, candidates: Sequence[str]) -> Optional
     return None
 
 
+""" --------------------------------------------------------------------------- OK Func5
+این تابع از روی نام ستون‌های دیتافریم می فهمد چه «تایم‌فریم»‌هایی داخل داده وجود دارد
+ و برای هر تایم‌فریم، نگاشتی از ستون‌های واقعی به اسامی استاندارد OHLC می سازد.
+مثال:
+ {
+  "M30": TFView(tf="M30", cols={"open":"M30_open", "high":"M30_high", "low":"M30_low", "close": "M30_close",
+      # اگر ستون‌های دیگری مثل tick_volume/spread هم داشتیم، اینجا اضافه می‌شدند
+                                }
+                ),
+  "H1": TFView(tf="H1", cols={"open":"H1_open", "high":"H1_high", "low":"H1_low", "close": "H1_close",
+                                }
+                )
+}
+ """
 def detect_timeframes(df: pd.DataFrame) -> Dict[str, TFView]:
     buckets: Dict[str, Dict[str, str]] = {}
     for col in df.columns:
@@ -161,7 +192,10 @@ def detect_timeframes(df: pd.DataFrame) -> Dict[str, TFView]:
         buckets.setdefault(tf, {})[field] = col
     return {tf: TFView(tf=tf, cols=mapping) for tf, mapping in buckets.items()}
 
-# برش یک TF با استانداردسازی نام ستون‌ها
+
+""" --------------------------------------------------------------------------- OK Func6
+برش یک TF با استانداردسازی نام ستون‌ها
+"""
 def slice_tf(df: pd.DataFrame, view: TFView) -> pd.DataFrame:
     cols = []
     rename_map = {}
@@ -171,7 +205,10 @@ def slice_tf(df: pd.DataFrame, view: TFView) -> pd.DataFrame:
     sdf = df[cols].rename(columns=rename_map).copy()
     return sdf
 
-# نگهبان NaN و dtype سبک
+
+""" --------------------------------------------------------------------------- OK Func7
+نگهبان NaN و dtype سبک
+"""
 def nan_guard(df: pd.DataFrame) -> pd.DataFrame:
     df = df.replace([np.inf, -np.inf], np.nan)
     for c in df.columns:
@@ -182,14 +219,22 @@ def nan_guard(df: pd.DataFrame) -> pd.DataFrame:
             pass
     return df
 
-# z-Score ساده
+
+""" --------------------------------------------------------------------------- OK Func8
+z-Score ساده یا همان نرمال سازی
+"""
 def zscore(s: pd.Series, window: int, min_periods: int | None = None) -> pd.Series:
     mp = min_periods or window
+    # above line is equal to: 
+    # mp = window if min_periods is None else min_periods
     mean = s.rolling(window, min_periods=mp).mean()
     std = s.rolling(window, min_periods=mp).std()
     return ((s - mean) / std.replace(0, np.nan)).astype("float32")
 
-# True Range (برای ATR و ...)
+
+""" --------------------------------------------------------------------------- OK Func9
+True Range (برای ATR و ...)
+"""
 def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     prev_close = close.shift(1)
     tr1 = (high - low).abs()
@@ -197,6 +242,7 @@ def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     tr3 = (low - prev_close).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.astype("float32")
+
 
 # --- New Added ----------------------------------------------------- 040607
 """
@@ -208,36 +254,84 @@ def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
 
 نکته‌ها:
 - همهٔ ورودی/خروجی‌ها با ایندکس زمانی UTC مرتب فرض شده‌اند.
-- پیام‌های لاگ انگلیسی‌اند؛ توضیحات فارسی.
 - نام‌گذاری مطابق «اولین سند اصلاح اندیکاتورها».
 """
-# =========================
-# Additions for swing/metrics, ATR (SMA-based)
-# =========================
-def compute_atr(df: pd.DataFrame, window: int = 14) -> pd.Series:
-    """
-    English: Classic ATR (not Wilder smoothing). Returns a pandas Series aligned with df.index.
-    Persian: محاسبهٔ ATR کلاسیک برای داده‌ای که ستون‌های high/low/close دارد.
-    """
-    # توضیح: انتظار داریم ستون‌های high/low/close موجود باشند.
+
+
+""" --------------------------------------------------------------------------- OK Func10
+Additions for swing/metrics
+Wilder/EMA/Classic ATR. Returns a pandas Series aligned with df.index.
+- این تابع ATR را بر اساس True Range محاسبه می‌کند.
+- روش‌ها:
+  * "classic": میانگین سادهٔ TR (SMA) با min_periods نیم‌پنجره (مطابق نسخهٔ خودت)
+  * "wilder" : هموارسازی وایلدر با α = 1/window
+  * "ema"    : هموارسازی نمایی رایج با α = 2/(window+1)
+- خروجی: Series هم‌تراز با df.index
+"""
+def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "classic") -> pd.Series:
+
+    # نگهبان‌های ورودی
+    if window < 1:
+        raise ValueError("window must be >= 1")
     if not {"high", "low", "close"}.issubset(set(df.columns)):
         raise ValueError("DF must contain columns: high, low, close")
 
-    # True Range
-    prev_close = df["close"].shift(1)
-    tr1 = (df["high"] - df["low"]).abs()
-    tr2 = (df["high"] - prev_close).abs()
-    tr3 = (df["low"] - prev_close).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    # نرمال‌سازی روش
+    m = (method or "classic").strip().lower()
+    if m not in {"classic", "wilder", "ema"}:
+        raise ValueError(f"Unknown ATR method: {method!r}. Use 'classic', 'wilder', or 'ema'.")
 
-    # ATR: میانگین متحرک (ساده) — در آینده می‌توان Wilder یا EMA افزود.
-    atr = tr.rolling(window=window, min_periods=max(2, window // 2)).mean()
-    atr.name = f"ATR_{window}"
+    # True Range
+    tr = true_range(high=df["high"], low=df["low"], close=df["close"])
+
+    # محاسبهٔ ATR بر اساس روش
+    if m == "wilder":
+        atr = tr.ewm(alpha=1 / window, adjust=False, min_periods=window).mean()
+    elif m == "ema":
+        atr = tr.ewm(alpha=2 / (window + 1), adjust=False, min_periods=window).mean()
+    else:  # classic
+        #atr = tr.rolling(window=window, min_periods=max(2, window // 2)).mean()
+        atr = tr.rolling(window=window, min_periods=window).mean()
+
+    # بهینه‌سازی حافظه و نام‌گذاری یک‌دست
+    atr = atr.astype("float32")
+    atr.name = f"ATR_{m}_{window}"
     return atr
 
-# =========================
-# Swing Detection (H/L)
-# =========================
+
+""" --------------------------------------------------------------------------- OK Func11
+Swing Detection (H/L)
+
+English:
+    Local swing detection without SciPy:
+    - A point is swing-high if it's the maximum in a ±min_distance window.
+    - A point is swing-low  if it's the minimum in a ±min_distance window.
+    - Optional 'prominence' and 'atr_mult * ATR' filters to drop weak swings.
+Persian:
+    تشخیص قله/کف محلی بدون SciPy:
+    - بیشینه/کمینه در پنجرهٔ ±min_distance
+    - فیلتر اختیاری بر اساس prominence و همچنین آستانهٔ ATR (atr_mult * ATR)
+
+# نکته: price باید ایندکس زمانی UTC و مرتب داشته باشد.
+
+تشخیص قله/کف محلی بدون SciPy:
+    - نقطه swing-high اگر در پنجرهٔ ±min_distance بیشینه باشد.
+    - نقطه swing-low  اگر در پنجرهٔ ±min_distance کمینه باشد.
+    - فیلتر اختیاری با prominence و همچنین آستانهٔ ATR (atr_mult * ATR).
+
+ورودی‌ها:
+    price: Series اندیس‌گذاری‌شده بر حسب زمان (UTC)
+    prominence: حداقل برجستگی نسبت به لبه‌های پنجره (اختیاری)
+    min_distance: نصفِ اندازهٔ پنجره به دو طرف
+    atr: سری ATR هم‌تراز (اختیاری)
+    atr_mult: اگر داده شود، آستانهٔ حذف سوئینگ‌های ضعیف = atr_mult * ATR
+    tf: نام تایم‌فریم برای متادیتا (اختیاری)
+
+خروجی:
+    DataFrame با ایندکس زمانی، ستون‌ها: ['price','kind','atr','tf']
+    kind ∈ {'H','L'}
+
+"""
 def detect_swings(
     price: pd.Series,
     prominence: Optional[float] = None,
@@ -245,42 +339,14 @@ def detect_swings(
     atr: Optional[pd.Series] = None,
     atr_mult: Optional[float] = None,
     tf: Optional[str] = None,
-) -> pd.DataFrame:
-    """
-    English:
-      Local swing detection without SciPy:
-      - A point is swing-high if it's the maximum in a ±min_distance window.
-      - A point is swing-low  if it's the minimum in a ±min_distance window.
-      - Optional 'prominence' and 'atr_mult * ATR' filters to drop weak swings.
-    Persian:
-      تشخیص قله/کف محلی بدون SciPy:
-      - بیشینه/کمینه در پنجرهٔ ±min_distance
-      - فیلتر اختیاری بر اساس prominence و همچنین آستانهٔ ATR (atr_mult * ATR)
-    """
-    # نکته: price باید ایندکس زمانی UTC و مرتب داشته باشد.
-    
-    
-    """
-    تشخیص قله/کف محلی بدون SciPy:
-      - نقطه swing-high اگر در پنجرهٔ ±min_distance بیشینه باشد.
-      - نقطه swing-low  اگر در پنجرهٔ ±min_distance کمینه باشد.
-      - فیلتر اختیاری با prominence و همچنین آستانهٔ ATR (atr_mult * ATR).
+    ) -> pd.DataFrame:
 
-    ورودی‌ها:
-      price: Series اندیس‌گذاری‌شده بر حسب زمان (UTC)
-      prominence: حداقل برجستگی نسبت به لبه‌های پنجره (اختیاری)
-      min_distance: نصفِ اندازهٔ پنجره به دو طرف
-      atr: سری ATR هم‌تراز (اختیاری)
-      atr_mult: اگر داده شود، آستانهٔ حذف سوئینگ‌های ضعیف = atr_mult * ATR
-      tf: نام تایم‌فریم برای متادیتا (اختیاری)
-
-    خروجی:
-      DataFrame با ایندکس زمانی، ستون‌ها: ['price','kind','atr','tf']
-        kind ∈ {'H','L'}
-    """    
-    
     if not isinstance(price, pd.Series):
         raise TypeError("price must be a pandas Series indexed by time")
+
+    # تضمین ترتیب زمانی سریِ ورودی (پایدار): اگر مرتب نیست، یک‌بار پایدار مرتب می‌کنیم
+    if not price.index.is_monotonic_increasing:
+        price = price.sort_index(kind="stable")
 
     idx = price.index
     n = len(price)
@@ -303,10 +369,11 @@ def detect_swings(
         if not (is_high or is_low):
             continue
 
+        prom_left  = abs(p - left.iloc[-1])   # prom_left  = abs(price.iloc[i] - price.iloc[i-1])
+        prom_right = abs(p - right.iloc[0])   # prom_right = abs(price.iloc[i] - price.iloc[i+1])        
+
         # فیلتر prominence ساده: فاصله از نزدیک‌ترین همسایهٔ طرفین
         if (prominence is not None) and (prominence > 0):
-            prom_left = abs(p - left.iloc[-1])
-            prom_right = abs(p - right.iloc[0])
             prom_ok = (prom_left >= prominence) and (prom_right >= prominence)
             if not prom_ok:
                 continue
@@ -314,26 +381,29 @@ def detect_swings(
         # فیلتر مبتنی بر ATR (اگر دادهٔ ATR و ضریب atr_mult داده شده باشد)
         atr_here = float(atr.iloc[i]) if (atr is not None and pd.notna(atr.iloc[i])) else np.nan
         if (atr is not None) and (atr_mult is not None) and (atr_mult > 0) and not np.isnan(atr_here):
-            left_edge = left.iloc[-1]
-            right_edge = right.iloc[0]
-            local_prom = max(abs(p - left_edge), abs(p - right_edge))
+            local_prom = max(prom_left, prom_right)
             if local_prom < atr_mult * atr_here:
                 continue
 
+        # اگر p توسط هر دو فیلتر قبول شود:
         ts = idx[i]
         if is_high:
             highs.append((ts, float(p)))
         if is_low:
             lows.append((ts, float(p)))
 
-    # خروجی یکدست
+    # خروجی یکدست بصورت یک لیست از دیکشنری ها
     rows: List[Dict] = []
+    
     for ts, val in highs:
-        rows.append({"ts": ts, "price": val, "kind": "H", "atr": float(atr.loc[ts]) if atr is not None and ts in atr.index else np.nan, "tf": tf})
+        atr_value = float(atr.loc[ts]) if (atr is not None and ts in atr.index) else np.nan
+        rows.append({"ts": ts, "price": val, "kind": "H", "atr": atr_value, "tf": tf})
     for ts, val in lows:
-        rows.append({"ts": ts, "price": val, "kind": "L", "atr": float(atr.loc[ts]) if atr is not None and ts in atr.index else np.nan, "tf": tf})
+        atr_value = float(atr.loc[ts]) if (atr is not None and ts in atr.index) else np.nan
+        rows.append({"ts": ts, "price": val, "kind": "L", "atr": atr_value, "tf": tf})
 
     swings = pd.DataFrame(rows).sort_values("ts").reset_index(drop=True)
+
     if not swings.empty:
         swings.set_index("ts", inplace=True)
         swings.index = pd.to_datetime(swings.index, utc=True)
@@ -341,38 +411,53 @@ def detect_swings(
         logger.debug("detect_swings: no swings detected")
     return swings
 
-# =========================
-# Z-Score distance
-# =========================
+
+""" --------------------------------------------------------------------------- OK Func12
+Z-Score distance
+English: Return (x - mu) / sigma with small epsilon for stability.
+Persian: نرمال‌سازی فاصله با زی‌اسکور.
+"""
 def zscore_distance(x: float, mu: float, sigma: float, eps: float = 1e-12) -> float:
-    """
-    English: Return (x - mu) / sigma with small epsilon for stability.
-    Persian: نرمال‌سازی فاصله با زی‌اسکور.
-    """
+
     s = abs(sigma) if sigma is not None else 0.0
     return float((x - mu) / (s + eps))
 
-# =========================
-# Nearest level distance
-# =========================
+
+""" --------------------------------------------------------------------------- OK Func13
+Nearest level distance
+English: Find nearest level to 'price' and return distances (signed/abs) and the level.
+Persian: نزدیک‌ترین سطح قیمتی به price را برمی‌گرداند.
+"""
 def nearest_level_distance(price: float, levels: Sequence[float]) -> Dict[str, float]:
-    """
-    English: Find nearest level to 'price' and return distances (signed/abs) and the level.
-    Persian: نزدیک‌ترین سطح قیمتی به price را برمی‌گرداند.
-    """
-    if not levels:
+
+    # 1) گارد ایمن‌تر برای توالی خالی
+    if levels is None or len(levels) == 0:
+        return {"nearest_level": float("nan"), "signed": float("nan"), "abs": float("nan")}    
+
+    # 2) حذف مقادیر غیرمتناهی/NaN از levels
+    clean = [lv for lv in levels if np.isfinite(lv)]
+    if len(clean) == 0:
         return {"nearest_level": float("nan"), "signed": float("nan"), "abs": float("nan")}
-    # محاسبهٔ فاصله‌ها
-    diffs = [price - lv for lv in levels]
-    j = int(np.argmin([abs(d) for d in diffs]))
-    return {
-        "nearest_level": float(levels[j]),
-        "signed": float(diffs[j]),
-        "abs": float(abs(diffs[j])),
-    }
+
+    # 3) محاسبهٔ فاصله‌ها
+    diffs = [price - lv for lv in clean]
+    j = np.argmin([abs(d) for d in diffs])  # تبدیل به int لازم نیست
+    return {"nearest_level": float(clean[j]), "signed": float(diffs[j]), "abs": float(abs(diffs[j]))}
 
 
-# --- New Added ----------------------------------------------------- 040608
+""" --------------------------------------------------------------------------- Func14
+ساخت سطوح فیبوی رتریسمنت برای «n لگ اخیر» از روی سوئینگ‌های بسته.
+
+ورودی:
+    - ohlc_df: DataFrame با ستون‌های open/high/low/close (ایندکس UTC مرتب)
+    - n_legs: تعداد لگ‌های اخیر (پیش‌فرض 10)
+    - ratios: نسبت‌های فیبو (اگر None → [0.236,0.382,0.5,0.618,0.786])
+    - prominence/min_distance/atr_mult: پارامترهای فیلتر سوئینگ (برای حذف نویز)
+
+خروجی:
+    DataFrame ستون‌ها: ['ratio','price','leg_up','leg_idx']
+    - leg_idx: شمارهٔ لگ از انتها (1 = آخرین لگ، 2 = یکی قبل‌تر، ...)
+"""
 def levels_from_recent_legs(
     ohlc_df: pd.DataFrame,
     n_legs: int = 10,
@@ -381,34 +466,22 @@ def levels_from_recent_legs(
     min_distance: int = 5,
     atr_mult: Optional[float] = 1.0,
 ) -> pd.DataFrame:
-    """
-    ساخت سطوح فیبوی رتریسمنت برای «n لگ اخیر» از روی سوئینگ‌های بسته.
 
-    ورودی:
-      - ohlc_df: DataFrame با ستون‌های open/high/low/close (ایندکس UTC مرتب)
-      - n_legs: تعداد لگ‌های اخیر (پیش‌فرض 10)
-      - ratios: نسبت‌های فیبو (اگر None → [0.236,0.382,0.5,0.618,0.786])
-      - prominence/min_distance/atr_mult: پارامترهای فیلتر سوئینگ (برای حذف نویز)
-
-    خروجی:
-      DataFrame ستون‌ها: ['ratio','price','leg_up','leg_idx']
-      - leg_idx: شمارهٔ لگ از انتها (1 = آخرین لگ، 2 = یکی قبل‌تر، ...)
-    """
+    # 1) اگر ratios ندادیم، لیست پیش‌فرض ساخته می‌شود. --------------
     if ratios is None:
         ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
 
-    # محاسبهٔ ATR برای فیلتر سوئینگ (در صورت نیاز)
+    # 2) محاسبهٔ ATR برای فیلتر سوئینگ (در صورت نیاز) ---------------
     atr = None
     try:
-        from .utils import compute_atr as _compute_atr  # اجتناب از import حلقوی
-        atr = _compute_atr(ohlc_df, window=14)
+        atr = compute_atr(ohlc_df, window=14, method="wilder")
     except Exception:
         pass
 
+    # 3) محاسبه سوئینگ ها -------------------------------------------
     close = ohlc_df["close"].astype(float)
     try:
-        from .utils import detect_swings as _detect_swings
-        swings = _detect_swings(
+        swings = detect_swings(
             close,
             prominence=prominence,
             min_distance=min_distance,
@@ -420,9 +493,11 @@ def levels_from_recent_legs(
         # اگر detect_swings در دسترس نبود
         return pd.DataFrame(columns=["ratio", "price", "leg_up", "leg_idx"])
 
+    # 4) اگر سوئینگ کمتر از ۲ نقطه بود، خروجی خالی است --------------
     if swings is None or swings.empty or len(swings) < 2:
         return pd.DataFrame(columns=["ratio", "price", "leg_up", "leg_idx"])
 
+    # 5) سورت نمودن با ایندکس و تبدیل لیست قیمت‌های سوئینگ به آرایه -
     s = swings.sort_index()
     prices = s["price"].astype(float).to_numpy()
 
@@ -432,19 +507,21 @@ def levels_from_recent_legs(
     last_i = len(prices) - 1
     max_legs = min(n_legs, last_i)  # به تعداد جفت‌ها می‌تونیم لگ بسازیم
 
-    for k in range(1, max_legs + 1):
-        i = last_i - (k - 1)
+    # 6) از آخرین نقطه شروع می‌کند؛ هر جفت متوالی یک لگ می‌شود (p1→p2).
+    for k in range(0, max_legs):
+        i = last_i - k
         j = i - 1
         if j < 0:
             break
-        p1, p2 = prices[j], prices[i]
+        p1, p2 = prices[j], prices[i]   # p1: old_price,   p2: new_price
+        # 7) جهت لگ (leg_up) تعیین می‌شود، سپس low و high انتخاب می‌شود.
         leg_up = p2 > p1
         low, high = (p1, p2) if leg_up else (p2, p1)
 
-        rng = high - low
+        rng = high - low   # it means "range"
         if rng <= 0:
             continue
-
+        # 8) برای هر نسبت فیبو، قیمت رتریسمنت محاسبه و در لیست rows ذخیره می‌شود.
         for r in ratios:
             # قیمت رتریسمنتِ لگ (استاندارد)
             price = (high - r * rng) if leg_up else (low + r * rng)
@@ -452,9 +529,9 @@ def levels_from_recent_legs(
                 "ratio": float(r),
                 "price": float(price),
                 "leg_up": bool(leg_up),
-                "leg_idx": int(k),
+                "leg_idx": int(k+1),   # آخرین لگ یا اخیرترین لگ دارای ایندکس 1 خواهد بود
             })
-
+    # 9)دیتافریم نهایی ساخته و بر اساس price و leg_idx مرتب می‌شود.
     out = pd.DataFrame(rows)
     if not out.empty:
         out = out.sort_values(["price", "leg_idx"]).reset_index(drop=True)
