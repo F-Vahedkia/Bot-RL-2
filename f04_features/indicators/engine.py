@@ -14,7 +14,7 @@ from .parser import parse_spec_v2, ParsedSpec
 from .registry import get_indicator_v2
 
 # ابزارهای موتور قدیمی (برای سازگاری عقب‌رو)
-from .utils import detect_timeframes, slice_tf, nan_guard
+from .utils import detect_timeframes, slice_tf, nan_guard, get_ohlc_view
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -143,24 +143,6 @@ def _available_timeframes(df: pd.DataFrame) -> List[str]:
     return sorted(tfs)
 
 
-def _get_ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
-    """
-    استخراج نمای استانداردِ OHLC برای TF خواسته‌شده از روی ستون‌های پیشونددار.
-    خروجی: DataFrame با ستون‌های ['open','high','low','close','tick_volume','spread'] (هر کدام که موجود باشد)
-    """
-    cols = {}
-    for k in _OHLC_KEYS:
-        col = f"{tf}_{k}"
-        if col in df.columns:
-            cols[k] = df[col]
-    if not cols:
-        raise KeyError(f"OHLC view for TF='{tf}' not found in columns")
-    out = pd.DataFrame(cols).copy()
-    out.index = pd.to_datetime(df.index, utc=True)
-    out.sort_index(inplace=True)
-    return out
-
-
 def _ensure_utc_index(x: pd.DataFrame | pd.Series) -> pd.DataFrame | pd.Series:
     """ایندکس را UTC و مرتب نگه می‌داریم."""
     if isinstance(x.index, pd.DatetimeIndex):
@@ -222,11 +204,26 @@ def _compute_feature_df_v2(
     ohlc = view_cache.get(tf)
     if ohlc is None:
         try:
-            ohlc = _get_ohlc_view(df_in, tf)
+            ohlc = get_ohlc_view(df_in, tf)
         except Exception as e:
             logger.error("OHLC view for TF '%s' not available: %s", tf, e)
             return None
         view_cache[tf] = ohlc
+
+    # اگر اندیکاتور به tf_dfs/symbol نیاز دارد (مثل fibo_features_full)
+    if ps.name in {"fibo_features_full", "fibo_run"}:
+        # ساخت map نمای OHLC همهٔ TFهای موجود
+        #tf_dfs = {t: (view_cache.get(t) or get_ohlc_view(df_in, t)) for t in _available_timeframes(df_in)}
+        tf_dfs = {t: (view_cache[t] if t in view_cache 
+                      else view_cache.setdefault(t, get_ohlc_view(df_in, t))) 
+                      for t in _available_timeframes(df_in)}
+
+        for t, v in tf_dfs.items():
+            view_cache.setdefault(t, v)
+        # تلاش برای استخراج symbol از ستون‌ها/متادیتا (fallback: "SYMBOL")
+        symbol = getattr(df_in, "attrs", {}).get("symbol", "SYMBOL")
+        result = get_indicator_v2(ps.name)(symbol=symbol, tf_dfs=tf_dfs, base_tf=(ps.timeframe or base_tf))
+        return _ensure_utc_index(pd.DataFrame(result))
 
     # اجرای تابع اندیکاتور (قرارداد: df اول و سپس args/kwargs)
     try:
@@ -238,9 +235,18 @@ def _compute_feature_df_v2(
     if result is None:
         return None
 
-    # نرمال‌سازی خروجی به DataFrame با نام‌گذاری استاندارد
-    if isinstance(result, pd.Series):
+    # نرمال‌سازی خروجی به DataFrame با نام‌گذاری استاندارد (dict/Series/DataFrame/scalar-safe)
+    if isinstance(result, dict):
+        df_feat = pd.DataFrame(result)
+        renamed: Dict[str, str] = {}
+        for c in df_feat.columns:
+            safe = str(c) if (c is not None and str(c) != "") else "val"
+            renamed[c] = f"__{ps.name}@{tf}__{safe}"
+        df_feat.rename(columns=renamed, inplace=True)
+
+    elif isinstance(result, pd.Series):
         df_feat = result.rename(f"__{ps.name}@{tf}").to_frame()
+
     elif isinstance(result, pd.DataFrame):
         df_feat = result.copy()
         renamed: Dict[str, str] = {}
@@ -248,16 +254,16 @@ def _compute_feature_df_v2(
             safe = str(c) if (c is not None and str(c) != "") else "val"
             renamed[c] = f"__{ps.name}@{tf}__{safe}"
         df_feat.rename(columns=renamed, inplace=True)
+
     else:
-        # اسکالر/لیست → ستون ثابت روی ایندکس ورودی
-        ser = pd.Series(np.nan, index=df_in.index, name=f"__{ps.name}@{tf}")
-        try:
-            ser.iloc[:] = float(result)
-        except Exception:
-            ser.iloc[:] = str(result)
+        # اسکالر عددی → سری float؛ سایر انواع → سری object (بدون هشدار dtype)
+        if np.isscalar(result) and isinstance(result, (int, float, np.integer, np.floating)):
+            ser = pd.Series(result, index=df_in.index, name=f"__{ps.name}@{tf}", dtype="float32")
+        else:
+            ser = pd.Series(str(result), index=df_in.index, name=f"__{ps.name}@{tf}", dtype="object")
         df_feat = ser.to_frame()
 
-    return df_feat
+    return _ensure_utc_index(df_feat)
 
 
 def run_specs_v2(df: pd.DataFrame, specs: Iterable[str], base_tf: str) -> pd.DataFrame:
@@ -298,6 +304,21 @@ def run_specs_v2(df: pd.DataFrame, specs: Iterable[str], base_tf: str) -> pd.Dat
 
         if not feat_cols:
             continue
+
+        # ===== normalize feature outputs (Series/dict → DataFrame) =====
+        # تبدیل خروجی‌های تابع اندیکاتور به DataFrame یکنواخت برای concat
+        norm_cols = []
+        for f in feat_cols:
+            # اگر یک map از نام‌ستون→Series باشد، آن را به DataFrame تبدیل می‌کنیم
+            if isinstance(f, dict):
+                norm_cols.append(pd.DataFrame(f))
+            # اگر یک Series منفرد باشد، به DataFrame یک‌ستونه تبدیل می‌کنیم
+            elif isinstance(f, pd.Series):
+                norm_cols.append(f.to_frame())
+            else:
+                norm_cols.append(f)
+        feat_cols = norm_cols
+        # ===== end normalize =====
 
         # افقی‌سازی فیچرهای همان TF
         tf_feats = pd.concat(feat_cols, axis=1)

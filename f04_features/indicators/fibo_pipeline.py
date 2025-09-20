@@ -22,9 +22,10 @@ import numpy as np
 
 # توجه: ماژول‌های هسته (همین‌جا مصرف می‌شوند)
 import f04_features.indicators.levels as lv
-from f04_features.indicators.fibonacci import fib_cluster_cfg, _deep_get
-from f04_features.indicators.core import rsi as rsi_core
-from f04_features.indicators.extras_trend import func_ma_slope
+from f04_features.indicators.fibonacci import fib_cluster_cfg, select_legs_from_swings, levels_from_legs
+from f04_features.indicators.utils import _deep_get, detect_swings
+from f04_features.indicators.core import rsi as rsi_core, atr as atr_core
+from f04_features.indicators.extras_trend import ma_slope as func_ma_slope
 from f10_utils.config_loader import ConfigLoader  # :contentReference[oaicite:0]{index=0}
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,6 @@ logger.setLevel(logging.INFO)
 # -----------------------------------------------------------------------------
 # ابزار کمکی عمومی
 # -----------------------------------------------------------------------------
-
 def _ratios_map_from_cfg(cfg_all: Dict[str, Any]) -> List[Tuple[str, float]]:
     """
     استخراج نقشهٔ ستون→نسبت بر اساس levels.fibo_levels فعلی.
@@ -82,6 +82,34 @@ def build_fibo_levels_per_tf_multi(
     if df is None or df.empty or not {"close","high","low"}.issubset(df.columns):
         return None
 
+    # ------------------------------------------------------------------------- Added 040618 start
+    # --- مسیر ۱: ساخت سطوح از «لگ‌ها» (در صورت موفقیت) ---
+    try:
+        # پارامترهای انتخاب لگ از config
+        _max_legs = int(_deep_get(cfg_all or {}, "features.fibonacci.leg_selection.max_legs_per_tf", max_legs_per_tf))
+        _prom_min = _deep_get(cfg_all or {}, "features.fibonacci.leg_selection.prominence_min", None)
+        # سوئینگ‌ها از سری قیمت بسته؛ حداقل فاصلهٔ قله/کف = k
+        swings = detect_swings(price=df["close"].astype(float),
+                               prominence=_prom_min, min_distance=int(k),
+                               atr=None, atr_mult=None, tf=None)
+        legs = select_legs_from_swings(swings,
+                                       max_legs=_max_legs,
+                                       min_prominence=_prom_min,
+                                       min_length_pct=None,
+                                       max_age_bars=None)
+        if legs:
+            # نگاشت نسبت‌ها از config و استخراج لیست عددی
+            ratios_map = _ratios_map_from_cfg(cfg_all or {})
+            _ratios = [r for _, r in ratios_map] or None
+            leg_levels = levels_from_legs(legs, ratios=_ratios)  # → DataFrame ['price','ratio']
+            if leg_levels is not None and not leg_levels.empty:
+                logger.info("[FIBO-PIPE] Leg-path built %d rows.", len(leg_levels))
+                return leg_levels[["price", "ratio"]]
+    except Exception as _e:
+        logger.info("Leg-based levels path failed; falling back. %s", _e)
+    # ------------------------------------------------------------------------- Added 040618 end
+    
+    # --- مسیر ۲ (فالبک امن): منطق فعلی بر پایهٔ lv.fibo_levels ---
     out = lv.fibo_levels(close=df["close"], high=df["high"], low=df["low"], k=int(k))
     if isinstance(out, dict):
         levels_df = pd.DataFrame(out)
@@ -106,8 +134,13 @@ def build_fibo_levels_per_tf_multi(
         tail = s.tail(int(max_legs_per_tf))
         rows += [{"price": float(v), "ratio": float(r)} for v in tail.tolist()]
 
-    return pd.DataFrame(rows, columns=["price", "ratio"]) if rows else None
-
+    #return pd.DataFrame(rows, columns=["price", "ratio"]) if rows else None
+    out_df = pd.DataFrame(rows, columns=["price", "ratio"]) if rows else None
+    if out_df is not None:
+        logger.info("[FIBO-PIPE] Fallback fibo_levels-path built %d rows.", len(out_df))
+    else:
+        logger.info("[FIBO-PIPE] Fallback fibo_levels-path returned empty.")
+    return out_df
 
 # -----------------------------------------------------------------------------
 # ۲) ADR / MA-slope / SR
@@ -127,8 +160,9 @@ def compute_adr_value(df: pd.DataFrame, window: int, tz: str) -> Optional[float]
 
 
 def extract_sr_levels_from_fractals(
-    df: pd.DataFrame, k: int = 2, lookback: int = 1500, max_levels: int = 30
-) -> Optional[List[float]]:
+            df: pd.DataFrame, k: int = 2,
+            lookback: int = 1500,
+            max_levels: int = 30) -> Optional[List[float]]:
     """
     استخراج سطوح SR از روی فراکتال‌ها؛ اگر چیزی برنگشت از پیوت‌های کلاسیک fallback می‌گیریم.
     """
@@ -246,7 +280,7 @@ class FiboRunResult:
     ref_price: Optional[float]
     clusters: pd.DataFrame
     abc_projections: Optional[List[Dict[str, Any]]] = None
-
+    
 def run_fibo_cluster(
     symbol: str,
     tf_dfs: Dict[str, pd.DataFrame],
@@ -254,7 +288,8 @@ def run_fibo_cluster(
     k_fractal: int = 2,
     max_legs_per_tf: int = 3,
     tz: str = "UTC",
-) -> FiboRunResult:
+    swings_for_abc: Optional[pd.DataFrame] = None) -> FiboRunResult:
+
     """
     اجرای سرراست خوشهٔ فیبوناچی:
       - ساخت سطوح فیبو برای هر TF
@@ -286,22 +321,39 @@ def run_fibo_cluster(
     ref_time = base_df.index[-1] if len(base_df.index) > 0 else None
     ref_price = float(base_df["close"].iloc[-1]) if "close" in base_df.columns and len(base_df) else None
 
+    # مقداردهی امن برای جلوگیری از UnboundLocalError در صورت استثناء
+    adr_value = None
+    ma_slope  = None
+    sr_levels = None
+
     # ۳) ADR / MA / SR
     adr_window = int(_deep_get(cfg_all, "features.levels.adr.window", 14))
-    adr_value = compute_adr_value(base_df, window=adr_window, tz=str(tz))
-
+    try:
+        adr_value = compute_adr_value(base_df, window=adr_window, tz=str(tz))
+    except Exception as e:
+        logger.info("ADR compute failed: %s", e)
+        adr_value = None    
+    
     ma_window = int(_deep_get(cfg_all, "features.levels.ma.window", 50))
-    # ma_slope = compute_ma_slope_series(base_df, window=ma_window)
-    ma_slope = func_ma_slope(base_df, 
-                            price_col = "close",
-                            window = ma_window,
-                            method = "sma",
-                            norm = "none")
+    try:
+        ma_slope = func_ma_slope(base_df, 
+                                price_col = "close",
+                                window = ma_window,
+                                method = "sma",
+                                norm = "none")
+    except Exception as e:
+        logger.info("MA slope compute failed: %s", e)
+        ma_slope = None
 
     sr_k = int(_deep_get(cfg_all, "features.levels.sr.k", 2))
     sr_lookback = int(_deep_get(cfg_all, "features.levels.sr.lookback", 1500))
     sr_max = int(_deep_get(cfg_all, "features.levels.sr.max_levels", 30))
-    sr_levels = extract_sr_levels_from_fractals(base_df, k=sr_k, lookback=sr_lookback, max_levels=sr_max)
+
+    try:
+        sr_levels = extract_sr_levels_from_fractals(base_df, k=sr_k, lookback=sr_lookback, max_levels=sr_max)
+    except Exception as e:
+        logger.info("SR levels compute failed: %s", e)
+        sr_levels = None
 
     if ma_slope is None:
         logger.info("MA slope not available; clustering will run without ma_slope.")
@@ -317,7 +369,8 @@ def run_fibo_cluster(
     #    این رَپر tol_pct/weights/... را از config.yaml می‌خواند.
     
     # ۴-b) محاسبهٔ RSI-zone score به‌صورت سری زمانی (بر مبنای config فعلی)
-    rsi_cfg   = _deep_get(cfg_all, ["fibonacci", "rsi"]) or {}
+    #rsi_cfg   = _deep_get(cfg_all, ["fibonacci", "rsi"]) or {}
+    rsi_cfg   = _deep_get(cfg_all, "fibonacci.rsi") or {}
     rsi_len   = int(rsi_cfg.get("length", 14))
     rsi_ob    = float(rsi_cfg.get("overbought", 70.0))
     rsi_os    = float(rsi_cfg.get("oversold", 30.0))
@@ -332,17 +385,19 @@ def run_fibo_cluster(
     
     cluster_df = fib_cluster_cfg(
         tf_levels=tf_levels,
-        ref_time=ref_time,
+        
+        ma_slope=ma_slope,
+        rsi_zone_score=rsi_zone_score,
+        sr_levels=sr_levels,
+        ref_time=ref_time,      
+        #adr_value=adr_value,
+        #cfg_all=cfg_all,        
         # Adaptive tol (اگر در رَپر/کانفیگ فعال است)
         # ref_price=ref_price,
-        # adr_value=adr_value,
         # atr_value=None,
-        # Confluence hooks
-        rsi_zone_score=rsi_zone_score,
-        ma_slope=ma_slope,
-        sr_levels=sr_levels,
+        # Confluence hooks     
     )
-
+    '''
     # ۶) Order Planner (اختیاری): SL/TP ساده بر اساس ATR از config
     op_cfg    = _deep_get(cfg_all, ["fibonacci", "order_planner"]) or {}
     sl_mult   = float(op_cfg.get("sl_atr_mult", 0.0))
@@ -352,7 +407,45 @@ def run_fibo_cluster(
     atr_val   = base_df["ATR"].iloc[-1] if "ATR" in base_df.columns else None
     sl_price  = (ref_price - sl_mult * atr_val) if (atr_val is not None and sl_mult > 0) else None
     tp_price  = (ref_price + tp_mult * atr_val) if (atr_val is not None and tp_mult > 0) else None
+    '''
+    # ------------------------------------------------------------------------- Added 040618 start
+    # ۶) Order Planner (اختیاری): SL/TP و Partial-TP بر اساس ATR و config
+    #op_cfg     = _deep_get(cfg_all, ["fibonacci", "order_planner"]) or {}
+    op_cfg     = _deep_get(cfg_all, "fibonacci.order_planner") or {}
+    use_atr    = bool(op_cfg.get("use_atr_for_sl_tp", True))
+    sl_mult    = float(op_cfg.get("sl_atr_mult", 0.0))
+    tp_mult    = float(op_cfg.get("tp_atr_mult", 0.0))
+    pconf      = op_cfg.get("partial_take_profits", {}) or {}
+    p_enabled  = bool(pconf.get("enabled", False))
+    p_levels   = list(pconf.get("levels_r_multiple", []) or [])
+    p_portions = list(pconf.get("portions", []) or [])
 
+    order_plan = None
+    if use_atr and ("high" in base_df.columns and "low" in base_df.columns and "close" in base_df.columns):
+        atr_len   = int(op_cfg.get("atr_length", 14))
+        atr_vals  = atr_core(base_df["high"], base_df["low"], base_df["close"], n=atr_len)
+        atr_val   = float(atr_vals.iloc[-1]) if len(atr_vals) else None
+        if atr_val and sl_mult > 0:
+            sl_long   = ref_price - sl_mult * atr_val
+            sl_short  = ref_price + sl_mult * atr_val
+            # TP پایه (یک‌تایی) اگر tp_mult > 0 تعیین شود
+            tp_long   = (ref_price + tp_mult * atr_val) if tp_mult > 0 else None
+            tp_short  = (ref_price - tp_mult * atr_val) if tp_mult > 0 else None
+            # Partial-TP بر اساس R = |Entry - SL|
+            r_long    = abs(ref_price - sl_long)
+            r_short   = abs(sl_short - ref_price)
+            ptp_long  = [ref_price + m * r_long  for m in p_levels] if p_enabled and r_long  > 0 else []
+            ptp_short = [ref_price - m * r_short for m in p_levels] if p_enabled and r_short > 0 else []
+            order_plan = {
+                "atr_len": atr_len,
+                "atr": atr_val,
+                "sl_mult": sl_mult,
+                "tp_mult": tp_mult,
+                "long":  {"sl": sl_long,  "tp": tp_long,  "partial_levels": ptp_long,  "partial_portions": p_portions},
+                "short": {"sl": sl_short, "tp": tp_short, "partial_levels": ptp_short, "partial_portions": p_portions},
+            }
+    # ------------------------------------------------------------------------- Added 040618 end
+    
     res = FiboRunResult(
         symbol=symbol,
         base_tf=base_tf,
@@ -360,11 +453,21 @@ def run_fibo_cluster(
         ref_price=ref_price,
         clusters=cluster_df if cluster_df is not None else pd.DataFrame(),
     )
-    # سنجاق خروجی Order Planner (اختیاری و غیرشکننده)
+    '''
+    # سنجاق خروجی Order Planner (اختیاری و غیرشکننده) 
     try:
-        res.order_planner = {"sl": sl_price, "tp": tp_price, "partial": partial_tp}
+        if order_plan is not None:
+            setattr(res, "order_planner", order_plan)
     except Exception:
         pass
+    return res
+    '''
+    # اگر سوئینگ‌ها داده شده باشد، خروجی ABC را ضمیمه کن (Non-breaking)
+    try:
+        if (swings_for_abc is not None) and (len(swings_for_abc)>=3):
+            res = attach_abc_projections_to_result(res, swings_df=swings_for_abc, cfg_all=cfg_all)
+    except Exception:
+        pass    
     return res
 
 # ============================================================================
@@ -376,6 +479,7 @@ def get_abc_projections_from_swings(
     cfg_all=None,
 ):
     """
+    تولید Projection چندنسبتی با fallback و فیلتر tol از config
     محاسبهٔ Projection برای الگوی ABC با نسبت‌های متعدد.
     - ورودی: دیتافریم سوئینگ‌ها (همانی که detect_ab_equal_cd مصرف می‌کند)
     - خروجی: لیستی از دیکشنری‌ها با کلیدهای استاندارد ABC + D_pred/err_pct برای هر نسبت
@@ -383,29 +487,50 @@ def get_abc_projections_from_swings(
     """
     from f04_features.indicators.patterns import detect_ab_equal_cd, abc_projection_adapter_from_abcd
 
-    # گام 1) تلاش برای استخراج ABC/D واقعی از روی آخرین 4 سوئینگ
+    # ========== گام 1) تلاش برای استخراج ABC/D واقعی از روی آخرین 4 سوئینگ
+    
     abcd = detect_ab_equal_cd(swings_df)
     base = abc_projection_adapter_from_abcd(abcd) if abcd else None
     if not base:
-        return []  # هیچ ABC معتبر پیدا نشد؛ خروجی خالی
+        #Fallback: آخرین سه سوئینگِ معتبر با تناوب L/H/L یا H/L/H را به ABC تبدیل کن
+        # انتظار ورودی: ستون‌های 'price' و 'kind' با مقادیر {'L','H'}
+        df = swings_df.dropna(subset=["price", "kind"]).copy()
+        if len(df) < 3:
+            return []
+        # 3 نقطهٔ آخر با تناوب معتبر
+        tail = df.iloc[-6:]  # کمی بیشتر برای یافتن تناوب
+        seq = []
+        prev = None
+        for ts, row in tail.iterrows():
+            k = str(row["kind"])
+            if prev is None or (k != prev):
+                seq.append((float(row["price"]), k))
+                prev = k
+        if len(seq) < 3:
+            return []
+        A,B,C = seq[-3][0], seq[-2][0], seq[-1][0]
+        base = {"A": A, "B": B, "C": C, "D_real": None, "length_AB": abs(B - A)}
+
 
     A = base["A"]; B = base["B"]; C = base["C"]
-    D_real = base.get("D_real", None)  # ممکن است آخرین نقطه D موجود باشد
-    length_AB = base["length_AB"] if base.get("length_AB") is not None else abs(B - A)
+    D_real = base.get("D_real", None)
+    length_AB = base.get("length_AB", None)
+    if length_AB is None:
+        length_AB = abs(B - A)
 
-    # جهت حرکتِ CD را مطابق جهتِ AB تعریف می‌کنیم (ساده و قابل‌گسترش)
+    # ========== جهت حرکتِ CD را مطابق جهتِ AB تعریف می‌کنیم (ساده و قابل‌گسترش)
     cd_dir = 1.0 if (B - A) >= 0 else -1.0
 
-    # نسبت‌ها را از ورودی بگیر؛ اگر None بود و cfg_all داریم، از config بخوان
+    # ========== نسبت‌ها را از ورودی بگیر؛ اگر None بود و cfg_all داریم، از config بخوان
     _ratios = ratios
     if _ratios is None and cfg_all is not None:
-        _ratios = _deep_get(cfg_all, ["fibonacci", "extension_ratios"])
+        _ratios = _deep_get(cfg_all, "fibonacci.extension_ratios")
     if not _ratios:
         # fallback ایمن در صورت نبود config
         _ratios = (1.0, 1.127, 1.236, 1.272, 1.414, 1.5, 1.618, 2.0)
 
     out = []
-    for r in ratios:
+    for r in _ratios:
         # D_pred = C + r * (|AB|) در جهت cd_dir
         d_pred = C + cd_dir * (r * length_AB)
         err = None
@@ -421,7 +546,32 @@ def get_abc_projections_from_swings(
             "proj_ratio": float(r),
             "err_pct": float(err) if err is not None else None,
         })
+    
+    # ========== (اختیاری) فیلتر کردن بر اساس tol_pct از config (اگر موجود بود)
+    tol_pct = None
+    if cfg_all is not None:
+        tol_pct = _deep_get(cfg_all, "fibonacci.cluster.tol_pct")
+    if tol_pct is not None:
+        out = [d for d in out if (d["err_pct"] is None) or (d["err_pct"] <= float(tol_pct))]    
+    
     return out
+
+
+def attach_abc_projections_to_result(result: "FiboRunResult", swings_df, cfg_all=None, ratios=None) -> "FiboRunResult":
+    """
+    Optional: محاسبهٔ ABC Projection و سنجاق به result. API اصلی را نمی‌شکند.
+    """
+    try:
+        proj = get_abc_projections_from_swings(swings_df, ratios=ratios, cfg_all=cfg_all)
+    except Exception:
+        proj = []
+    result.abc_projections = proj
+    return result
+    '''
+    # نمونهٔ استفاده (خارج از run_fibo_cluster):
+    res = run_fibo_cluster(symbol, tf_dfs, base_tf, k_fractal, max_legs_per_tf, tz)
+    res = attach_abc_projections_to_result(res, swings_df, cfg_all=cfg_all)  # swings_df همان دیتافریم سوئینگ‌ها
+    '''
 
 
 def compose_fibo_with_abc_full(result, swings_df, ratios=None, cfg_all=None):

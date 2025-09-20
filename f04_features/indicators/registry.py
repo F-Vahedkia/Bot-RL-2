@@ -9,25 +9,174 @@ python -m f04_features.indicators --list
 from __future__ import annotations
 from typing import Callable, Dict, Any, Optional
 import logging
+import numpy as np
+import pandas as pd
 
-# توجه: مسیرها را با ساختار جدید هماهنگ کرده‌ایم (داخل indicators/)
-from f04_features.indicators.fibonacci import golden_zone, fib_cluster, fib_ext_targets
-from f04_features.indicators.fibonacci import (
-    golden_zone, fib_cluster, fib_ext_targets,
-    levels_from_legs, select_legs_from_swings, #_select_legs,
-    _infer_ref_price_from_tf_levels, _compute_adaptive_tol_pct,
-    _adaptive_tol_pct, #_rsi_zone_score
-)
-
-from f04_features.indicators.extras_trend import ma_slope, rsi_zone
-# (در صورت نیاز بعداً: از levels/utils هم import می‌کنیم)
-from f04_features.indicators.levels import round_levels, compute_adr, adr_distance_to_open, sr_overlap_score
+from .fibonacci import (golden_zone, fib_cluster, fib_ext_targets,
+                        levels_from_legs, select_legs_from_swings)
+from .fibo_pipeline import run_fibo_cluster
+from .extras_trend import ma_slope, rsi_zone
+from .core import rsi as rsi_core, ema as ema_core
+from .levels import compute_adr, adr_distance_to_open, sr_overlap_score
+from .utils import round_levels, compute_atr, nearest_level_distance
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-Registry = Dict[str, Callable]
+def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, **_) -> Dict[str, pd.Series]:
+    """
+    خروجی per-bar هم‌تراز با base_tf از خوشه‌های فیبوناچی:
+    - فاصله‌ها (abs/signed/level)
+    - نرمال‌سازی فاصله با ATR
+    - نسبت فیبو و پرچم extension
+    - نرمال‌سازی امتیاز خوشه (score به [0,1])
+    - عبور دادن sr_score و trend_score (اگر در کلستر موجود باشند)
+    """
+    # 1) اجرای پایپلاین فیبو و دریافت کلسترها
+    res = run_fibo_cluster(symbol=symbol, tf_dfs=tf_dfs, base_tf=str(base_tf))
+    clusters = res.clusters if (res is not None and isinstance(res.clusters, pd.DataFrame)) else pd.DataFrame()
 
+    # 2) سری‌های پایه از TF مبنا
+    base = tf_dfs[str(base_tf)]
+    close = base["close"]
+    high  = base.get("high", None)
+    low   = base.get("low", None)
+
+    # 3) اگر کلستری نیست، ستون‌ها را NaN برگردان
+    if clusters is None or clusters.empty:
+        nan = close.astype("float32") * np.nan
+        return {
+            f"fibc_nearest_abs@{base_tf}": nan,
+            f"fibc_nearest_signed@{base_tf}": nan,
+            f"fibc_nearest_level@{base_tf}": nan,
+            f"fibc_nearest_abs_atr@{base_tf}": nan,
+            f"fibc_nearest_ratio@{base_tf}": nan,
+            f"fibc_is_extension@{base_tf}": nan,
+            f"fibc_score_norm@{base_tf}": nan,
+            f"fibc_sr_score@{base_tf}": nan,
+            f"fibc_trend_score@{base_tf}": nan,
+        }
+
+    # 4) لیست سطوح خوشه (price_mean اگر موجود؛ در غیراینصورت price)
+    level_col = "price_mean" if "price_mean" in clusters.columns else ("price" if "price" in clusters.columns else None)
+    if level_col is None:
+        nan = close.astype("float32") * np.nan
+        return {
+            f"fibc_nearest_abs@{base_tf}": nan,
+            f"fibc_nearest_signed@{base_tf}": nan,
+            f"fibc_nearest_level@{base_tf}": nan,
+            f"fibc_nearest_abs_atr@{base_tf}": nan,
+            f"fibc_nearest_ratio@{base_tf}": nan,
+            f"fibc_is_extension@{base_tf}": nan,
+            f"fibc_score_norm@{base_tf}": nan,
+            f"fibc_sr_score@{base_tf}": nan,
+            f"fibc_trend_score@{base_tf}": nan,
+        }
+    levels = clusters[level_col].astype("float32").tolist()
+    #logger.info("FIBO clusters columns: %s", list(clusters.columns))   # temp_logger
+
+    # 5) nearest level metrics per-bar
+    def _nearest_tuple(p: float):
+        d = nearest_level_distance(float(p), levels)
+        # اندیس نزدیک‌ترین کلستر
+        j = int(np.argmin([abs(float(p) - float(lv)) for lv in levels])) if levels else -1
+        if j < 0:
+            return (np.nan, np.nan, np.nan, np.nan, np.nan, np.nan)
+        row = clusters.iloc[j]
+        
+        # compute ratio from 'ratio' or nearest-to-1.0 from 'ratios'
+        score = float(row.get("score", np.nan))
+        if pd.notna(row.get("ratio", np.nan)):
+            r = float(row["ratio"])
+        else:
+            rats = row.get("ratios", None)
+            r = (float(min(rats, key=lambda x: abs(float(x) - 1.0)))
+                if isinstance(rats, (list, tuple)) and len(rats) else float("nan"))
+        is_ext = 1.0 if (np.isfinite(r) and r > 1.0) else 0.0    # is_extension
+        srsc = float(row.get("sr_score", np.nan))
+        trsc = float(row.get("trend_score", np.nan))
+        tolp = float(row.get("tol_pct", np.nan))
+        prfd = float(row.get("prefer_ratio_dist", np.nan))
+
+        return (float(d["abs"]), float(d["signed"]), float(d["nearest_level"]),
+                r, score, is_ext, srsc, trsc, tolp, prfd)
+
+    vals = close.apply(_nearest_tuple)
+    abs_ser    = vals.apply(lambda t: t[0]).astype("float32")
+    signed_ser = vals.apply(lambda t: t[1]).astype("float32")
+    level_ser  = vals.apply(lambda t: t[2]).astype("float32")
+    ratio_ser  = vals.apply(lambda t: t[3]).astype("float32")
+    score_raw  = vals.apply(lambda t: t[4]).astype("float32")
+    is_ext_ser = vals.apply(lambda t: t[5]).astype("float32")
+    srsc_ser   = vals.apply(lambda t: t[6]).astype("float32")
+    trsc_ser   = vals.apply(lambda t: t[7]).astype("float32")
+    tolpct_ser = vals.apply(lambda t: t[8]).astype("float32")
+    prf_ser    = vals.apply(lambda t: t[9]).astype("float32")
+
+
+    #logger.info("sr_score/trend_score NaN ratio: %.3f / %.3f", 
+    #            float(srsc_ser.isna().mean()), float(trsc_ser.isna().mean()))   # temp_logger
+
+    # 6) نرمال‌سازی score به [0,1] بر اساس کلسترهای موجود
+    if "score" in clusters.columns and clusters["score"].notna().any():
+        sc = clusters["score"].astype("float32")
+        mn, mx = float(np.nanmin(sc)), float(np.nanmax(sc))
+        scale = (mx - mn) if np.isfinite(mx - mn) and (mx - mn) > 0 else np.nan
+        def _norm(v):
+            return (float(v) - mn) / scale if np.isfinite(scale) else np.nan
+        score_norm = score_raw.apply(_norm).astype("float32")
+    else:
+        score_norm = score_raw * np.nan
+
+    # 7) ATR-based normalization (اختیاری، اگر high/low موجود باشد)
+    if (high is not None) and (low is not None):
+        atrv = compute_atr(base[["high","low","close"]], window=int(atr_len))
+        abs_atr = (abs_ser / atrv.replace(0, np.nan)).astype("float32")
+    else:
+        abs_atr = abs_ser * np.nan
+
+    # 8) عبور دادن sr_score / trend_score در صورت وجود (ثابت بر کل سری، بر اساس نزدیک‌ترین کلستر هر بار)
+    # توجه: چون برای هر بار «نزدیک‌ترین کلستر» متفاوت می‌شود، استفادهٔ مستقیم از clusters برای این دو ستون قابل اتکا نیست،
+    # مگر این‌که این مقادیر را در همان حلقه استخراج کنیم. (در صورت نیاز بعداً اضافه می‌کنیم.)
+    
+    conf_sr_ser = (srsc_ser > 0).astype("float32")  # 1=confluence present, 0=absent
+    ratio_dev1 = (ratio_ser - 1.0).abs().astype("float32")
+    valid_mask = (
+        abs_ser.notna()
+        & signed_ser.notna()
+        & level_ser.notna()
+        & ratio_ser.notna()
+        & score_norm.notna()
+    ).astype("float32")
+
+    out = {
+        f"fibc_nearest_abs@{base_tf}": abs_ser,
+        f"fibc_nearest_signed@{base_tf}": signed_ser,
+        f"fibc_nearest_level@{base_tf}": level_ser,
+        f"fibc_nearest_abs_atr@{base_tf}": abs_atr,
+        f"fibc_nearest_ratio@{base_tf}": ratio_ser,
+        f"fibc_is_extension@{base_tf}": is_ext_ser,
+        f"fibc_score_norm@{base_tf}": score_norm,
+        f"fibc_sr_score@{base_tf}": srsc_ser,
+        f"fibc_trend_score@{base_tf}": trsc_ser,
+        f"fibc_tol_pct@{base_tf}": tolpct_ser,
+        f"fibc_prefer_ratio_dist@{base_tf}": prf_ser,
+        f"fibc_sr_confluence@{base_tf}": conf_sr_ser,
+        f"fibc_ratio_dev1@{base_tf}": ratio_dev1,
+        f"fibc_valid@{base_tf}": valid_mask,
+    }
+    return out
+
+
+def _rsi_adapter(ohlc, n: int = 14, **_) -> Dict[str, pd.Series]:
+    return {f"rsi_{n}": rsi_core(ohlc["close"], n)}
+
+
+def _ema_adapter(ohlc, col: str = "close", n: int = 20, **_) -> Dict[str, pd.Series]:
+    return {f"ema_{col}_{n}": ema_core(ohlc[col], n)}
+
+
+Registry = Dict[str, Callable]
 def build_registry() -> Registry:
     reg: Registry = {}
     # core
@@ -52,6 +201,8 @@ def build_registry() -> Registry:
     reg.update(div_reg())
     return reg
 
+
+
 """
 افزودنی‌های رجیستری (Bot-RL-2)
 - ADV_INDICATOR_REGISTRY: ثبت اندیکاتورهای جدید (فیبو/ترند)
@@ -65,25 +216,24 @@ ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
     "golden_zone": golden_zone,
     "fib_cluster": fib_cluster,
     "fib_ext_targets": fib_ext_targets,
+    "fibo_features_full": _fibo_features_full_adapter,
 
     # فیبو — هِلپرهای پیشرفته/آماده برای استفادهٔ مستقیم
     "levels_from_legs": levels_from_legs,
     "select_legs_from_swings": select_legs_from_swings,
-    #"_select_legs": _select_legs,
-    "_infer_ref_price_from_tf_levels": _infer_ref_price_from_tf_levels,
-    "_compute_adaptive_tol_pct": _compute_adaptive_tol_pct,
-    "_adaptive_tol_pct": _adaptive_tol_pct,
-    #"_rsi_zone_score": _rsi_zone_score,
 
     # ترندی/ممنتوم سبک
     "ma_slope": ma_slope,
     "rsi_zone": rsi_zone,
 
     # هِلپرهای Levels (برای استفادهٔ مستقیم در صورت نیاز)
-    "round_levels": round_levels,                 # خروجی: list[float]
-    "compute_adr": compute_adr,                   # خروجی: Series ADR
-    "adr_distance_to_open": adr_distance_to_open, # خروجی: DataFrame
-    "sr_overlap_score": sr_overlap_score,         # خروجی: float (برای مصرف مستقیم در کد بهتر است؛ در Spec هم ممکن است ثابت برگردانیم)
+    #"round_levels": round_levels,                 # خروجی: list[float]
+    #"compute_adr": compute_adr,                   # خروجی: Series ADR
+    #"adr_distance_to_open": adr_distance_to_open, # خروجی: DataFrame
+    #"sr_overlap_score": sr_overlap_score,         # خروجی: float (برای مصرف مستقیم در کد بهتر است؛ در Spec هم ممکن است ثابت برگردانیم)
+
+    "rsi": _rsi_adapter,
+    "ema": _ema_adapter,
 }
 
 def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:

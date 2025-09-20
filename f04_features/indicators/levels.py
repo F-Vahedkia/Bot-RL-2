@@ -1,6 +1,6 @@
 # f04_features/indicators/levels.py
 # -*- coding: utf-8 -*-
-"""Pivotهای کلاسیک، S/R ساده مبتنی بر فراکتال، و فاصله تا سطوح فیبوناچی اخیر"""
+"""Pivot های کلاسیک، S/R ساده مبتنی بر فراکتال، و فاصله تا سطوح فیبوناچی اخیر"""
 from __future__ import annotations
 from typing import List, Sequence, Dict, Optional, Tuple
 import numpy as np
@@ -10,9 +10,10 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# Pivotهای کلاسیک
-
-def pivots_classic(high, low, close):
+""" --------------------------------------------------------------------------- OK Func1
+Pivot های کلاسیک
+"""
+def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[pd.Series, ...]:
     pivot = (high.shift(1) + low.shift(1) + close.shift(1)) / 3.0
     r1 = 2*pivot - low.shift(1)
     s1 = 2*pivot - high.shift(1)
@@ -20,11 +21,20 @@ def pivots_classic(high, low, close):
     s2 = pivot - (high.shift(1) - low.shift(1))
     r3 = high.shift(1) + 2*(pivot - low.shift(1))
     s3 = low.shift(1) - 2*(high.shift(1) - pivot)
-    return pivot.astype("float32"), r1.astype("float32"), s1.astype("float32"), r2.astype("float32"), s2.astype("float32"), r3.astype("float32"), s3.astype("float32")
+    return \
+        pivot.astype("float32"), \
+        r1.astype("float32"), \
+        s1.astype("float32"), \
+        r2.astype("float32"), \
+        s2.astype("float32"), \
+        r3.astype("float32"), \
+        s3.astype("float32")
 
-# فراکتال ساده برای S/R (K کندل چپ/راست)
 
-def fractal_points(high, low, k: int = 2):
+""" --------------------------------------------------------------------------- OK Func2
+فراکتال ساده برای S/R (K کندل چپ/راست)
+"""
+def fractal_points(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Series, pd.Series]:
     # کد اولیه
     #hh = high.rolling(2*k+1, center=True).apply(lambda x: float(np.argmax(x)==k), raw=True).astype("int8")
     #ll = low.rolling(2*k+1, center=True).apply(lambda x: float(np.argmin(x)==k), raw=True).astype("int8")
@@ -40,9 +50,15 @@ def fractal_points(high, low, k: int = 2):
               .astype("int8"))    
     return hh, ll
 
-# فاصله تا نزدیک‌ترین سطح S/R نزدیک
 
-def sr_distance(close, high, low, k: int = 2, lookback: int = 500):
+""" --------------------------------------------------------------------------- Func3
+فاصله تا نزدیک‌ترین سطح S/R نزدیک
+"""
+def sr_distance(close: pd.Series,
+                high: pd.Series,
+                low: pd.Series,
+                k: int = 2, lookback: int = 500
+) -> Tuple[pd.Series, pd.Series]:
     hh, ll = fractal_points(high, low, k)
     idx = close.index
     res = pd.Series(index=idx, dtype="float32")
@@ -58,8 +74,9 @@ def sr_distance(close, high, low, k: int = 2, lookback: int = 500):
         sup.iloc[i] = np.float32(s) if pd.notna(s) else (np.nan)
     return res, sup
 
-# فیبوناچی: سطوح اخیر بین آخرین سوینگ بالا/پایین (فراکتال k)
-
+""" --------------------------------------------------------------------------- Func4
+فیبوناچی: سطوح اخیر بین آخرین سوینگ بالا/پایین (فراکتال k)
+"""
 def fibo_levels(close, high, low, k: int = 2):
     hh, ll = fractal_points(high, low, k)
     # آخرین سوینگ‌ها
@@ -78,7 +95,8 @@ def fibo_levels(close, high, low, k: int = 2):
     levels.update(dists)
     return levels
 
-
+""" --------------------------------------------------------------------------- Func5
+"""
 def registry() -> Dict[str, callable]:
     def make_pivots(df, **_):
         p, r1, s1, r2, s2, r3, s3 = pivots_classic(df["high"], df["low"], df["close"])
@@ -90,11 +108,12 @@ def registry() -> Dict[str, callable]:
         return fibo_levels(df["close"], df["high"], df["low"], k)
     return {"pivots": make_pivots, "sr": make_sr, "fibo": make_fibo}
 
+
 # --- New Added ----------------------------------------------------- 060407
-# -*- coding: utf-8 -*-
 """
 افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
 - round_levels(...): تولید سطوح رُند حول یک لنگر
+تابع round_levels عیناً از این فایل به فایل utils منتقل شد
 - compute_adr(...): محاسبهٔ ADR روزانه و نگاشت به تایم‌استمپ‌های درون‌روزی
 - adr_distance_to_open(...): فاصلهٔ نرمال‌شدهٔ قیمت تا «بازِ روز» با ADR
 - sr_overlap_score(...): امتیاز همپوشانی یک قیمت با سطوح S/R (۰..۱)
@@ -104,32 +123,10 @@ def registry() -> Dict[str, callable]:
 - همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
 """
 
-# =========================
-# Round Levels (e.g., 100, 50)
-# =========================
-def round_levels(anchor: float, step: float, n: int = 10) -> List[float]:
-    """
-    تولید یک «شبکهٔ سطوح رُند» حول مقدار anchor با فاصلهٔ step.
-    مثال: round_levels(1945.3, 10, n=5) → [1895, 1905, ..., 1995]
 
-    پارامترها:
-      anchor: لنگر قیمتی (مثلاً آخرین قیمت)
-      step: فاصلهٔ شبکه (مثلاً 10.0 برای طلا، یا 0.5 …)
-      n: چند سطح به بالا/پایین (دوطرفه)
-
-    خروجی: لیست سطوح رُند (کوچک به بزرگ)
-    """
-    if step <= 0:
-        raise ValueError("step must be positive")
-
-    base = np.floor(anchor / step) * step  # کف رند نزدیک
-    levels = [base + k * step for k in range(-n, n + 1)]
-    return sorted(levels)
-
-
-# =========================
-# ADR (Average Daily Range)
-# =========================
+""" --------------------------------------------------------------------------- Func6
+ADR (Average Daily Range)
+"""
 def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
     """
     ADR کلاسیک: میانگینِ (High-Low) روزانه روی پنجرهٔ rolling.
@@ -160,6 +157,8 @@ def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Serie
     return adr_intraday
 
 
+""" --------------------------------------------------------------------------- Func7
+"""
 def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> pd.DataFrame:
     """
     فاصلهٔ قیمت تا «بازِ روز» نرمال‌شده به ADR.
@@ -187,9 +186,9 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     return out
 
 
-# =========================
-# S/R Overlap Score (0..1)
-# =========================
+""" --------------------------------------------------------------------------- Func8
+S/R Overlap Score (0..1)
+"""
 def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
     """
     امتیاز همپوشانی قیمت با سطوح S/R:
@@ -225,3 +224,4 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
 
     score = min(1.0, max(0.0, base + bonus))
     return float(score)
+
