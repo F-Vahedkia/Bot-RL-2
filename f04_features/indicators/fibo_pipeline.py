@@ -23,10 +23,11 @@ import numpy as np
 # توجه: ماژول‌های هسته (همین‌جا مصرف می‌شوند)
 import f04_features.indicators.levels as lv
 from f04_features.indicators.fibonacci import fib_cluster_cfg, select_legs_from_swings, levels_from_legs
-from f04_features.indicators.utils import _deep_get, detect_swings
+from f04_features.indicators.utils import detect_swings
 from f04_features.indicators.core import rsi as rsi_core, atr as atr_core
 from f04_features.indicators.extras_trend import ma_slope as func_ma_slope
 from f10_utils.config_loader import ConfigLoader  # :contentReference[oaicite:0]{index=0}
+from f10_utils.config_ops import _deep_get
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:

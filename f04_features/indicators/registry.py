@@ -12,6 +12,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+# --- From f04_features/indicators ----------------------------------
 from .fibonacci import (golden_zone, fib_cluster, fib_ext_targets,
                         levels_from_legs, select_legs_from_swings)
 from .fibo_pipeline import run_fibo_cluster
@@ -19,9 +20,61 @@ from .extras_trend import ma_slope, rsi_zone
 from .core import rsi as rsi_core, ema as ema_core
 from .levels import compute_adr, adr_distance_to_open, sr_overlap_score
 from .utils import round_levels, compute_atr, nearest_level_distance
+from f10_utils.config_loader import ConfigLoader  # از f01_config/config.yaml می‌خواند
+_loader = ConfigLoader()                          # به‌طور پیش‌فرض f01_config/config.yaml را لود می‌کند
+from f10_utils.config_ops import _deep_get
+
+# --- Advanced Support/Resistance -----------------------------------
+from f04_features.indicators.sr_advanced import (
+    make_fvg,           # FVG detector (advanced S/R)
+    make_sd,            # Supply/Demand
+    make_ob,            # Order Block
+    make_liq_sweep,     # Liquidity Sweep
+    make_breaker_flip,  # Breaker / Flip Zone
+    make_sr_fusion,     #
+)
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+# --- Functions -----------------------------------------------------
+
+# --- SR config injection (common/component/overrides by (Symbol, TF)) -------- start
+
+# Deep-get بدون وابستگی بیرونی
+'''
+def _deep_get(d, path, default=None):
+    cur = d
+    for key in str(path).split("."):
+        if not isinstance(cur, dict) or key not in cur:
+            return default
+        cur = cur[key]
+    return cur
+'''
+# استنتاج اختیاری Symbol/TF (اگر در کانفیگ باشد)
+def _infer_symbol_tf(cfg_all, default_sym=None, default_tf=None):
+    # کلیدهای رایج؛ اگر نبودند، overrides اعمال نمی‌شود (بدون خطا)
+    sym_keys = ["data.symbol", "dataset.symbol", "active.symbol", "symbol"]
+    tf_keys  = ["data.base_timeframe", "dataset.base_timeframe", "active.timeframe", "timeframe", "base_timeframe"]
+    sym = next(( _deep_get(cfg_all, k) for k in sym_keys if _deep_get(cfg_all, k) is not None), default_sym)
+    tf  = next(( _deep_get(cfg_all, k) for k in tf_keys  if _deep_get(cfg_all, k) is not None), default_tf)
+    return sym, tf
+
+def _merge_sr_kwargs(name: str, cfg: dict, df: pd.DataFrame) -> dict:
+    cfg_all = _loader.get_all()
+    # 1) مشترک (فقط کلیدهای عمومی)
+    base = _deep_get(cfg_all, "features.support_resistance.sr_advanced.common", {}) or {}
+    # 2) پیش‌فرض‌های سطح کامپوننت (fvg/supply_demand/...)
+    comp = _deep_get(cfg_all, f"features.support_resistance.sr_advanced.{name}", {}) or {}
+    # 3) پروفایل اختیاری (Symbol/TF) اگر تعریف شده باشد
+    sym, tf = _infer_symbol_tf(cfg_all)
+    over = {}
+    if sym and tf:
+        over = _deep_get(cfg_all, f"features.support_resistance.sr_advanced.overrides.{sym}.{tf}.{name}", {}) or {}
+    # 4) ادغام نهایی: پیش‌فرض کد ← base ← component ← overrides ← پارامترهای صریح کاربر
+    return {**base, **comp, **over, **(cfg or {})}
+
+# --- SR config injection ----------------------------------------------------- end
 
 def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, **_) -> Dict[str, pd.Series]:
     """
@@ -202,7 +255,6 @@ def build_registry() -> Registry:
     return reg
 
 
-
 """
 افزودنی‌های رجیستری (Bot-RL-2)
 - ADV_INDICATOR_REGISTRY: ثبت اندیکاتورهای جدید (فیبو/ترند)
@@ -212,13 +264,13 @@ def build_registry() -> Registry:
 رجیستری جدید (advanced) — افزایشی
 """
 ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
-    # فیبوناچی
+    # فیبوناچی ------------------------------------------------------
     "golden_zone": golden_zone,
     "fib_cluster": fib_cluster,
     "fib_ext_targets": fib_ext_targets,
     "fibo_features_full": _fibo_features_full_adapter,
 
-    # فیبو — هِلپرهای پیشرفته/آماده برای استفادهٔ مستقیم
+    # فیبو — هِلپرهای پیشرفته/آماده برای استفادهٔ مستقیم ------------
     "levels_from_legs": levels_from_legs,
     "select_legs_from_swings": select_legs_from_swings,
 
@@ -226,7 +278,7 @@ ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
     "ma_slope": ma_slope,
     "rsi_zone": rsi_zone,
 
-    # هِلپرهای Levels (برای استفادهٔ مستقیم در صورت نیاز)
+    # هِلپرهای Levels (برای استفادهٔ مستقیم در صورت نیاز) -----------
     #"round_levels": round_levels,                 # خروجی: list[float]
     #"compute_adr": compute_adr,                   # خروجی: Series ADR
     #"adr_distance_to_open": adr_distance_to_open, # خروجی: DataFrame
@@ -234,7 +286,25 @@ ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
 
     "rsi": _rsi_adapter,
     "ema": _ema_adapter,
+
+    # Advanced Support/Resistance -----------------------------------
+    "fvg": make_fvg,
+    "supply_demand": make_sd,
+    "order_block": make_ob,
+    "liq_sweep": make_liq_sweep,
+    "breaker_flip": make_breaker_flip,
+    "sr_fusion": make_sr_fusion,
 }
+# wrap S/R indicators to inject merged config (common/component/overrides) ---- start
+for _name in ("fvg", "supply_demand", "order_block", "liq_sweep", "breaker_flip", "sr_fusion"):
+    _fn = ADV_INDICATOR_REGISTRY[_name]
+    def _wrap(fn, name):
+        def runner(df: pd.DataFrame, **cfg):
+            merged = _merge_sr_kwargs(name, cfg, df)
+            return fn(df, **merged)  # sr_advanced.make_* امضای **cfg دارد
+        return runner
+    ADV_INDICATOR_REGISTRY[_name] = _wrap(_fn, _name)
+# --- wrap S/R indicators ----------------------------------------------------- end
 
 def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:
     key = str(name).strip()
@@ -269,3 +339,13 @@ Engine: برای fib_cluster اگر DF پاس بدهی، به‌خاطر mismatc
 CLI: هِلپرهایی مثل compute_adr و adr_distance_to_open را می‌توان جداگانه روی دیتاست اجرا کرد
  و ستون‌هایشان را به خروجی افزود.
 '''
+
+def _sr_cfg(name, cfg):
+    cfg_all = _loader.get_all()
+    base = _deep_get(cfg_all,"features.support_resistance.sr_advanced.common", {}) or {}
+    comp = _deep_get(cfg_all,f"features.support_resistance.sr_advanced.{name}", {}) or {}
+    return {**base, **comp, **(cfg or {})}
+
+for _name in ("fvg","supply_demand","order_block","breaker_flip","liq_sweep","sr_fusion"):
+    _fn = ADV_INDICATOR_REGISTRY[_name]
+    ADV_INDICATOR_REGISTRY[_name] = (lambda f, n: (lambda df, **cfg: f(df, **_sr_cfg(n, cfg))))(_fn, _name)

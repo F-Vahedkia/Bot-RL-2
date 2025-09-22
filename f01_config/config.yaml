@@ -1,82 +1,65 @@
-# ============================================================
-# Bot-RL-1 / f01_config/config.yaml — نسخه‌ی شخصی‌سازی‌شده
-# توضیحات: کلیدهای حیاتی مطابق کد فعلی:
-#   - mt5_credentials, timeframes, n_candles_per_tf, n_candles, start_date, end_date
-#   - سایر بخش‌ها توسعه‌پذیر و Config-First هستند.
-# نکته: هر کجا «مثال» است، با مقادیر واقعی خودتان جایگزین کنید.
-# ============================================================
-
-version: "1.0.0"
-project:     # 1.
-  name: "Bot-RL-2"
-  timezone: "UTC"
-  base_currency: "USD"
+version: 1.0.0
+project:
+  name: Bot-RL-2
+  timezone: UTC
+  base_currency: USD
   random_seed: 42
-  enable_env_override: true   # در config_loader.py رعایت شده است
-
-# ---------------------------
-# مسیرها و نگهداشت آرتیفکت‌ها
-# ---------------------------
-paths:     # 2.
-  root_dir: "."
-  data_dir: "f02_data"
-  raw_dir: "f02_data/raw"
-  processed_dir: "f02_data/processed"
-  logs_dir: "logs"
-  reports_dir: "reports"
-  cache_dir: "f02_data/cache"
-  models_dir: "f12_models"
-  config_versions_dir: "f01_config/versions"
-  tmp_dir: "tmp"
+  enable_env_override: true
+paths:
+  root_dir: .
+  data_dir: f02_data
+  raw_dir: f02_data/raw
+  processed_dir: f02_data/processed
+  logs_dir: logs
+  reports_dir: reports
+  cache_dir: f02_data/cache
+  models_dir: f12_models
+  config_versions_dir: f01_config/versions
+  tmp_dir: tmp
   models:
-    production_dir: "f12_models/production"
-    staging_dir: "f12_models/staging"
-    checkpoints_dir: "f12_models/checkpoints"
-    experiments_dir: "f12_models/experiments"
-  news_dir: "f02_data/news"
-
-# ---------------------------
-# اتصال به MT5 (کلیدهای موردنیاز کد فعلی)
-# ---------------------------
-mt5_credentials:     # 3.
-  login: 12345678         # ← مثال؛ از حساب واقعی خودتان قرار دهید
-  password: "Password"    # ← مثال
-  server: "Server" # ← مثال
-  #path: "C:/Program Files/MetaTrader 5/terminal64.exe"  # اختیاری
-
-# ---------------------------
-# دانلود و آماده‌سازی داده
-# ---------------------------
-download_defaults:     # 4.
-  # نمادها و تایم‌فریم‌هایی که برای دانلود به‌صورت پیش‌فرض استفاده می‌شوند
-  symbols: ["USDCAD"]
-  timeframes: ["H1"]
+    production_dir: f12_models/production
+    staging_dir: f12_models/staging
+    checkpoints_dir: f12_models/checkpoints
+    experiments_dir: f12_models/experiments
+  news_dir: f02_data/news
+mt5_credentials:
+  login: 12345678
+  password: Password
+  server: Server
+download_defaults:
+  symbols:
+  - USDCAD
+  timeframes:
+  - H1
   lookback_bars: 2000
   batch_size: 50
-  save_format: "parquet"      # csv | parquet
-  align_to_session: true  # هم‌ترازسازی انتهای روز با سشن‌ها
-  data_raw: "f02_data/raw"              # به نظر مورد استفاده نیستند هنوز
-  data_processed: "f02_data/processed"  # به نظر مورد استفاده نیستند هنوز
-
-# ---------------------------
-# کلیدهای مورد استفاده در TradingEnv و DataHandler
-# ---------------------------
-timeframes: ["M1","M5","M30","H4","D1","W1"]  # ← کد فعلی از این کلید استفاده می‌کند
-n_candles_per_tf: 256                         # ← طول پنجرهٔ هر تایم‌فریم
-n_candles: 256                                # ← بعضی مسیرها همین را می‌خوانند؛ برابر با بالا نگه دارید
-start_date: null                              # ← "2024-01-01" در صورت نیاز
-end_date: null                                # ← "2024-12-31" در صورت نیاز
-
-sessions:     # 5.
-  asia:    { start_utc: "00:00", end_utc: "08:00" }
-  london:  { start_utc: "08:00", end_utc: "16:00" }
-  newyork: { start_utc: "13:00", end_utc: "21:00" }
-
-# ---------------------------
-# مهندسی ویژگی‌ها (Indicators/PA/Fibo/SR)
-# ---------------------------
-features:     # 6.
-  pipeline:       # 6.features_1
+  save_format: parquet
+  align_to_session: true
+  data_raw: f02_data/raw
+  data_processed: f02_data/processed
+timeframes:
+- M1
+- M5
+- M30
+- H4
+- D1
+- W1
+n_candles_per_tf: 256
+n_candles: 256
+start_date: null
+end_date: null
+sessions:
+  asia:
+    start_utc: 00:00
+    end_utc: 08:00
+  london:
+    start_utc: 08:00
+    end_utc: '16:00'
+  newyork:
+    start_utc: '13:00'
+    end_utc: '21:00'
+features:
+  pipeline:
     use_default_set: true
     include:
       indicators: true
@@ -84,96 +67,75 @@ features:     # 6.
       fibonacci: true
       support_resistance: true
       volatility: true
-
-  # ——— تنظیمات کلی فیچرها ———
-  base_timeframe: "M1"        # تایم‌فریم پایه در صورت نبود @TF در Spec
-  shift_features_by: 1        # شیفت سراسری برای جلوگیری از لوک‌اِهد (پیشنهادی: 1)
-  drop_na_head: true          # حذف NaNهای ابتدایی پس از شیفت
-
-  # ——— فهرست اندیکاتورها (Specها) ———
-  indicators:     # 6.features_6
-
-    # =======================
-    # 🔁 واگرایی‌ها (Divergences)
-    # =======================
-    - "div_rsi(14,2,classic)@M1"           # واگرایی (قیمت ↔ RSI)    
-    # - "div_macd(12,26,9,2,classic)@M1"   # کلاسیک
-    # - "div_macd(12,26,9,2,hidden)@M1"    # مخفی
-    # - "div_rsi(14,2,hidden)@M1"
-
-    # =======================
-    # 📈 میانگین‌ها و روند (Core/Extras Trend)
-    # =======================
-    - "ema(close,20)@M5"                   # میانگین متحرک/روند
-    - "sar(0.02,0.02,0.2)@M1"              # تعقیب‌روند (Stop & Reverse)
-    - "supertrend(10,3)@M5"                # تعقیب‌روند مبتنی بر نوسان
-    - "adx(14)@M30"                        # قدرتِ روند
-    - "macd(12,26,9)@M1"                   # روند/مومنتوم (مرزی بین هر دو)
-    # - "sma(close,50)@M1"
-    # - "wma(close,20)@M1"
-    # - "keltner(20,2)@M1"                 # mid/up/lo
-    # - "aroon(25)@M30"                    # up/down/osc
-    # - "ichimoku(9,26,52)@H1"             # tenkan/kijun/spanA/spanB/chikou
-    # - "kama(close,10,2,30)@M1"
-    # - "dema(close,20)@M1"
-    # - "tema(close,20)@M1"
-    # - "hma(close,20)@M1"
-
-    # =======================
-    # 📊 نوسان و کانال‌ها
-    # =======================
-    - "atr(14)@M1"                         # نوسان سنج
-    - "bbands(close,20,2)@M1"              # باند سنج
-    - "donchian(20)@H1"                    # کانال/بریک اوت
-    # - "chaikin_vol(10,10)@M30"           # Chaikin Volatility
-    # - "bbands(close,50,2)@H1"            # نمونهٔ باند بولینگر دیگر
-
-    # =======================
-    # 🔁 اسیلاتور/ممنتوم (Momentum)
-    # =======================  
-    - "rsi(14)@M1"      # => ممنتوم
-    - "stoch(14,3)@M1"  # => ممنتوم
-
-    # =======================
-    # 💧 اندیکاتورهای حجمی
-    # =======================
-    - "vwap@M1"                            # میانگینِ وزنیِ قیمت بر حسب حجم
-    - "cmf(20)@M1"                         # جریان پولِ چایکین (حجمی)
-    # - "vwap_roll(100)@M1"                # VWAP رولینگ
-    # - "adl@M1"                           # Acc/Dist Line
-    # - "mfi(14)@M1"                       # Money Flow Index
-    # - "obv@M1"                           # On-Balance Volume
-
-    # =======================
-    # 🕯 الگوهای کندلی (Flags)
-    # =======================
-    - "pat_engulf@M1"                      # bull/bear
-    - "pat_doji(0.1)@M1"
-    - "pat_pin(2.0)@M1"                    # bull/bear
-
-    # =======================
-    # 🧭 سطوح و سشن‌ها (Levels)
-    # =======================
-    - "pivots@M1"                          # پیوت‌های کلاسیک
-    - "sr(2,500)@M1"                       # مایت/مقاومت (فراکتال)
-    - "fibo(2)@M1"                         # سطوح فیبوناچی + فاصله‌ها
-    # - "pivots@M5"                        # pivot, r1/s1, r2/s2, r3/s3
-    # - "sr(3,1000)@M1"                    # مقاومت/حمایت نزدیک
-    # - "fibo(3)@M1"                       # سطوح + فاصله تا هر سطح
-
-    # =======================
-    # ⚙️ سایر اسیلاتورها
-    # =======================
-    # - "cci(20)@M1"
-    # - "roc(10)@M1"
-    # - "wr(14)@M1"                        # Williams %R
-    # - "ha@M1"                            # Heikin Ashi: ha_open/high/low/close
-    # - "tr@M1"                            # True Range خام
-  
-
-
-
-  fibonacci:     # 6.features_7
+  base_timeframe: M1
+  shift_features_by: 1
+  drop_na_head: true
+  indicators:
+  - div_rsi(14,2,classic)@M1
+  - ema(close,20)@M5
+  - sar(0.02,0.02,0.2)@M1
+  - supertrend(10,3)@M5
+  - adx(14)@M30
+  - macd(12,26,9)@M1
+  - atr(14)@M1
+  - bbands(close,20,2)@M1
+  - donchian(20)@H1
+  - rsi(14)@M1
+  - stoch(14,3)@M1
+  - vwap@M1
+  - cmf(20)@M1
+  - pat_engulf@M5
+  - pat_engulf@H1
+  - pat_engulf@H4
+  - pat_engulf@D1
+  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@M5
+  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@H1
+  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@H4
+  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@D1
+  - pat_pin(ratio=2.0)@M5
+  - pat_pin(ratio=2.0)@H1
+  - pat_pin(ratio=2.0)@H4
+  - pat_pin(ratio=2.249999999999999)@D1
+  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@M5
+  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H1
+  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H4
+  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.549999999999998,opp_wick_k=1.25)@D1
+  - pat_harami@M5
+  - pat_harami@H1
+  - pat_harami@H4
+  - pat_harami@D1
+  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@M5
+  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H1
+  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H4
+  - pat_inside_outside(min_range_k_atr=1.5000000000000009,atr_win=14)@D1
+  - pat_marubozu(wick_frac=0.10)@M5
+  - pat_marubozu(wick_frac=0.10)@H1
+  - pat_marubozu(wick_frac=0.10)@H4
+  - pat_marubozu(wick_frac=0.10)@D1
+  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@M5
+  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@H1
+  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@H4
+  - pat_tweezer(tol_frac=null,tol_k=1.3877787807814457e-17,tol_mode="atr_price",atr_win=14)@D1
+  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@M5
+  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@H1
+  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@H4
+  - pat_3soldiers_crows(min_body_atr=0.3,atr_win=14)@D1
+  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@M5
+  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@H1
+  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@H4
+  - pat_morning_evening(small_body_atr=0.10000000000000002,atr_win=14)@D1
+  - pat_piercing_dark(min_body_ratio=0.20)@M5
+  - pat_piercing_dark(min_body_ratio=0.20)@H1
+  - pat_piercing_dark(min_body_ratio=0.20)@H4
+  - pat_piercing_dark(min_body_ratio=0.65)@D1
+  - pat_belt(wick_frac=0.10)@M5
+  - pat_belt(wick_frac=0.10)@H1
+  - pat_belt(wick_frac=0.10)@H4
+  - pat_belt(wick_frac=0.0)@D1
+  - pivots@M1
+  - sr(2,500)@M1
+  - fibo(2)@M1
+  fibonacci:
     enabled: true
     swing_window_bars: 200
     cluster_merge_pips: 20
@@ -181,52 +143,46 @@ features:     # 6.
       use_atr_for_sl_tp: true
       sl_atr_mult: 1.5
       tp_atr_mult: 2.0
+      atr_length: 14
       partial_take_profits:
         enabled: true
-        levels_r_multiple: [1.0, 2.0]
-        portions: [0.5, 0.5]
-    retracement_ratios: [0.236, 0.382, 0.5, 0.618, 0.786,0.886]  # نسبت‌های پیش‌فرض رتریسمنت (قابل ویرایش)
-    extension_ratios: [1.272, 1.618, 2.0, 2.618, 3.618]  # نسبت‌های پیش‌فرض اکستنشن (قابل ویرایش)
-    golden_zone:           # نسبت‌های «زون طلایی» برای تابع golden_zone_cfg
-      ratios: [0.382, 0.618]
-
-    # پارامترهای خوشه‌سازی برای fib_cluster_cfg
+        levels_r_multiple:
+        - 1.0
+        - 2.0
+        portions:
+        - 0.5
+        - 0.5
+    retracement_ratios:
+    - 0.236
+    - 0.382
+    - 0.5
+    - 0.618
+    - 0.786
+    - 0.886
+    extension_ratios:
+    - 1.272
+    - 1.618
+    - 2.0
+    - 2.618
+    - 3.618
+    golden_zone:
+      ratios:
+      - 0.382
+      - 0.618
     cluster:
-      tol_pct: 0.08           # تلورانس درصدی نزدیکی سطوح
-      prefer_ratio: 0.618     # نسبت مرجح (اگر وزن دهی نیاز دارد)
-      tf_weights:             # وزن‌دهی اختیاری تایم‌فریم‌ها
-        M15: 0.5
-        H1: 1.0
-        H4: 1.5
-        D1: 2.0
-      w_trend: 10.0           # وزن مؤلفهٔ روند (مثلاً شیب MA)
-      w_rsi: 10.0             # وزن مؤلفهٔ RSI zone
-      w_sr: 10.0              # وزن همپوشانی سطوح SR
-      sr_tol_pct: 0.05        # تلورانس همپوشانی با SR
-      adaptive_tol:
-        enabled: true        # برای شروع اگر می‌خواهید فعال باشد؛ در غیر این‌صورت false بگذارید
-        mode: "ADR"          # "ADR" یا "ATR"
-        k: 1.00              # ضریب scale برای تبدیل (vol / ref_price) به tol_pct
-        min_pct: 0.02        # حداقل درصد تلورانس (مثلاً 2%)
-        max_pct: 0.15        # حداکثر درصد تلورانس (مثلاً 15%)
-        
-    # برای هم‌خوانی با fib_ext_targets_cfg (اختیاری؛ تداخلی با order_planner ندارد)
-    #sl_atr_mult: 1.5
+      min_members: 2
+      min_score: 5.0
+      leg_age_decay: 0.9
     leg_selection:
-      max_legs_per_tf: 3     # چند لگ آخر از هر TF وارد خوشه‌سازی شود
-      lookback_bars: 2000    # حداکثر پنجره جست‌وجوی لگ‌ها (در صورت نیاز آینده)
-      prefer_body: false     # true: بدنه‌محور، false: سایه‌محور (برای توسعه‌های بعدی)
-      prominence_min: null   # آستانه پرامیننس (اختیاری، فعلاً استفاده نمی‌شود)
-
-    # (1جدید) تنظیمات RSI برای امتیازدهی زون‌ها
+      max_legs_per_tf: 3
+      lookback_bars: 2000
+      prefer_body: false
+      prominence_min: null
     rsi:
       length: 14
       overbought: 70
       oversold: 30
-    
-    # (1جدید) اورراید بر اساس تایم‌فریم
     tf_overrides:
-      # نمونه‌ها؛ هر TF که خواستید اضافه/تغییر دهید
       M15:
         leg_selection:
           max_legs_per_tf: 5
@@ -242,8 +198,6 @@ features:     # 6.
       W1:
         leg_selection:
           max_legs_per_tf: 1
-
-    # (1جدید) اورراید بر اساس نماد (Majors + XAUUSD به‌دلخواه کامل کنید)
     symbol_overrides:
       XAUUSD:
         rsi:
@@ -256,51 +210,88 @@ features:     # 6.
       USDCAD: {}
       AUDUSD: {}
       NZDUSD: {}
-  
-    # (1جدید) پارامترهای تکمیلی خوشه‌بندی
-    cluster:
-      min_members: 2
-      min_score: 5.0
-      leg_age_decay: 0.9
-
-    # (1جدید) هارمونیک‌ها (فعلاً خاموش)
     harmonics:
       enabled: false
-      patterns: ["AB=CD"]
+      patterns:
+      - AB=CD
       ratio_tolerance: 0.05
-
-    # (1جدید) کش سبک برای اجرای 24/7
     caching:
       enabled: false
-      ttl_bars: 500  
-  # === پایان پچ ==============================================================
-
-  support_resistance:     # 6.features_8
-    enabled: true
-    lookback_bars: 1500
-    cluster_tolerance_pips: 15
-  time_features:     # 6.features_9
-    #base_timeframe: "M1"   # پیش‌فرض پروژه برای دیتاست پردازش‌شده
+      ttl_bars: 500
+  time_features:
     add_hour_of_day: true
     add_day_of_week: true
     add_session_flags: true
     normalize_time: true
-
-# ---------------------------
-# محیط RL و پاداش/خاتمه
-# ---------------------------
-env:     # 7.
+  support_resistance:
+    enabled: true
+    lookback_bars: 1500
+    cluster_tolerance_pips: 15
+    sr_advanced:
+      common:
+        atr_window: 14
+        max_bars_alive: 5
+        w_size: 0.5
+        w_age: 0.3
+        w_touch: 0.2
+      fvg:
+        lookback: 2
+        min_size_pct_of_atr: 0.35
+      supply_demand:
+        base_len: 3
+        base_atr_max: 1.0
+        impulse_atr_min: 0.8
+      order_block:
+        body_atr_min: 0.4
+        wick_ratio_max: 1.0
+        bos_lookback: 8
+      breaker_flip:
+        lookback: 20
+        ob_body_atr_min: 0.35
+        ob_wick_ratio_max: 1.0
+        ob_bos_lookback: 10
+      liq_sweep:
+        lookback: 6
+        min_tail_atr: 0.4
+      sr_fusion:
+        ema_span: 5
+        age_norm: 6.0
+        enter_th: 0.35
+        exit_th: 0.25
+        cooldown_bars: 3
+        min_conf: 0.25
+        tie_eps: 0.02
+        confirm_col: null
+      overrides:
+        XAUUSD:
+          H1:
+            supply_demand:
+              base_atr_max: 1.0
+              impulse_atr_min: 0.8
+            sr_fusion:
+              enter_th: 0.35
+              exit_th: 0.25
+env:
   observation:
-    resample_to_base_tf: "M5"
+    resample_to_base_tf: M5
     standardize_inputs: true
     clip_values: true
-    clip_range: [-5, 5]
+    clip_range:
+    - -5
+    - 5
   action_space:
-    type: "discrete"      # discrete | parametric
-    discrete_actions: [HOLD, OPEN_LONG, OPEN_SHORT, CLOSE_POSITION]
-    fractional_position_sizes: [0.25, 0.5, 1.0]
+    type: discrete
+    discrete_actions:
+    - HOLD
+    - OPEN_LONG
+    - OPEN_SHORT
+    - CLOSE_POSITION
+    fractional_position_sizes:
+    - 0.25
+    - 0.5
+    - 1.0
   reward:
-    type: "risk_adjusted_pnl"
+    type: risk_adjusted_pnl
     params:
       dd_penalty: 2.5
       trade_cost_penalty: 1.0
@@ -311,25 +302,27 @@ env:     # 7.
   window_size: 128
   normalize: true
   split:
-    train: ["2025-08-21", "2025-08-25"]
-    val:   ["2025-08-25", "2025-08-26"]
-    test:  ["2025-08-26", "2099-12-31"]
+    train:
+    - '2025-08-21'
+    - '2025-08-25'
+    val:
+    - '2025-08-25'
+    - '2025-08-26'
+    test:
+    - '2025-08-26'
+    - '2099-12-31'
   features_whitelist:
-    - "__rsi_"         # هر ستونی که این الگو را دارد
-    - "__macd_"        # macd, signal, hist
-    - "__ema_close_"   # EMA روی close
-    - "__atr_"         # ATR
-    - "__bb_"          # Bollinger bands
-    - "__stoch_"       # K/D
-    - "__sar_"         # SAR
-    - "__supertrend_"  # Supertrend
-
-# ---------------------------
-# عامل RL و تنظیمات آموزش
-# ---------------------------
-rl:     # 8.
-  algorithm: "PPO"        # PPO | SAC
-  policy: "MlpPolicy"
+  - __rsi_
+  - __macd_
+  - __ema_close_
+  - __atr_
+  - __bb_
+  - __stoch_
+  - __sar_
+  - __supertrend_
+rl:
+  algorithm: PPO
+  policy: MlpPolicy
   hyperparams:
     ppo:
       n_steps: 2048
@@ -348,28 +341,22 @@ rl:     # 8.
       batch_size: 256
       gamma: 0.99
       tau: 0.005
-      ent_coef: "auto"
+      ent_coef: auto
       train_freq: 1
       gradient_steps: 1
-
-
-training:     # 9.
-  total_timesteps: 2_000_000
-  eval_freq_steps: 25_000
-  checkpoint_interval_steps: 50_000
+training:
+  total_timesteps: 2000000
+  eval_freq_steps: 25000
+  checkpoint_interval_steps: 50000
   max_checkpoints_to_keep: 10
   resume_if_exists: true
   early_stop:
     enabled: true
-    metric: "eval/sharpe"
+    metric: eval/sharpe
     patience_evals: 5
     min_delta: 0.01
-  experiment_name: "ppo_baseline_mtf"
-
-# ---------------------------
-# ارزیابی/بک‌تست و گیت‌های پذیرش
-# ---------------------------
-evaluation:     # 10.
+  experiment_name: ppo_baseline_mtf
+evaluation:
   backtest:
     commissions_per_lot_usd: 7.0
     slippage_pips_mean: 2
@@ -378,48 +365,46 @@ evaluation:     # 10.
     cross_validation:
       enabled: true
       folds: 3
-      method: "expanding_window"
+      method: expanding_window
       min_trades_per_fold: 30
-  acceptance_gates: &accept_gates
+  acceptance_gates: &id001
     sharpe_min: 0.8
     profit_factor_min: 1.2
     winrate_min: 0.48
     max_drawdown_max: 0.12
     turnover_max_per_day: 80
     min_trades_total: 200
-
-# ---------------------------
-# مدیریت ریسک (Train/Backtest/Live)
-# ---------------------------
-risk:     # 11.
+risk:
   risk_per_trade: 0.01
   max_daily_loss_pct: 0.03
   max_total_drawdown_pct: 0.2
   position_sizing:
-    method: "fixed_fractional"
+    method: fixed_fractional
     min_lot: 0.01
     lot_step: 0.01
     max_lot: 10.0
     use_atr_for_sl: true
     sl_atr_mult: 1.5
     tp_atr_mult: 2.0
-    breakeven: { enabled: true, at_r_multiple: 1.0 }
-    trailing:  { enabled: true, type: "chandelier", atr_period: 22, atr_mult: 3.0 }
+    breakeven:
+      enabled: true
+      at_r_multiple: 1.0
+    trailing:
+      enabled: true
+      type: chandelier
+      atr_period: 22
+      atr_mult: 3.0
   position_limits:
     max_open_positions: 1
     max_positions_per_symbol: 1
     cooldown_minutes_after_stop: 15
-
-# ---------------------------
-# اجرای (Live) و استراتژی انتشار
-# ---------------------------
-executor:     # 12.
+executor:
   live_trading: false
   order:
-    type: "market"
+    type: market
     retry_attempts: 3
     timeout_sec: 3.0
-    partial_fill_handling: "cancel_remaining"
+    partial_fill_handling: cancel_remaining
   slippage_cap_pips: 6
   sync_with_env_behaviors: true
   canary_deployment:
@@ -432,76 +417,81 @@ executor:     # 12.
       max_dd_live: 0.03
   rollback:
     on_breach: true
-
-# ---------------------------
-# خودبهینه‌سازی (روزانه/هفتگی)
-# ---------------------------
-self_optimize:     # 13.
+self_optimize:
   schedule:
-    daily_utc: "22:30"
-    weekly_utc: "Fri 21:00"
+    daily_utc: '22:30'
+    weekly_utc: Fri 21:00
   steps:
     data_refresh: true
-    hparam_search: { enabled: false, max_trials: 20, sampler: "tpe" }
-    finetune: { enabled: true, steps: 75_000, mix_replay_with_recent_pct: 0.2 }
-    backtest: { enabled: true }
-    deploy: { staging_then_promote: true }
-  acceptance_gates: *accept_gates
+    hparam_search:
+      enabled: false
+      max_trials: 20
+      sampler: tpe
+    finetune:
+      enabled: true
+      steps: 75000
+      mix_replay_with_recent_pct: 0.2
+    backtest:
+      enabled: true
+    deploy:
+      staging_then_promote: true
+  acceptance_gates: *id001
   alerts_on_change: true
-
-# ---------------------------
-# مانیتورینگ/گزارش/هشدار
-# ---------------------------
-monitoring:     # 14.
+monitoring:
   logging:
-    level: "INFO"
+    level: INFO
     to_console: true
     to_file: true
-    file_path: "logs/bot.log"
+    file_path: logs/bot.log
     rotate_max_bytes: 10485760
     rotate_backups: 5
     jsonl: true
   alerts:
     enable_telegram: true
     telegram:
-      bot_token_env: "TELEGRAM_BOT_TOKEN"
-      chat_id_env: "TELEGRAM_CHAT_ID"
+      bot_token_env: TELEGRAM_BOT_TOKEN
+      chat_id_env: TELEGRAM_CHAT_ID
     email:
       enabled: false
-      smtp_host: ""
-      smtp_user_env: "SMTP_USER"
-      smtp_pass_env: "SMTP_PASS"
+      smtp_host: ''
+      smtp_user_env: SMTP_USER
+      smtp_pass_env: SMTP_PASS
       to: []
   reporting:
     daily_summary: true
     weekly_summary: true
     include_equity_curve: true
     include_trade_log: true
-
-# ---------------------------
-# ایمنی و فیلتر خبری (اختیاری)
-# ---------------------------
-safety:     # 15.
+safety:
   hard_kill_switch:
     enabled: true
     conditions:
-      - { name: "max_daily_loss", metric: "live/daily_loss_pct", op: ">=", value: 0.03 }
-      - { name: "max_drawdown_total", metric: "live/total_drawdown_pct", op: ">=", value: 0.2 }
-      - { name: "too_many_trades", metric: "live/trades_per_day", op: ">", value: 120 }
+    - name: max_daily_loss
+      metric: live/daily_loss_pct
+      op: '>='
+      value: 0.03
+    - name: max_drawdown_total
+      metric: live/total_drawdown_pct
+      op: '>='
+      value: 0.2
+    - name: too_many_trades
+      metric: live/trades_per_day
+      op: '>'
+      value: 120
   news_filter:
     enabled: true
     high_impact_freeze_minutes_before: 31
     high_impact_freeze_minutes_after: 16
     medium_impact_freeze_minutes_before: 16
     medium_impact_freeze_minutes_after: 11
-    sources: []
-    sources: ["forexfactory"]
-    currencies: ["USD","EUR","GBP","JPY"]
-
-# ---------------------------
-# Override اختصاصی هر نماد (مثال)
-# ---------------------------
-per_symbol_overrides:     # 16.
+    sources:
+    - forexfactory
+    currencies:
+    - USD
+    - EUR
+    - GBP
+    - JPY
+per_symbol_overrides:
   XAUUSD:
     risk:
       risk_per_trade: 0.005
@@ -509,51 +499,24 @@ per_symbol_overrides:     # 16.
     evaluation:
       acceptance_gates:
         sharpe_min: 0.9
-        max_drawdown_max: 0.10
-
-
-# ======================================================================
-# بلوک‌های اختیاری برای فردا: CI/CD ، اسکریپت‌های اجرایی، و اسرار (Secrets)
-# نکته: همگی پیش‌فرض «غیرفعال» هستند تا هیچ رفتاری ناخواسته فعال نشود.
-# ======================================================================
-
-# ----------------------------------------------------------------------
-# CI/CD: اتوماسیون تست/بک‌تست روی ریپو؛ در آینده با GitHub Actions/GitLab CI وصل می‌شود.
-# enabled=false یعنی فقط تنظیمات را نگه می‌داریم؛ چیزی خودکار اجرا نمی‌شود.
-# ----------------------------------------------------------------------
-cicd:     # 17.
-  enabled: false                 # روشن/خاموش‌کردن کل بخش CI/CD
-  run_unit_tests_on_push: true   # در صورت فعال‌سازی، روی هر push تست‌های واحد اجرا می‌شود
-  run_backtest_on_main: true     # در صورت فعال‌سازی، روی شاخه‌ی main بک‌تست انجام می‌شود
-  artifact_retention_days: 30    # نگهداشت آرتیفکت‌ها (مدل/گزارش/لاگ) به‌مدت X روز
-  # provider: "github_actions"   # (اختیاری) مشخص‌کردن ارائه‌دهنده‌ی CI
-  # workflow_files:              # (اختیاری) مسیر فایل‌های workflow
-  #   - ".github/workflows/ci.yml"
-
-# ----------------------------------------------------------------------
-# Scripts: نقاط ورود یکدست برای اجرای وظایف پرتکرار. مسیرها را با ریپوی خود هماهنگ کنید.
-# می‌توانید به‌جای *.py از *.sh استفاده کنید؛ فقط این مسیرها را آپدیت کنید.
-# ----------------------------------------------------------------------
-scripts:     # 18.
-  download_data:  "scripts/run_download.py"      # دانلود/به‌روزرسانی داده‌ها
-  train:          "scripts/run_train.py"         # آموزش/فاین‌تیون
-  backtest:       "scripts/run_backtest.py"      # بک‌تست و گزارش
-  deploy:         "scripts/run_deploy.py"        # استقرار مدل/پارامتر
-  self_optimize:  "scripts/run_self_optimize.py" # پایپ‌لاین خودبهینه‌سازی روزانه/هفتگی
-
-# ----------------------------------------------------------------------
-# Secrets: نام متغیرهای محیطی (نه خودِ مقادیر). Loader شما باید از ENV بخواند.
-# دلیل تمرکز اینجاست: جلوگیری از هاردکد اسرار و سهولت جابجایی بین ماشین‌ها/سرورها.
-# ----------------------------------------------------------------------
-secrets:     # 19.
-  use_env: true                                 # خواندن اسرار از ENV فعال است
+        max_drawdown_max: 0.1
+cicd:
+  enabled: false
+  run_unit_tests_on_push: true
+  run_backtest_on_main: true
+  artifact_retention_days: 30
+scripts:
+  download_data: scripts/run_download.py
+  train: scripts/run_train.py
+  backtest: scripts/run_backtest.py
+  deploy: scripts/run_deploy.py
+  self_optimize: scripts/run_self_optimize.py
+secrets:
+  use_env: true
   env_keys:
-    MT5_LOGIN: MT5_LOGIN                        # نام متغیر محیطی لاگین MT5
-    MT5_PASSWORD: MT5_PASSWORD                  # نام متغیر محیطی پسورد MT5
-    MT5_SERVER: MT5_SERVER                      # نام متغیر محیطی سرور MT5
-    MT5_PATH: MT5_PATH                          # (اختیاری) مسیر ترمینال MT5
-    TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN      # توکن ربات تلگرام برای هشدارها
-    TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID          # چت آی‌دی تلگرام مقصد هشدارها
-    # SMTP_USER: SMTP_USER                      # (اختیاری) ایمیل/SMTP برای گزارش
-    # SMTP_PASS: SMTP_PASS
-
+    MT5_LOGIN: MT5_LOGIN
+    MT5_PASSWORD: MT5_PASSWORD
+    MT5_SERVER: MT5_SERVER
+    MT5_PATH: MT5_PATH
+    TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN
+    TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID

@@ -11,12 +11,12 @@ import pandas as pd
 from f04_features.indicators.core import rsi as rsi_core
 from f04_features.indicators.levels import sr_overlap_score
 from f10_utils.config_loader import ConfigLoader
+from f10_utils.config_ops import _deep_get
 from f04_features.indicators.utils import (
     levels_from_recent_legs,  # هِلپر «n لگ اخیر»
     compute_atr,              # برای last_leg_levels
     detect_swings,            # برای last_leg_levels
     get_ohlc_view,
-    _deep_get,
 )
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

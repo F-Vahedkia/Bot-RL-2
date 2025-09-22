@@ -16,7 +16,6 @@ def chaikin_volatility(high: pd.Series, low: pd.Series, n: int = 10, roc: int = 
     return (100.0 * (ema_range - ema_range.shift(roc)) / ema_range.shift(roc)).astype("float32")
 
 
-
 def registry() -> Dict[str, callable]:
     
     def make_donchian(df, n: int = 20, **_):

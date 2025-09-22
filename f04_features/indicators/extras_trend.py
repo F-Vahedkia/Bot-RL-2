@@ -96,8 +96,6 @@ def ichimoku(high, low, close, tenkan: int = 9, kijun: int = 26, span_b: int = 5
     chikou = close.shift(-kijun).astype("float32")  # صرفاً جهت رسم/تحلیل تاریخی؛ در فیچرها بعداً shift می‌شود
     return conv, base, span_a, span_bv, chikou
 
-#--- New Added ----------------------------------------------------- 040607
-# -*- coding: utf-8 -*-
 """
 افزودنی‌های ترندی سبک برای هم‌افزایی با Confluence:
 - ma_slope(...): شیب میانگین متحرک (نرمال‌شده)، مناسب به‌عنوان feature وزن‌دهی

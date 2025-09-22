@@ -100,18 +100,6 @@ class FiboTestConfig:
         }
 
 
-""" --------------------------------------------------------------------------- OK Func1
-"""
-def _deep_get(d: Dict[str, Any], path: str, default: Any = None) -> Any:
-    """دسترسی امن به مسیرهای تو در توی دیکشنری با dot-notation؛ در نبود کلید، مقدار پیش‌فرض برمی‌گردد."""
-    cur: Any = d
-    for part in path.split("."):
-        if not isinstance(cur, dict) or part not in cur:
-            return default
-        cur = cur[part]
-    return cur
-
-
 """ --------------------------------------------------------------------------- OK Func2
 هِلپر عمومی S/R: تولید سطوح رُندِ متقارن پیرامون ref
 """
@@ -445,7 +433,7 @@ def nearest_level_distance(price: float, levels: Sequence[float]) -> Dict[str, f
     return {"nearest_level": float(clean[j]), "signed": float(diffs[j]), "abs": float(abs(diffs[j]))}
 
 
-""" --------------------------------------------------------------------------- Func14
+""" --------------------------------------------------------------------------- OK Func14
 ساخت سطوح فیبوی رتریسمنت برای «n لگ اخیر» از روی سوئینگ‌های بسته.
 
 ورودی:

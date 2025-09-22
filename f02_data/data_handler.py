@@ -28,9 +28,6 @@ DataHandler (Bot-RL-2)
 - project.timezone (پیش‌فرض UTC)
 - download_defaults.timeframes  (در صورت ندادن timeframes به CLI)
 
-پیش‌نیازها:
-- pandas, numpy
-
 - فرمان اجرای قدیمی برنامه
 # python -m f02_data.data_handler --symbol XAUUSD --base-tf M5 --timeframes M5 M30 H1 -c .\f01_config\config.yaml --format parquet
 
@@ -51,6 +48,14 @@ python -m f02_data.data_handler    `
     --timeframes H1 H4 D1 W1       `
     --format parquet
 
+- فرمان اجرای جدید برنامه
+-  همراه با base_tf
+python -m f02_data.data_handler    `
+    -c .\f01_config\config.yaml    `
+    --symbol XAUUSD                `
+    --base-tf W1                   `
+    --timeframes W1                `
+    --format parquet
 """
 
 from __future__ import annotations
