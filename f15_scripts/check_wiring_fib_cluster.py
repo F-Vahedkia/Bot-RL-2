@@ -31,33 +31,53 @@ from typing import Dict, List, Iterable
 import pandas as pd
 
 from f04_features.indicators import fibonacci
+'''
 from f04_features.indicators.fibonacci import (
     # build_tf_levels_recent,
     fib_cluster,
     last_leg_levels,
     # DEFAULT_RETR_RATIOS,  # در این نسخه استفاده نشده؛ در صورت نیاز آزاد کنید
 )
+'''
+import f04_features.indicators.fibo_pipeline as fp
+
 from f04_features.indicators.utils import (
     levels_from_recent_legs,  # هِلپر «n لگ اخیر»
     compute_atr,              # برای last_leg_levels / ساخت سوئینگ
     detect_swings,            # برای last_leg_levels / ساخت سوئینگ
-    ohlc_view,                # نمای استاندارد OHLC برای یک TF
+    get_ohlc_view,                # نمای استاندارد OHLC برای یک TF
     pick_first_existing,      # انتخاب اولین ستون موجود از لیست کاندید
     FiboTestConfig,           # پیکربندی تست متمرکز (بدون وابستگی به scripts)
 )
 
 from f10_utils.config_loader import load_config
 config = load_config()
+import argparse  # ← برای خواندن CLI
 
 # ------------------------------------------------------------
 # پیکربندیِ تست (متمرکز در هسته؛ قابل استفاده در این رانر)
 # ------------------------------------------------------------
 cfg = FiboTestConfig()
 data_file = cfg.DATA_FILE         # دیتاست پردازش‌شده‌ی data_handler
-tfs = cfg.TFS                     # تایم‌فریم‌های هدف
+# -- CLI override برای timeframes/base-tf (اگر داده شود):
+_ap = argparse.ArgumentParser(add_help=False)
+_ap.add_argument("--timeframes", nargs="+")
+_ap.add_argument("--base-tf")
+_args, _ = _ap.parse_known_args()
+tfs = _args.timeframes or cfg.TFS
+#tfs = cfg.TFS                     # تایم‌فریم‌های هدف
 tails = cfg.TAILS                 # برش پنجره‌ی اخیر برای هر TF
 n_legs = cfg.N_LEGS               # تعداد لگ‌های اخیر برای هر TF
 
+# --- CLI overrides (اختیاری) ---
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--timeframes", nargs="+")
+_parser.add_argument("--base-tf")
+_known, _ = _parser.parse_known_args()
+if _known.timeframes:
+    tfs = _known.timeframes
+# اگر base-tf داده شد، همان را مبنا می‌گیریم؛ در غیر اینصورت اولین عضو tfs
+BASE_TF = _known.base_tf if _known.base_tf else (tfs[0] if tfs else "M5")
 
 """ برای هر TF، ویوی OHLC می‌سازد، «n لگ اخیر» را به سطح فیبو تبدیل و دیکشنری """
 # این فایل فقط در check_wiring_fib_cluster.py استفاده میشود.
@@ -65,17 +85,15 @@ def build_tf_levels_recent(
     df: pd.DataFrame,
     tfs: Iterable[str],
     tails: Dict[str, int],
-    n_legs: int,
-) -> Dict[str, pd.DataFrame]:
+    n_legs: int) -> Dict[str, pd.DataFrame]:
     """ساخت سطوح فیبو از n لگ اخیر برای هر TF داده‌شده."""
     out: Dict[str, pd.DataFrame] = {}
     for tf in tfs:
-        view = ohlc_view(df, tf)
+        view = get_ohlc_view(df, tf)
         if tf in tails and tails[tf] and tails[tf] > 0:
             view = view.tail(int(tails[tf]))
         out[tf] = levels_from_recent_legs(view, n_legs=n_legs, min_distance=5, atr_mult=1.0)
     return out
-
 
 
 # ------------------------------------------------------------
@@ -94,9 +112,9 @@ def main() -> int:
     # ma_slope_series = pick_first_existing(df, MA_SLOPE_CANDIDATES)   # در صورت نیاز آزاد کنید
     # rsi_score_series = pick_first_existing(df, RSI_SCORE_CANDIDATES) # در صورت نیاز آزاد کنید
 
-    # 4) ساخت سطوح رُند (SR) حول آخرین قیمت TF اول
-    first_tf = tfs[0]
-    h1_view = ohlc_view(df, first_tf)
+    # 4) ساخت سطوح رُند (SR) حول آخرین قیمت «بیس‌تایم‌فریم»
+    first_tf = BASE_TF
+    h1_view = get_ohlc_view(df, first_tf)
     last_close = float(h1_view["close"].dropna().iloc[-1])
     sr_levels = cfg.sr_levels(ref_price=last_close)  # ← جایگزین round_levels(...)
 
@@ -104,10 +122,16 @@ def main() -> int:
     ref_ts = pd.to_datetime(df.index[-1], utc=True)
 
     # 6) ساخت سوئینگ‌ها و لِگ‌ها برای هر TF (خوراک ورودی fib_cluster_cfg)
+    swings_for_abc = None  # DataFrame سوئینگ‌های BASE_TF برای ABC projections
     swings_by_tf: Dict[str, pd.DataFrame] = {}
     for tf in tfs:
         print(f"[RUN] build swings: start {tf}")
-        view = ohlc_view(df, tf)
+        view = get_ohlc_view(df, tf)
+        # apply the same tail limit used for level-building (faster smoke run)
+        tail_len = tails.get(tf, None)
+        if tail_len and tail_len > 0:
+            view = view.tail(int(tail_len))        
+
         atr = compute_atr(view, window=14)
         swings = detect_swings(
             view["close"],
@@ -117,6 +141,9 @@ def main() -> int:
             atr_mult=1.0,
             tf=tf
         )
+        if tf == BASE_TF:
+            swings_for_abc = swings.copy()
+
         print(f"[RUN] build swings: done {tf} -> {len(swings) if swings is not None else 0}")
 
         # نگاشت سوئینگ‌ها به لِگ‌ها با اسکیمای مورد انتظار
@@ -161,22 +188,30 @@ def main() -> int:
             swings_by_tf[tf] = legs_df if not legs_df.empty else pd.DataFrame(columns=["bar","time","idx_low","idx_high","low","high"])
 
     # 7) ساخت دیکشنری نمای OHLC برای هر TF
-    views_by_tf = {tf: ohlc_view(df, tf) for tf in tfs}
+    views_by_tf = {tf: get_ohlc_view(df, tf) for tf in tfs}
 
-    # 8) خوشه‌بندی فیبو با پارامترهای متمرکز (cfg.to_cluster_kwargs)
-    print("[RUN] run fib_cluster_cfg ...")
-    cluster_kwargs = cfg.to_cluster_kwargs()  # tol_pct, prefer_ratio, w_trend, w_rsi, w_sr, sr_tol_pct
-    clusters = fibonacci.fib_cluster_cfg(
-        df_by_tf=views_by_tf,          # ← نمای OHLC هر TF
-        swings_by_tf=swings_by_tf,     # ← لِگ‌های ساخته‌شده برای هر TF
-        global_cfg=config,             # ← کانفیگ اصلی پروژه
-        symbol="XAUUSD",               # ← نماد نمونه؛ در عمل از منبع جاری بخوان
-        #sr_levels=sr_levels,           # ← سطوح رُند اطراف قیمت
-        #ref_time=ref_ts,               # ← زمان مرجع
-        #ma_slope=running_ma_slope,   # اگر سری آماده داری، پاس بده
-        #rsi_zone_score=running_rsi,  # اگر سری آماده داری، پاس بده
-        #**cluster_kwargs,              # ← پارامترهای هم‌گرا شده از cfg
+    # 8) خوشه‌بندی فیبو با پارامترهای متمرکز
+    print("[RUN] run_fibo_cluster (pipeline) ...")
+    # پایۀ انتخاب‌شده از CLI/پیش‌فرض:
+    #base_tf = tfs[0]          # همان TF اولی که بالاتر برای SR/نمای OHLC استفاده شده
+    base_tf = BASE_TF
+    k_fractal = 2             # برای اسموک تست؛ در همین فایل مقداردهی محلی
+    tz = "UTC"                # اسموک
+    result = fp.run_fibo_cluster(
+        symbol="XAUUSD",
+        tf_dfs=views_by_tf,
+        base_tf=base_tf,
+        k_fractal=k_fractal,
+        max_legs_per_tf=n_legs,
+        tz=tz,
+        swings_for_abc=swings_for_abc,
     )
+    clusters = result.clusters
+    print("[SMOKE] clusters rows:", len(clusters))
+    if hasattr(result, "abc_projections"):
+        print("[SMOKE] abc_projections:", len(result.abc_projections or []))
+    if hasattr(result, "order_planner"):
+        print("[SMOKE] order_planner keys:", list((result.order_planner or {}).keys()))
 
     # 9) چاپ خروجی
     print("Top clusters (by score):")

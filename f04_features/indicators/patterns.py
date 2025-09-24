@@ -30,6 +30,20 @@ from f04_features.indicators.utils import compute_atr
 # =============================================================================
 # [General helpers] هِلپرهای عمومی برای بدنه/رنج/شدُو
 # =============================================================================
+def _apply_scale(kwargs: dict, rules: list[tuple[str, float, float, float]]) -> dict:
+    """مشتق‌گیری پارامترها از scale_k در صورت نبودِ خودِ پارامترها؛ بدون افزودن کلید جدید به کانفیگ."""
+    sk = kwargs.get("scale_k", None)
+    if sk is None:
+        return kwargs
+    out = dict(kwargs)
+    for name, factor, lo, hi in rules:
+        if name not in out or out[name] is None:
+            val = factor * sk
+            if lo is not None:  val = max(lo, val)
+            if hi is not None:  val = min(hi, val)
+            out[name] = val
+    return out
+
 def _fmtf(x: float, nd: int = 2) -> str:
     """نمایش عدد اعشاری به‌صورت کوتاه (trim zeros)، برای نام ستون‌ها."""
     s = f"{float(x):.{nd}f}"
@@ -316,7 +330,8 @@ def registry() -> Dict[str, callable]:
                          range_ratio_thresh=range_ratio_thresh)
         return {f"pat_doji_{atr_ratio_thresh}_{range_ratio_thresh}": flag}
 
-    def make_pin(df, ratio: float = 2.0, **_):
+    def make_pin(df, ratio: float = 2.0, **kwargs):
+        kwargs = _apply_scale(kwargs, rules=[("ratio", 2.50, 1.10, 10.0)])
         """Pinbar (bull/bear)"""
         b, s = pinbar_flags(df["open"], df["high"], df["low"], df["close"], ratio)
         r = _fmtf(ratio, 2)   # r: ratio
@@ -327,7 +342,8 @@ def registry() -> Dict[str, callable]:
                          min_body_frac: float = 0.0,
                          wick_ratio: float = 2.0,
                          opp_wick_k: float = 1.25,
-                         **_):
+                         **kwargs):
+        kwargs = _apply_scale(kwargs, rules=[("wick_ratio", 2.50, 0.50, 10.0)])
         """Hammer/Shooting با پارامترهای adaptive ساده"""
         b, s = hammer_shooting_flags(df["open"], df["high"], df["low"], df["close"],
                                      min_body_frac, wick_ratio, opp_wick_k)
@@ -339,8 +355,9 @@ def registry() -> Dict[str, callable]:
         b, s = harami_flags(df["open"], df["high"], df["low"], df["close"])
         return {"pat_harami_bull": b, "pat_harami_bear": s}
 
-    def make_inside_outside(df, min_range_k_atr: float = 0.0, atr_win: int = 14, **_):
+    def make_inside_outside(df, min_range_k_atr: float = 0.0, atr_win: int = 14, **kwargs):
         """Inside/Outside با قید حداقل رنج نسبتی به ATR"""
+        kwargs = _apply_scale(kwargs, rules=[("min_range_k_atr", 0.50, 0.05, 10.0)])
         inside, outside = inside_outside_flags(df["open"], df["high"], df["low"], df["close"],
                                                min_range_k_atr=min_range_k_atr, atr_win=atr_win)
         return {"pat_inside": inside, "pat_outside": outside}
@@ -352,8 +369,11 @@ def registry() -> Dict[str, callable]:
         return {f"pat_marubozu_bull_{wf}": b, f"pat_marubozu_bear_{wf}": s}
     
     def make_tweezer(df, tol_frac: float | None = 0.001,
-                     tol_k: float | None = None, tol_mode: str = "atr_price",
-                     atr_win: int = 14, **_):
+                    tol_k: float | None = None,
+                    tol_mode: str = "atr_price",
+                    atr_win: int = 14, **kwargs):
+        # اگر فقط scale_k داده شده باشد و tol_k نیامده باشد، از آن مشتق می‌کنیم
+        kwargs = _apply_scale(kwargs, rules=[("tol_k", 1.00, 0.05, 10.0)])
         """
         Tweezer (Adaptive/Static)
         - اگر tol_frac=None → adaptive با tol_k
@@ -368,21 +388,17 @@ def registry() -> Dict[str, callable]:
         return {f"pat_tweezer_top_{label}": top,
                 f"pat_tweezer_bot_{label}": bottom}
 
-    def make_soldiers_crows(df,
-                            min_body_atr: float = 0.2,
-                            atr_win: int = 14,
-                            **_):
+    def make_soldiers_crows(df, min_body_atr: float = 0.2, atr_win: int = 14, **kwargs):
         """Three Soldiers / Three Crows (ATR-based)"""
+        kwargs = _apply_scale(kwargs, rules=[("min_body_atr", 0.25, 0.02, 10.0)])
         atrv = compute_atr(df, atr_win, method="classic")
         b, s = three_soldiers_crows_flags(df["open"], df["close"],
                                           atr_ref=atrv, min_body_atr=min_body_atr)
         return {f"pat_3soldiers_{min_body_atr}": b, f"pat_3crows_{min_body_atr}": s}
 
-    def make_morn_even(df,
-                       small_body_atr: float = 0.3,
-                       atr_win: int = 14,
-                       **_):
+    def make_morn_even(df, small_body_atr: float = 0.3, atr_win: int = 14, **kwargs):
         """Morning/Evening Star (ATR-based)"""
+        kwargs = _apply_scale(kwargs, rules=[("small_body_atr", 0.30, 0.02, 10.0)])
         m, e = morning_evening_star_flags(df["open"], df["high"], df["low"], df["close"],
                                           small_body_atr=small_body_atr, atr_win=atr_win)
         sb = _fmtf(small_body_atr, 2)   # sb: small_body_atr
@@ -393,8 +409,10 @@ def registry() -> Dict[str, callable]:
         p, d = piercing_darkcloud_flags(df["open"], df["close"], min_body_ratio=min_body_ratio)
         return {f"pat_piercing_{min_body_ratio}": p, f"pat_darkcloud_{min_body_ratio}": d}
 
-    def make_belt(df, wick_frac: float = 0.1, **_):
+    def make_belt(df, wick_frac: float = 0.1, **kwargs):
+        # نرخ بالا ⇒ frac کمتر؛ مشتق اولیه از scale_k
         """Belt Hold (bull/bear)"""
+        kwargs = _apply_scale(kwargs, rules=[("wick_frac", 0.10, 0.005, 0.50)])
         b, s = belt_hold_flags(df["open"], df["high"], df["low"], df["close"], wick_frac)
         wf = _fmtf(wick_frac, 2)   # wf: wick_frac
         return {f"pat_belt_bull_{wf}": b, f"pat_belt_bear_{wf}": s}

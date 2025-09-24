@@ -48,9 +48,9 @@ if str(ROOT) not in sys.path:
 # لودر کانفیگ پروژه
 from f10_utils.config_loader import ConfigLoader
 cfg = ConfigLoader().get_all()
-# ماژول‌های اندیکاتور
 import f04_features.indicators.levels as lv
-from f04_features.indicators.fibonacci import _deep_get
+from f10_utils.config_ops import _deep_get
+
 # -----------------------------------------------------------------------------
 # تنظیم لاگینگ سبک برای این اسکریپت (پیام‌ها باید انگلیسی باشند)
 # -----------------------------------------------------------------------------
@@ -530,7 +530,7 @@ def run_for_symbol(params: RunParams, symbol: str) -> None:
     if cluster_df is None or cluster_df.empty:
         logger.info("No clusters produced for %s.", symbol)
         return
-
+    """
     #========/ start
     # فارسی: تقویت امتیازها با MA و SR (بدون دست‌زدن به هسته)
     cluster_df = fp.enhance_cluster_scores(
@@ -541,13 +541,24 @@ def run_for_symbol(params: RunParams, symbol: str) -> None:
         ref_time=ref_time,
         adr_value=adr_value,
     )
-    """
     نکته‌ها:
     اگر MA یا SR در دسترس نباشند، تابع به‌صورت ایمن صفر را لحاظ می‌کند و فقط score پایه می‌ماند.
     وزن‌ها/تلورانس از همان کانفیگ فعلی شما خوانده می‌شوند؛ نیازی به افزودن کلید جدید نیست.
     ستون‌های trend_score و sr_score برای دیباگ اضافه می‌شوند و می‌توانی ببینی چه‌قدر اثر گذاشته‌اند.
     """
     #========/ end
+    # (removed) Avoid double-counting: keep scores from fib_cluster_cfg only.
+    logger.info("Cluster scoring kept from fib_cluster_cfg (no re-weighting).")
+
+    # Light smoke logs (non-breaking)
+    logger.info("clusters rows: %d", len(cluster_df))
+    if hasattr(result, "abc_projections"):
+        ap = result.abc_projections or []
+        logger.info("abc_projections: %d", len(ap))
+    if hasattr(result, "order_planner"):
+        op = result.order_planner or {}
+        logger.info("order_planner keys: %s", list(op.keys()))
+
 
     # 6) نمایش Top-N خوشه‌ها
     # تلاش برای مرتب‌سازی بر حسب 'score' در صورت وجود؛ در غیر اینصورت بر اساس 'price_mean'

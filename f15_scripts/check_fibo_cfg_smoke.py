@@ -196,6 +196,7 @@ def demo_fib_ext_targets_cfg(
 
     logger.info("Running fib_ext_targets_cfg demo with entry=%.3f, leg_low=%.3f, leg_high=%.3f, side=%s", entry, leg_low, leg_high, side)
     try:
+        '''
         df = fib.fib_ext_targets_cfg(
             entry_price=entry,
             leg_low=leg_low,
@@ -205,6 +206,16 @@ def demo_fib_ext_targets_cfg(
             sl_atr=None,          # برای دمو لازم نیست
             sl_atr_mult=None,     # None → از config.yaml خوانده می‌شود (sl_atr_mult)
         )
+        '''
+        # امضای فعلی: (last_leg, global_cfg, symbol, tf)
+        cfg_all = ConfigLoader().get_all()
+        df = fib.fib_ext_targets_cfg(
+            last_leg=(leg_low, leg_high),
+            global_cfg=cfg_all,
+            symbol="DEMO",
+            tf="H1",
+        )
+
         # نمایش بخشی از خروجی
         logger.info("fib_ext_targets_cfg: got %d rows", len(df))
         logger.info("fib_ext_targets_cfg: head(5):\n%s", df.head(5).to_string(index=False))
