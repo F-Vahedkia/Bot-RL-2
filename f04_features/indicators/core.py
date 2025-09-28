@@ -75,7 +75,8 @@ def rsi(
 
 
 def roc(close: pd.Series, n: int = 10) -> pd.Series:
-    return (close.pct_change(n) * 100.0).astype("float32")
+    # return (close.pct_change(n) * 100.0).astype("float32")   added 040705
+    return (close.pct_change(n, fill_method=None) * 100.0).astype("float32")
 
 # ATR/TR
 
@@ -156,7 +157,8 @@ def heikin_ashi(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Ser
     ha_open = pd.Series(index=open_.index, dtype="float32")
     ha_open.iloc[0] = float(open_.iloc[0])
     for i in range(1, len(open_)):
-        ha_open.iloc[i] = (ha_open.iloc[i - 1] + ha_close.iloc[i - 1]) / 2.0
+        # ha_open.iloc[i] = (ha_open.iloc[i - 1] + ha_close.iloc[i - 1]) / 2.0   added 040705
+        ha_open.iloc[i] = np.float32((ha_open.iloc[i - 1] + ha_close.iloc[i - 1]) / 2.0)
     ha_high = pd.concat([high, ha_open, ha_close], axis=1).max(axis=1)
     ha_low = pd.concat([low, ha_open, ha_close], axis=1).min(axis=1)
     return ha_open.astype("float32"), ha_high.astype("float32"), ha_low.astype("float32"), ha_close.astype("float32")

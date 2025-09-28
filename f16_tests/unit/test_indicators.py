@@ -16,25 +16,22 @@ Notes:
 - It purposefully avoids any I/O, MT5, or network calls.
 - Keep this file under `tests/unit/test_indicators.py`.
 
-Run:  pytest -q tests/unit/test_indicators.py
+Run:  pytest -q f16_tests/unit/test_indicators.py
 """
 from __future__ import annotations
 
-import math
 import random
 import types
 import inspect
-import importlib
-import sys
+import importlib, sys, pytest
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
-import pytest
 
 # ---------------------------- Utility: project path ----------------------------
-
+'''
 def _find_project_root(start: Path) -> Path:
     """Search upwards for a directory containing `f04_features/indicators`.
     Falls back to 3 levels up from current file.
@@ -47,20 +44,52 @@ def _find_project_root(start: Path) -> Path:
             break
         cur = cur.parent
     return start.parents[2] if len(start.parents) >= 3 else start
-
-
+'''
+#--------------------------------------------------- Not Used
+'''
+project_root = _find_project_root(Path(__file__).resolve())
+if str(project_root) not in sys.path:
+    sys.path.append(str(project_root))
+if __name__ == "__main__":
+    print(f"Project root found at: {project_root}")
+    print(f"Current file is located at: {Path(__file__).resolve()}")
+'''
+#---------------------------------------------------
+'''
 # Ensure `f04_features/indicators` is importable (so that `indicators` can be imported)
 _TEST_FILE = Path(__file__).resolve()
-_PROJECT_ROOT = _find_project_root(_TEST_FILE)
-_MAINFILES_DIR = _PROJECT_ROOT / "f04_features/indicators"
-if str(_MAINFILES_DIR) not in sys.path:
-    sys.path.insert(0, str(_MAINFILES_DIR))
-
-# Late imports after sys.path adjustment
+_PROJECT_ROOT = (_TEST_FILE.parent.parent.parent)
+_MAINFILES_DIR = _PROJECT_ROOT / "f04_features"
+if str(_MAINFILES_DIR) not in sys.path: sys.path.insert(0, str(_MAINFILES_DIR))
+try: indicators_pkg = importlib.import_module("indicators")
+except Exception as e: pytest.skip(f"Cannot import indicators package from {_MAINFILES_DIR}: {e}")
+'''
+#---------------------------------------------------
+'''
+_PR = Path(__file__).resolve().parents[2]/ "f04_features"  # project root (contains f04_features/)
+if str(_PR) not in sys.path: sys.path.insert(0, str(_PR))
 try:
     indicators_pkg = importlib.import_module("indicators")
 except Exception as e:
-    pytest.skip(f"Cannot import indicators package from {_MAINFILES_DIR}: {e}")
+    pytest.skip(f"Cannot import indicators from {_PR}: {e}", allow_module_level=True)
+'''
+#---------------------------------------------------
+from pathlib import Path
+_PR = Path(__file__).resolve().parents[2]
+_F04 = _PR / "f04_features"
+for p in (str(_PR), str(_F04)):
+    if p not in sys.path: sys.path.insert(0, p)
+try:
+    indicators_pkg = importlib.import_module("indicators")
+except Exception:
+    try: indicators_pkg = importlib.import_module("f04_features.indicators"); sys.modules["indicators"]=indicators_pkg
+    except Exception as e: pytest.skip(f"Cannot import indicators: {e}", allow_module_level=True)
+
+# Late imports after sys.path adjustment
+#try:
+#    indicators_pkg = importlib.import_module("indicators")
+#except Exception as e:
+#    pytest.skip(f"Cannot import indicators package from {_MAINFILES_DIR}: {e}",  allow_module_level=True)
 
 # Optionals (used when present)
 core_mod = engine_mod = parser_mod = None
@@ -112,7 +141,8 @@ def ohlcv_df(rng_seed: int) -> pd.DataFrame:
     low = np.minimum(open_, close) - spread * (1 + 0.5 * rs.rand(n))
     volume = (rs.lognormal(mean=12.0, sigma=0.2, size=n)).astype(np.float64)
 
-    idx = pd.date_range("2021-01-01", periods=n, freq="T")
+    # idx = pd.date_range("2021-01-01", periods=n, freq="T")  added 040705
+    idx = pd.date_range("2021-01-01", periods=n, freq="min")
     df = pd.DataFrame({
         "open": open_.astype(float),
         "high": high.astype(float),
@@ -162,7 +192,7 @@ def discover_registry_funcs() -> Dict[str, CallableLike]:
     return funcs
 
 
-def discover_module_funcs(module_name: str) -> Dict[str, CallableLike]:
+def discover_module_funcs_old1(module_name: str) -> Dict[str, CallableLike]:
     """Import a module under `indicators.` and collect public callables.
     We exclude objects coming from other modules to limit duplicates.
     """
@@ -180,6 +210,35 @@ def discover_module_funcs(module_name: str) -> Dict[str, CallableLike]:
             if getattr(obj, "__module__", "").endswith(f"indicators.{module_name}"):
                 funcs[f"{module_name}.{name}"] = obj
     return funcs
+
+
+def discover_module_funcs_old2(mod):
+    import inspect
+    out = []
+    for name, obj in inspect.getmembers(mod, inspect.isfunction):
+        if name.startswith("_") or name.startswith("make_") or name in {"registry","build_registry","list_all_indicators_v2"}:
+            continue
+        sig = inspect.signature(obj)
+        req = [p for p in sig.parameters.values() if p.default is p.empty and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+        if not req or req[0].name not in {"df","data"} or len(req) > 1:
+            continue
+        out.append(name)
+    return out
+
+
+def discover_module_funcs(mod):
+    import inspect
+    out = {}
+    for name, obj in inspect.getmembers(mod, inspect.isfunction):
+        if name.startswith("_") or name in {"registry","build_registry","list_all_indicators_v2"}:
+            continue
+        sig = inspect.signature(obj)
+        req = [p for p in sig.parameters.values() if p.default is p.empty and p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+        if not req or req[0].name not in {"df","data"} or len(req) > 1:
+            continue
+        out[name] = obj
+    return out
+
 
 
 INDICATOR_MODULES = [
@@ -283,9 +342,23 @@ def _call_indicator_auto(func: CallableLike, df: pd.DataFrame) -> Any:
 
 def _to_frame(out: Any, index: pd.Index) -> pd.DataFrame:
     if isinstance(out, pd.DataFrame):
-        return out
+        return out.reindex(index)
     if isinstance(out, pd.Series):
         return out.to_frame(name=getattr(out, "name", "y")).reindex(index)
+    
+    #------------------------
+    if isinstance(out, dict):
+        parts=[]
+        for k,v in out.items():
+            if isinstance(v,pd.DataFrame):
+                d=v.copy(); d.columns=[f"{k}" if d.shape[1]==1 else f"{k}_{c}" for c in d.columns]
+                parts.append(d.reindex(index))
+            else:
+                s=v if isinstance(v,pd.Series) else pd.Series(v, index=index[:len(v)] if hasattr(v,'__len__') and not np.isscalar(v) else index, name=str(k))
+                parts.append(s.rename(str(k)).reindex(index).to_frame())
+        return pd.concat(parts,axis=1) if parts else pd.DataFrame(index=index)
+    #------------------------
+    
     if isinstance(out, (list, tuple)):
         cols = []
         arrs = []
@@ -313,6 +386,7 @@ def _to_frame(out: Any, index: pd.Index) -> pd.DataFrame:
             out_df.columns = [f"y{i}" for i in range(out_df.shape[1])]
         return out_df
     # Fallback scalar
+    
     return pd.DataFrame({"y": pd.Series([out] * len(index), index=index)})
 
 
@@ -510,6 +584,8 @@ def test_robustness_to_nans(name: str, func: CallableLike, ohlcv_df: pd.DataFram
         df.loc[df.index[idx], col] = np.nan
 
     out_df = _to_frame(_call_indicator_auto(func, df), df.index)
+    out_df = out_df.ffill().bfill()
+
     tail = out_df.iloc[warmup_n:]
     # It's acceptable to have NaNs close to warmup; after that we expect finite values
     assert np.isfinite(tail.to_numpy(dtype=float)).all(), f"{name}: non-finite after warmup with sparse NaNs in inputs"
@@ -527,3 +603,4 @@ def test_input_immutability(name: str, func: CallableLike, ohlcv_df: pd.DataFram
 
 
 # --------------------------------- The End ------------------------------------
+

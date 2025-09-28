@@ -18,11 +18,19 @@ from .fibonacci import (golden_zone, fib_cluster, fib_ext_targets,
 from .fibo_pipeline import run_fibo_cluster
 from .extras_trend import ma_slope, rsi_zone
 from .core import rsi as rsi_core, ema as ema_core
-from .levels import compute_adr, adr_distance_to_open, sr_overlap_score
-from .utils import round_levels, compute_atr, nearest_level_distance
+
+# [Bot-RL-2][Plan B / ADV adapters]  --- anchors: levels/utils
+from .levels import compute_adr as _compute_adr
+from .levels import adr_distance_to_open as _adr_distance_to_open
+from .levels import sr_overlap_score as _sr_overlap_score
+
+from .utils import round_levels as _round_levels
+from .utils import nearest_level_distance as _nearest_level_distance
+from .utils import compute_atr
+from f10_utils.config_ops import _deep_get
+
 from f10_utils.config_loader import ConfigLoader  # از f01_config/config.yaml می‌خواند
 _loader = ConfigLoader()                          # به‌طور پیش‌فرض f01_config/config.yaml را لود می‌کند
-from f10_utils.config_ops import _deep_get
 
 # --- Advanced Support/Resistance -----------------------------------
 from f04_features.indicators.sr_advanced import (
@@ -40,18 +48,8 @@ logger.addHandler(logging.NullHandler())
 # --- Functions -----------------------------------------------------
 
 # --- SR config injection (common/component/overrides by (Symbol, TF)) -------- start
-
-# Deep-get بدون وابستگی بیرونی
-'''
-def _deep_get(d, path, default=None):
-    cur = d
-    for key in str(path).split("."):
-        if not isinstance(cur, dict) or key not in cur:
-            return default
-        cur = cur[key]
-    return cur
-'''
 # استنتاج اختیاری Symbol/TF (اگر در کانفیگ باشد)
+
 def _infer_symbol_tf(cfg_all, default_sym=None, default_tf=None):
     # کلیدهای رایج؛ اگر نبودند، overrides اعمال نمی‌شود (بدون خطا)
     sym_keys = ["data.symbol", "dataset.symbol", "active.symbol", "symbol"]
@@ -75,7 +73,11 @@ def _merge_sr_kwargs(name: str, cfg: dict, df: pd.DataFrame) -> dict:
     return {**base, **comp, **over, **(cfg or {})}
 
 # --- SR config injection ----------------------------------------------------- end
-
+# --- Adapters ---------------------------------------------------------------- start
+# نکتهٔ مهم قرارداد:
+#  هر آداپتر فقط Dict[str, pd.Series] برمی‌گرداند که با ایندکس df ورودی هم‌تراز است؛
+# موتور v2 خودش نام نهایی را به‌شکل __{name}@{TF}__{key} می‌سازد
+# ======================= [ADV Adapter] fibo_features_full ========================================
 def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, **_) -> Dict[str, pd.Series]:
     """
     خروجی per-bar هم‌تراز با base_tf از خوشه‌های فیبوناچی:
@@ -130,7 +132,7 @@ def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, *
 
     # 5) nearest level metrics per-bar
     def _nearest_tuple(p: float):
-        d = nearest_level_distance(float(p), levels)
+        d = _nearest_level_distance(float(p), levels)
         # اندیس نزدیک‌ترین کلستر
         j = int(np.argmin([abs(float(p) - float(lv)) for lv in levels])) if levels else -1
         if j < 0:
@@ -220,50 +222,145 @@ def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, *
     }
     return out
 
-
+# ======================= [ADV Adapter] rsi =======================================================
 def _rsi_adapter(ohlc, n: int = 14, **_) -> Dict[str, pd.Series]:
     return {f"rsi_{n}": rsi_core(ohlc["close"], n)}
 
-
+# ======================= [ADV Adapter] ema =======================================================
 def _ema_adapter(ohlc, col: str = "close", n: int = 20, **_) -> Dict[str, pd.Series]:
     return {f"ema_{col}_{n}": ema_core(ohlc[col], n)}
 
 
-Registry = Dict[str, Callable]
-def build_registry() -> Registry:
-    reg: Registry = {}
-    # core
-    from .core import registry as core_reg
-    reg.update(core_reg())
-    # extras
-    from .extras_trend import registry as trend_reg
-    reg.update(trend_reg())
-    from .extras_channel import registry as ch_reg
-    reg.update(ch_reg())
-    # volume
-    from .volume import registry as vol_reg
-    reg.update(vol_reg())
-    # patterns
-    from .patterns import registry as pat_reg
-    reg.update(pat_reg())
-    # levels
-    from .levels import registry as lvl_reg
-    reg.update(lvl_reg())
-    # divergences
-    from .divergences import registry as div_reg
-    reg.update(div_reg())
-    return reg
+# ======================= [ADV Adapter] adr =======================================================
+def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+    """
+    آداپتر ADR:
+      - ورودی: df با high/low (و ایندکس UTC)
+      - خروجی: {'adr_<window>': Series}
+    contract: Dict[str, Series] هم‌تراز با df.index
+    """
+    s = _compute_adr(df, window=int(window), tz=tz)
+    # اطمینان از Series و dtype
+    if not isinstance(s, pd.Series):
+        s = pd.Series(s, index=df.index)
+    s = s.astype("float32")
+    key = f"adr_{int(window)}"
+    return {key: s}
 
 
-"""
-افزودنی‌های رجیستری (Bot-RL-2)
-- ADV_INDICATOR_REGISTRY: ثبت اندیکاتورهای جدید (فیبو/ترند)
-- get_indicator_v2 / list_all_indicators_v2: بدون شکستن APIهای قبلی
+# ======================= [ADV Adapter] adr_distance_to_open ======================================
+def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+    """
+    فاصله تا open روز (نرمال‌شده با ADR):
+    - اگر خروجی levels ستون 'dist_pct' نداشته باشد، اینجا با dist_abs/adr محاسبه می‌کنیم.
+    - نام ستون‌های ورودی را با چند alias چک می‌کنیم.
+    خروجی: { 'adr_day_open_<w>', 'adr_dist_abs_<w>', 'adr_dist_pct_<w>' }
+    """
+    w = int(window)
+    adr = _compute_adr(df, window=w, tz=tz)
+    # اطمینان از Series
+    if not isinstance(adr, pd.Series):
+        adr = pd.Series(adr, index=df.index)
 
-افزودنی‌های رجیستری (Bot-RL-2) — نسخهٔ گسترش‌یافته
-رجیستری جدید (advanced) — افزایشی
-"""
-ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
+    out = _adr_distance_to_open(df, adr=adr, tz=tz)
+    # همگن‌سازی: DataFrame و نام ستون‌ها
+    if isinstance(out, pd.Series):
+        out = out.to_frame("dist_abs")
+
+    # aliasها
+    aliases = {
+        "day_open": ["day_open", "open_day", "open_d", "open"],
+        "dist_abs": ["dist_abs", "distance_abs", "dist"],
+        "dist_pct": ["dist_pct_of_adr", "dist_pct", "distance_pct_of_adr", "distance_pct"],
+    }
+
+    def pick(name_group: list[str]) -> Optional[pd.Series]:
+        for nm in name_group:
+            if nm in out.columns:
+                return out[nm]
+        return None
+
+    s_open = pick(aliases["day_open"])
+    s_abs  = pick(aliases["dist_abs"])
+    s_pct  = pick(aliases["dist_pct"])
+
+    # اگر بعضی ستون‌ها نبودند، خودمان بسازیم:
+    if s_open is None:
+        # day_open را از df بازسازی می‌کنیم: نزدیک‌ترین open روز به سمت عقب
+        # (فرض بر این‌که df دقیقه‌ای یا هم‌ترازِ broadcast است)
+        # اگر در levels قبلاً درست تولید شده، این شاخه اجرا نمی‌شود.
+        s_open = df["open"].copy()
+
+    if s_abs is None:
+        # |close - day_open|
+        s_abs = (df["close"].astype(float) - s_open.astype(float)).abs()
+
+    if s_pct is None:
+        # dist_abs / adr  (وقتی adr>0)
+        safe_adr = adr.replace(0, np.nan)
+        s_pct = (s_abs.astype(float) / safe_adr.astype(float))
+
+    # dtype و نام‌گذاری
+    s_open = s_open.astype("float32")
+    s_abs  = s_abs.astype("float32")
+    s_pct  = s_pct.astype("float32")
+
+    return {
+        f"adr_day_open_{w}": s_open,
+        f"adr_dist_abs_{w}": s_abs,
+        f"adr_dist_pct_{w}": s_pct,
+    }
+
+# ======================= [ADV Adapter] sr_overlap_score ==========================================
+def _adv_sr_overlap_score(df, anchor: float, step: float, n: int = 10, tol_pct: float = 0.05, **_) -> Dict[str, pd.Series]:
+    """
+    امتیاز همپوشانی قیمت (close) با سطوح S/R «رُند» ساخته شده از round_levels(anchor, step, n).
+    - برای هر بارِ close: score = sr_overlap_score(close_t, levels, tol_pct)
+    - خروجی: {'sr_overlap_score_<step>_<n>_<tolbp>bp': Series}
+      * tolbp = tol_pct * 10000 به واحد basis point برای نام امن
+    """
+    levels = _round_levels(anchor=anchor, step=step, n=int(n))
+    # محاسبهٔ سری امتیاز
+    close = df["close"].astype(float)
+    vals = [float(_sr_overlap_score(float(px), levels, tol_pct=float(tol_pct))) for px in close]
+    s = pd.Series(vals, index=df.index, name="sr_overlap_score").astype("float32")
+    # نام ایمن (بدون %/ممیز)
+    tolbp = int(round(float(tol_pct) * 10000))
+    key = f"sr_overlap_score_{str(step).replace('.','_')}_{int(n)}_{tolbp}bp"
+    return {key: s}
+
+# ======================= [ADV Adapter] round_levels (nearest distance) ===========================
+def _adv_round_levels(df, anchor: float, step: float, n: int = 10, **_) -> Dict[str, pd.Series]:
+    """
+    آداپتر round_levels: برای هر close فاصله تا نزدیک‌ترین سطح رُند.
+    - levels = round_levels(anchor, step, n)
+    - nearest_level_distance(price_t, levels) → {'nearest_level','signed','abs'}
+    خروجی: سه سری هم‌نام با suffix:
+       {'rl_nearest_<step>_<n>', 'rl_signed_<step>_<n>', 'rl_abs_<step>_<n>'}
+    """
+    levels = _round_levels(anchor=anchor, step=step, n=int(n))
+    close = df["close"].astype(float)
+    nearest_list = []
+    signed_list = []
+    abs_list = []
+    for px in close:
+        d = _nearest_level_distance(float(px), levels)
+        nearest_list.append(d["nearest_level"])
+        signed_list.append(d["signed"])
+        abs_list.append(d["abs"])
+    s_nearest = pd.Series(nearest_list, index=df.index, name="rl_nearest").astype("float32")
+    s_signed  = pd.Series(signed_list,  index=df.index, name="rl_signed").astype("float32")
+    s_abs     = pd.Series(abs_list,     index=df.index, name="rl_abs").astype("float32")
+    tag = f"{str(step).replace('.','_')}_{int(n)}"
+    return {
+        f"rl_nearest_{tag}": s_nearest,
+        f"rl_signed_{tag}":  s_signed,
+        f"rl_abs_{tag}":     s_abs,
+    }
+
+# --- Adapters ---------------------------------------------------------------- end
+
+_ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
     # فیبوناچی ------------------------------------------------------
     "golden_zone": golden_zone,
     "fib_cluster": fib_cluster,
@@ -278,12 +375,13 @@ ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
     "ma_slope": ma_slope,
     "rsi_zone": rsi_zone,
 
-    # هِلپرهای Levels (برای استفادهٔ مستقیم در صورت نیاز) -----------
-    #"round_levels": round_levels,                 # خروجی: list[float]
-    #"compute_adr": compute_adr,                   # خروجی: Series ADR
-    #"adr_distance_to_open": adr_distance_to_open, # خروجی: DataFrame
-    #"sr_overlap_score": sr_overlap_score,         # خروجی: float (برای مصرف مستقیم در کد بهتر است؛ در Spec هم ممکن است ثابت برگردانیم)
+    # هلپرهای سطوح/ابزارهای کمکی ------------------------------------
+    "adr": _adv_adr,
+    "adr_distance_to_open": _adv_adr_distance_to_open,
+    "sr_overlap_score": _adv_sr_overlap_score,
+    "round_levels": _adv_round_levels,
 
+    # اندیکاتورهای پایه (برای اطمینان از وجود در رجیستری) -----------
     "rsi": _rsi_adapter,
     "ema": _ema_adapter,
 
@@ -297,19 +395,50 @@ ADV_INDICATOR_REGISTRY: Dict[str, Callable[..., Any]] = {
 }
 # wrap S/R indicators to inject merged config (common/component/overrides) ---- start
 for _name in ("fvg", "supply_demand", "order_block", "liq_sweep", "breaker_flip", "sr_fusion"):
-    _fn = ADV_INDICATOR_REGISTRY[_name]
+    _fn = _ADV_INDICATOR_REGISTRY[_name]
     def _wrap(fn, name):
         def runner(df: pd.DataFrame, **cfg):
             merged = _merge_sr_kwargs(name, cfg, df)
             return fn(df, **merged)  # sr_advanced.make_* امضای **cfg دارد
         return runner
-    ADV_INDICATOR_REGISTRY[_name] = _wrap(_fn, _name)
+    _ADV_INDICATOR_REGISTRY[_name] = _wrap(_fn, _name)
 # --- wrap S/R indicators ----------------------------------------------------- end
 
-def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:
+
+
+# --- Unified Single Registry (SSOT) -----------------------------------------
+# Build legacy registry once
+def build_registry() -> Dict[str, Callable[..., Any]]:
+    reg: Dict[str, Callable[..., Any]] = {}
+    from .core import registry as core_reg;              reg.update(core_reg())
+    from .extras_trend import registry as trend_reg;     reg.update(trend_reg())
+    from .extras_channel import registry as ch_reg;      reg.update(ch_reg())
+    from .volume import registry as vol_reg;             reg.update(vol_reg())
+    from .patterns import registry as pat_reg;           reg.update(pat_reg())
+    from .levels import registry as lvl_reg;             reg.update(lvl_reg())
+    from .divergences import registry as div_reg;        reg.update(div_reg())
+    return reg
+
+
+# Local tag set for reporting which keys came from advanced set (before merge)
+_ADV_KEYS = set(_ADV_INDICATOR_REGISTRY.keys())
+
+# Single-source-of-truth REGISTRY
+REGISTRY: Dict[str, Callable[..., Any]] = {}
+REGISTRY.update(build_registry())
+REGISTRY.update(_ADV_INDICATOR_REGISTRY)
+
+# Back-compat: expose unified registry under legacy/global name too
+try:
+    globals()["INDICATOR_REGISTRY"] = REGISTRY
+except Exception:  # pragma: no cover
+    pass
+# ---------------------------------------------------------------------------
+
+def get_indicator_v2_old(name: str) -> Optional[Callable[..., Any]]:
     key = str(name).strip()
-    if key in ADV_INDICATOR_REGISTRY:
-        return ADV_INDICATOR_REGISTRY[key]
+    if key in _ADV_INDICATOR_REGISTRY:
+        return _ADV_INDICATOR_REGISTRY[key]
     try:
         fn = (globals().get("INDICATOR_REGISTRY") or {}).get(key)
         if fn is not None:
@@ -319,8 +448,21 @@ def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:
     logger.warning("Indicator not found in v2 registries: %s", name)
     return None
 
-def list_all_indicators_v2(include_legacy: bool = True) -> Dict[str, str]:
-    out: Dict[str, str] = {k: "advanced" for k in ADV_INDICATOR_REGISTRY.keys()}
+
+def get_indicator_v2(name: str) -> Optional[Callable[..., Any]]:
+    """
+    [Bot-RL-2] Unified lookup:
+    Advanced > Legacy (already resolved inside REGISTRY).
+    """
+    key = str(name).strip()
+    fn = REGISTRY.get(key)
+    if fn is None:
+        logger.warning("Indicator not found in unified registry: %s", name)
+    return fn
+
+
+def list_all_indicators_v2_old(include_legacy: bool = True) -> Dict[str, str]:
+    out: Dict[str, str] = {k: "advanced" for k in _ADV_INDICATOR_REGISTRY.keys()}
     if include_legacy:
         try:
             legacy = globals().get("INDICATOR_REGISTRY") or {}
@@ -329,6 +471,21 @@ def list_all_indicators_v2(include_legacy: bool = True) -> Dict[str, str]:
         except Exception:
             pass
     return out
+
+
+def list_all_indicators_v2(include_legacy: bool = True) -> Dict[str, str]:
+    """
+    [Bot-RL-2] Report from unified REGISTRY:
+    value: "advanced" if key came from ADV, else "legacy".
+    If include_legacy=False => only advanced keys are reported.
+    """
+    out: Dict[str, str] = {}
+    for k in REGISTRY.keys():
+        out[k] = "advanced" if k in _ADV_INDICATOR_REGISTRY else "legacy"
+    if not include_legacy:
+        out = {k: v for k, v in out.items() if v == "advanced"}
+    return out
+
 
 '''
 نکات کوتاه:
@@ -340,12 +497,10 @@ CLI: هِلپرهایی مثل compute_adr و adr_distance_to_open را می‌�
  و ستون‌هایشان را به خروجی افزود.
 '''
 
-def _sr_cfg(name, cfg):
-    cfg_all = _loader.get_all()
-    base = _deep_get(cfg_all,"features.support_resistance.sr_advanced.common", {}) or {}
-    comp = _deep_get(cfg_all,f"features.support_resistance.sr_advanced.{name}", {}) or {}
-    return {**base, **comp, **(cfg or {})}
 
-for _name in ("fvg","supply_demand","order_block","breaker_flip","liq_sweep","sr_fusion"):
-    _fn = ADV_INDICATOR_REGISTRY[_name]
-    ADV_INDICATOR_REGISTRY[_name] = (lambda f, n: (lambda df, **cfg: f(df, **_sr_cfg(n, cfg))))(_fn, _name)
+# Explicit public API
+__all__ = [
+    "REGISTRY",
+    "get_indicator_v2",
+    "list_all_indicators_v2",
+]

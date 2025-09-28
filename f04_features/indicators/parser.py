@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import ast
 import re
 import logging
+import inspect
+from .registry import get_indicator_v2
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -123,6 +125,121 @@ def _parse_args_kwargs(argstr: Optional[str]) -> Tuple[List[Any], Dict[str, Any]
 #   ma_slope(window=20, method='ema')@M5
 #   rsi_zone(period=14)@H1
 
+'''
+# ========================= Bot-RL-2 :: Phase C :: Arg-Mapping Helper (ANCHOR: ARG_MAPPING_HELPER) =========================
+def _align_args_with_signature(ind_name: str, args_in: List[Any], kwargs_in: Dict[str, Any]) -> tuple[list, dict]:
+    """
+    نگاشت آرگومان‌های موقعیتی Spec به نام پارامترها بر اساس امضای اندیکاتور ثبت‌شده در رجیستری v2.
+    - مثال: 'sma(20)' → make_sma(df, col='close', period=20)  ← period از روی ترتیب پارامتر دوم به بعد نگاشت می‌شود.
+    - اگر پارامتر از قبل در kwargs باشد، مقدار موقعیتی همان پارامتر نادیده گرفته می‌شود (اولویت با kwargs است).
+    - آرگومان اول توابع اندیکاتور معمولاً DataFrame (df/ohlc) است؛ در نگاشت نادیده گرفته می‌شود.
+    - در صورت نبودِ اندیکاتور یا امضای غیرقابل‌تحلیل، همان args/kwargs اولیه برگردانده می‌شود.
+    """
+    try:
+        fn = get_indicator_v2(ind_name)
+        if fn is None:
+            return list(args_in), dict(kwargs_in)
+
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.values())
+
+        # پارامترهای کاندید برای نگاشت: از «بعدِ» اولین پارامترِ df/ohlc به بعد
+        # فقط POSITIONAL_ONLY / POSITIONAL_OR_KEYWORD / KEYWORD_ONLY
+        cand_names: list[str] = []
+        for i, p in enumerate(params):
+            if i == 0:
+                # فرض: پارامتر اول، df/ohlc است و نگاشت نمی‌گیرد
+                continue
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY):
+                # نام‌های رایج‌ناپذیرفتنی را نیز حذف نکنیم؛ فقط **kwargs و *args را رد می‌کنیم
+                cand_names.append(p.name)
+
+        new_kwargs = dict(kwargs_in)
+        new_args: list[Any] = []
+        ai = 0
+        for i, pname in enumerate(cand_names):
+            if ai >= len(args_in):
+                break
+            # اگر کاربر قبلاً همین پارامتر را به‌صورت kwargs داده، همان را نگه می‌داریم
+            if pname in new_kwargs:
+                continue
+            # مقدار موقعیتی را به نام همین پارامتر نگاشت می‌کنیم
+            new_kwargs[pname] = args_in[ai]
+            ai += 1
+
+        # باقی‌ماندهٔ args (اگر بیشتر از پارامترهای اسمی باشد) را به‌صورت positional عبور بدهیم
+        while ai < len(args_in):
+            new_args.append(args_in[ai])
+            ai += 1
+
+        return new_args, new_kwargs
+    except Exception:
+        # هرگونه مشکل در تشخیص امضا → بدون تغییر برگردان
+        return list(args_in), dict(kwargs_in)
+# ========================= End of ARG_MAPPING_HELPER ================================================================================
+'''
+# ========================= Bot-RL-2 :: Phase C :: Arg-Mapping Helper (ANCHOR: ARG_MAPPING_HELPER) =========================
+def _align_args_with_signature(ind_name: str, args_in: List[Any], kwargs_in: Dict[str, Any]) -> tuple[list, dict]:
+    """
+    نگاشت آرگومان‌های موقعیتی Spec به نام پارامترها بر اساس امضای اندیکاتور.
+    قواعد:
+      - عددی‌ها (int/float) → به پارامترهای عددیِ متداول: period/n/window/length/fast/slow/signal/k/d
+      - رشته‌ها (str) → به پارامترهای ستونی: col/column/field
+      - باقی موارد → به ترتیب امضای تابع (fallback)
+    """
+    try:
+        fn = get_indicator_v2(ind_name)
+        if fn is None:
+            return list(args_in), dict(kwargs_in)
+
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.values())
+
+        # پارامترهای کاندید برای نگاشت: همهٔ پارامترها به‌جز اولی (df/ohlc)
+        cands = [p for i, p in enumerate(params) if i > 0 and p.kind in (
+            p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY
+        )]
+        cand_names = [p.name for p in cands]
+
+        # اولویت نگاشت
+        numeric_pref = [n for n in ("period","n","window","length","fast","slow","signal","k","d")
+                        if n in cand_names and n not in kwargs_in]
+        str_pref     = [n for n in ("col","column","field")
+                        if n in cand_names and n not in kwargs_in]
+
+        new_kwargs = dict(kwargs_in)
+        new_args: list[Any] = []
+
+        for v in args_in:
+            assigned = False
+            # 1) عددی‌ها → پارامترهای عددی
+            if isinstance(v, (int, float)) and numeric_pref:
+                tgt = numeric_pref.pop(0)
+                new_kwargs[tgt] = v
+                assigned = True
+            # 2) رشته‌ها → پارامترهای ستونی
+            elif isinstance(v, str) and str_pref:
+                tgt = str_pref.pop(0)
+                new_kwargs[tgt] = v
+                assigned = True
+            # 3) fallback: به ترتیب اولین پارامتر آزاد
+            if not assigned:
+                for pn in cand_names:
+                    if pn in new_kwargs:
+                        continue
+                    new_kwargs[pn] = v
+                    assigned = True
+                    break
+            # 4) اگر هیچ‌کدام نشد، عبور به‌صورت positional
+            if not assigned:
+                new_args.append(v)
+
+        return new_args, new_kwargs
+    except Exception:
+        # هر اشکالی در تحلیل امضا → بدون تغییر
+        return list(args_in), dict(kwargs_in)
+# ========================= End of ARG_MAPPING_HELPER ================================================================================
+
 
 def parse_spec_v2(spec: str) -> ParsedSpec:
     """
@@ -136,6 +253,10 @@ def parse_spec_v2(spec: str) -> ParsedSpec:
         raise ValueError(f"Invalid spec: {spec}")
     name, argstr, tf = m.group(1), m.group(2), m.group(3)
     args, kwargs = _parse_args_kwargs(argstr)
+
+    # --- Phase C: map positional args to named params via registry signature ---
+    args, kwargs = _align_args_with_signature(name, args, kwargs)
+
     # نرمال‌سازیِ TF (اگر بود)
     tf_norm = tf.upper() if tf else None
     ps = ParsedSpec(name=name, args=args, kwargs=kwargs, timeframe=tf_norm, raw=spec)
