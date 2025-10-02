@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f02_data/mt5_connector.py
+# Status in (Bot-RL-2): Complete
 """
 MT5Connector (نسخهٔ حرفه‌ای برای Bot-RL-1)
 -------------------------------------------
@@ -60,13 +61,13 @@ class MT5Credentials:
 
 @dataclass
 class MT5ConnectorOptions:
-    max_retries: int = 5 #60             # تعداد تلاش‌ها برای initialize/login
-    retry_delay: float = 5.0             # فاصله بین تلاش‌ها (ثانیه)
-    backoff_multiplier: float = 1.0      # ضریب backoff (می‌توان 1.2 گذاشت)
-    auto_select_symbols: bool = True     # نمادهای کانفیگ را auto-select کند
-    check_trade_allowed: bool = False    # در health_check بررسی trade_allowed را هم انجام دهد
-    symbol_activation_timeout: float = 4  # مکث کوتاه پس از انتخاب نماد (ثانیه)
-    ensure_on_each_call: bool = True     # قبل از هر fetch یک ensure_connection بزن
+    max_retries: int = 10 #60             # تعداد تلاش‌ها برای initialize/login
+    retry_delay: float = 5.0              # فاصله بین تلاش‌ها (ثانیه)
+    backoff_multiplier: float = 1.0       # ضریب backoff (می‌توان 1.2 گذاشت)
+    auto_select_symbols: bool = True      # نمادهای کانفیگ را auto-select کند
+    check_trade_allowed: bool = False     # در health_check بررسی trade_allowed را هم انجام دهد
+    symbol_activation_timeout: float = 4   # مکث کوتاه پس از انتخاب نماد (ثانیه)
+    ensure_on_each_call: bool = True      # قبل از هر fetch یک ensure_connection بزن
 
 # =====================================================================================
 # نگاشت تایم‌فریم‌ها
@@ -166,7 +167,7 @@ class MT5Connector:
         dd = (cfg.get("download_defaults") or {}) if isinstance(cfg, dict) else {}
         init_opts = dd.get("initialize_retry", {}) if isinstance(dd, dict) else {}
         return MT5ConnectorOptions(
-            max_retries=int(init_opts.get("max_retries", 60)),
+            max_retries=int(init_opts.get("max_retries", 10)),
             retry_delay=float(init_opts.get("retry_delay", 5)),
             backoff_multiplier=float(init_opts.get("backoff_multiplier", 1.0)),
             auto_select_symbols=bool(dd.get("auto_select_symbols", True)),

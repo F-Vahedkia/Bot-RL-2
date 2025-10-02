@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f10_utils/config_loader.py
+# Status in (Bot-RL-2): Completed
+
 """
 ConfigLoader (نسخهٔ پیشرفته برای Bot-RL-1)
 -------------------------------------------

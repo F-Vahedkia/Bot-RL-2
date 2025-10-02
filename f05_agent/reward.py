@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# f05_agent/reward.py
+# Status in (Bot-RL-2): Completed
 """
 Reward functions — Bot-RL-2 (Phase E)
 - محاسبهٔ پاداش گام‌به‌گام بدون لوک‌اِهد

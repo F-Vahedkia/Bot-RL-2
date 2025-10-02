@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# f04_features/indicators/feature_store.py
+# Status in (Bot-RL-2): Completed
+
 """
 Feature Store (Phase D) — Bot-RL-2
 - ساخت فریم فیچر از روی Spec/DSL با استفاده از هستهٔ indicators.engine

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# f15_scripts/check_fibo_audit.py
+# Status in *Bot-RL-2): Completed
+
 """
 اسکریپت ممیزی فیبوناچی (مرحله ۱ Bot-RL-2) — نسخه‌ی ساده‌شده و منطبق با ساختار پروژه
 

@@ -320,9 +320,18 @@ class TradingEnv(BaseTradingEnv):
         truncated = False
         self._last_reward = float(reward)
 
+        # ATR در همان تایم جاری (به واحد قیمت)
+        atr_t = float(self.atr.iloc[t_global]) if (0 <= t_global < len(self.atr)) else float("nan")
+
         obs = self._make_obs(self._t)
-        info = {"t": int(self._t), "pos": int(self._pos), "reward": float(reward)}
+        info = {
+            "t": int(self._t),
+            "pos": int(self._pos),
+            "reward": float(reward),
+            "atr_price": atr_t,      # ← برای RiskManager/Executor
+        }
         info["news_gate"] = st
+
 
         if terminated:
             self._done_hard = True

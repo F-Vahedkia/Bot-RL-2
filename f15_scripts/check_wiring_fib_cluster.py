@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f15_scripts/check_wiring_fib_cluster.py
+# Status in (Bot-RL-2): Completed
 
 """
 Wiring fib_cluster with MA/RSI/SR weighting (Bot-RL-2)

@@ -1,6 +1,7 @@
-# f04_features/indicators/engine.py
 # -*- coding: utf-8 -*-
-r"""IndicatorEngine: اجرای Specها روی دیتای MTF و تولید DataFrame ویژگی‌ها"""
+# f04_features/indicators/engine.py
+# Status in (Bot-RL-2): Completed
+r"""IndicatorEngine: اجرای Specc ها روی دیتای MTF و تولید DataFrame ویژگی‌ها"""
 
 from __future__ import annotations
 from dataclasses import dataclass

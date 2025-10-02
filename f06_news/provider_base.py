@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # f06_news/provider_base.py
-"""Provider base interfaces for news feeds — messages in English; comments in Persian."""
+# Status in (Bot-RL-2): Completed
+"""
+Provider base interfaces for news feeds — messages in English; comments in Persian."""
 from __future__ import annotations
 from typing import Protocol, Iterable
 import pandas as pd

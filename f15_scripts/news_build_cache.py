@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f15_scripts/news_build_cache.py
+# Status in (Bot-RL-2): Completed
+
 """
 Build/refresh local calendar cache — messages in English; Persian comments.
 

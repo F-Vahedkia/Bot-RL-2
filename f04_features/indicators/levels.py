@@ -1,5 +1,7 @@
-# f04_features/indicators/levels.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/levels.py
+# Status in (Bot-RL-2): Completed
+
 """Pivot های کلاسیک، S/R ساده مبتنی بر فراکتال، و فاصله تا سطوح فیبوناچی اخیر"""
 from __future__ import annotations
 from typing import List, Sequence, Dict, Optional, Tuple

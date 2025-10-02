@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f15_scripts/news_refresh_daily.py
+# Status in (Bot-RL-2): Completed
+
 """
 Daily refresh wrapper for calendar cache — messages in English; Persian comments.
 

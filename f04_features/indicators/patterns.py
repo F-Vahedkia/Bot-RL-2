@@ -1,5 +1,6 @@
-# f04_features/indicators/patterns.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/patterns.py
+# Status in (Bot-RL-2): Completed
 """
 ===============================================================================
 🕯 الگوهای کندلی — نسخهٔ نهایی و کامنت‌گذاری‌شده (FINAL)

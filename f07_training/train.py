@@ -1,5 +1,7 @@
-# f07_training/train.py   (آموزش REINFORCE سبک با خط‌مشی خطی + CLI)
 # -*- coding: utf-8 -*-
+# f07_training/train.py   (آموزش REINFORCE سبک با خط‌مشی خطی + CLI)
+# Status in (Bot-RL-2): Completed
+
 """
 آموزش ساده با REINFORCE (خط‌مشی خطی softmax) بدون وابستگی سنگین
 - مشاهده: از Env می‌آید (window x features). با گزینه‌ی agg به بردار تبدیل می‌شود.
@@ -107,13 +109,21 @@ def reinforce_train(env: TradingEnv,
         for t in range(steps_per_ep):
             x = transform_obs(obs, mode=obs_mode, last_k=obs_last_k).astype(np.float32)
             a, probs = policy.act(x, greedy=False, rng=rng)
-            obs, r, terminated, truncated, info = env.step(a-1)  # نگاشت {0,1,2}→{-1,0,+1}
+            
+            #obs, r, terminated, truncated, info = env.step(a-1)  # نگاشت {0,1,2}→{-1,0,+1}
+            step_res = env.step(a-1)  # نگاشت {0,1,2}→{-1,0,+1}
+            obs = step_res.observation
+            r = step_res.reward
+            terminated = step_res.terminated
+            truncated = step_res.truncated
+            info = step_res.info
+
             X.append(x); A.append((a, probs)); R.append(r)
             ep_ret += float(r)
             if terminated or truncated:
                 break
 
-        # محاسبهٔ بازگشت تخفیف‌یافته و گرادیان‌ها
+        # محاسبهٔ بازگشت تخفیف‌ یافته و گرادیان‌ها
         G = 0.0
         gW_acc = np.zeros_like(policy.W)
         gb_acc = np.zeros_like(policy.b)

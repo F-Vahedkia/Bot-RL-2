@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f15_scripts/check_env_newsgate.py
+# Status in (Bot-RL-2): Completed
+
 """Quick smoke-test for NewsGate inside Env (English logs / Persian comments)."""
 from __future__ import annotations
 import logging, pandas as pd

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f06_news/providers/forexfactory_http.py
+# Status in (Bot-RL-2): Completed
+
 """
 ForexFactory HTTP provider (download CSV) — messages in English; Persian comments.
 

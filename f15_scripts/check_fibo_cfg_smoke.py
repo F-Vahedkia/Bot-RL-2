@@ -1,5 +1,6 @@
-# f15_scripts/check_fibo_cfg_smoke.py
 # -*- coding: utf-8 -*-
+# f15_scripts/check_fibo_cfg_smoke.py
+# Status in (Bot-RL-2): Completed
 
 """
 اسکریپت اسموک‌تست پارامترهای فیبوناچی (Config-First) — Bot-RL-2

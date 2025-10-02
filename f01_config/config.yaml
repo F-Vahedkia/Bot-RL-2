@@ -271,6 +271,44 @@ features:
             sr_fusion:
               enter_th: 0.35
               exit_th: 0.25
+  price_action_params:
+    anti_lookahead: true
+
+    market_structure:
+      lookback: 3
+
+    regime:
+      atr_window: 14
+      width_window: 20
+      slope_window: 12
+      spike_thr_atr: 1.8
+      channel_slope_thr: 0.20
+
+    breakouts:
+      range_window: 20
+      min_periods: 10
+      confirm_closes: 1
+      retest_lookahead: 5
+      fail_break_lookahead: 3
+
+    microchannels:
+      min_len: 3
+      near_extreme_thr: 0.20
+
+    mtf:
+      bias_window_base: 8
+      bias_window_higher: 8
+      fillna_confluence: 0.5
+
+    confluence:
+      weights:
+        structure: 0.25
+        zones: 0.25
+        imbalance: 0.20
+        mtf: 0.10
+        extras: 0.20     # ← جدید
+      strong_entry_threshold: 0.70
+      filter_threshold: 0.35
 env:
   observation:
     resample_to_base_tf: M5
@@ -427,6 +465,35 @@ self_optimize:
       enabled: false
       max_trials: 20
       sampler: tpe
+      space:                   # ← نام تازه؛ قبلاً وجود نداشت
+        pa.market_structure.lookback:        [2, 3, 4, 5]
+
+        pa.regime.atr_window:                {min: 10, max: 24, step: 1}
+        pa.regime.width_window:              {min: 10, max: 30, step: 1}
+        pa.regime.slope_window:              {min: 6,  max: 20, step: 1}
+        pa.regime.spike_thr_atr:             {choices: [1.4, 1.6, 1.8, 2.0, 2.2, 2.5]}
+        pa.regime.channel_slope_thr:         {min: 0.10, max: 0.35, step: 0.05}
+
+        pa.breakouts.range_window:           {min: 6,  max: 30, step: 1}
+        pa.breakouts.min_periods:            {rule: "min_periods = max(3, range_window//3)"}   # قانون وابسته
+        pa.breakouts.confirm_closes:         {choices: [1, 2, 3]}
+        pa.breakouts.retest_lookahead:       {choices: [3, 5, 8]}
+        pa.breakouts.fail_break_lookahead:   {choices: [2, 3, 5]}
+
+        pa.microchannels.min_len:            {choices: [3, 4, 5, 6]}
+        pa.microchannels.near_extreme_thr:   {choices: [0.10, 0.15, 0.20, 0.25, 0.30]}
+
+        pa.mtf.bias_window_base:             {min: 6,  max: 16, step: 1}
+        pa.mtf.bias_window_higher:           {min: 6,  max: 20, step: 1}
+        pa.mtf.fillna_confluence:            {choices: [0.3, 0.5]}
+
+        pa.confluence.weights:               {choices:
+                                                [[0.30, 0.30, 0.20, 0.20],
+                                                [0.35, 0.25, 0.20, 0.20],
+                                                [0.25, 0.35, 0.20, 0.20],
+                                                [0.30, 0.25, 0.20, 0.25]]}
+        pa.confluence.strong_entry_threshold: {min: 0.60, max: 0.80, step: 0.02}
+        pa.confluence.filter_threshold:       {min: 0.30, max: 0.50, step: 0.02}
     finetune:
       enabled: true
       steps: 75000

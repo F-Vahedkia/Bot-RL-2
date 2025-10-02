@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # f06_news/runtime_store.py
-"""Runtime store & windowed queries for news events — messages in English; comments in Persian."""
+# Status in (Bot-RL-2): Completed
+"""
+Runtime store & windowed queries for news events — messages in English; comments in Persian."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, List, Dict, Any, Optional

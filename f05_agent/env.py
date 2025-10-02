@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# f05_agent/env.py
+# Status in (Bot-RL-2): Completed
 """
 MTFTradingEnv — Bot-RL-2 (Phase E)
 - محیط گام‌به‌گام برای تعامل RL با FeatureDataset

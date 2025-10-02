@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f08_evaluation/cluster_zones.py
+# Status in (Bot-RL-2): Completed
+
 r"""
 تبدیل خروجی fib_cluster به «زون/سیگنال قابل‌مصرف» (Bot-RL-2)
 

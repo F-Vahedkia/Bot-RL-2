@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f06_news/dataset.py
+# Status in (Bot-RL-2): Completed
 """
 News dataset loader/filters for Env — messages in English; Persian comments.
 """

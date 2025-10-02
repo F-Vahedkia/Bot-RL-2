@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# f05_agent/dataset.py
+# Status in (Bot-RL-2): Completed
 """
 FeatureDataset — Bot-RL-2 (Phase E)
 - بارگذاری Feature Store (Parquet/CSV) و متادیتا

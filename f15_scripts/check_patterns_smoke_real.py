@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# f15_scripts/check_patterns_smoke_real.py
+# Status in (Bot-RL-2): Completed
+
 # FINAL — Smoke test for candlestick patterns (config-driven, real data)
 # Runtime prints: English | Comments: Persian
 r"""

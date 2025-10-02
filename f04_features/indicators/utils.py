@@ -1,5 +1,7 @@
-# f04_features/indicators/utils.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/utils.py
+# Status in (Bot-RL-2): Completed
+
 """
 ابزارهای کمکی مشترک برای اندیکاتورها (Bot-RL-1)
 - کشف تایم‌فریم‌ها از نام ستون‌ها

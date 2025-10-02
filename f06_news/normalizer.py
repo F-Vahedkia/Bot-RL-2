@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f06_news/normalizer.py
+# Status in (Bot-RL-2): Completed
 """
 Normalize diverse calendar CSVs to the canonical schema — messages in English; Persian comments.
 

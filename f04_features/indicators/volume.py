@@ -1,5 +1,7 @@
-# f04_features/indicators/volume.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/volume.py
+# Status in (Bot-RL-2): Completed
+
 """اندیکاتورهای حجمی: VWAP (روزانه/رولینگ)، ADL، Chaikin Money Flow"""
 from __future__ import annotations
 import numpy as np

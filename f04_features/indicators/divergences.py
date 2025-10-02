@@ -1,6 +1,9 @@
-# f04_features/indicators/divergences.py
 # -*- coding: utf-8 -*-
-"""واگرایی کلاسیک/مخفی روی RSI و MACD – با pivot تاییدشده و shift(+1) برای حذف look-ahead"""
+# f04_features/indicators/divergences.py
+# Status in (Bot-RL-2): Completed
+"""
+واگرایی کلاسیک/مخفی روی RSI و MACD - با pivot تاییدشده و shift(+1) برای حذف look-ahead
+"""
 from __future__ import annotations
 import numpy as np
 import pandas as pd

@@ -1,5 +1,6 @@
-# f04_features/indicators/core.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/core.py
+# Status in (Bot-RL-2): Completed
 """
 اندیکاتورهای پایه (Bot-RL-1) – بدون look-ahead
 """

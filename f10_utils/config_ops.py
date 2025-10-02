@@ -1,10 +1,10 @@
-# f10_utils/config_ops.py
 # -*- coding: utf-8 -*-
+# f10_utils/config_ops.py
+# Status in (Bot-RL-2): Completed
 
 from typing import Any, Dict, List, Union, Iterable
 import yaml
 import logging
-
 
 """ --------------------------------------------------------------------------- OK Func1
 """
@@ -16,7 +16,6 @@ def _deep_get(d: Dict[str, Any], path: str, default: Any = None) -> Any:
             return default
         cur = cur[part]
     return cur
-
 
 """ --------------------------------------------------------------------------- OK Func2,3
 # deep_set / yaml_set (FINAL)

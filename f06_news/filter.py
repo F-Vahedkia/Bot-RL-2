@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # f06_news/filter.py
-"""NewsGate: freeze/reduce-risk based on economic calendar — messages in English; comments in Persian."""
+# Status in (Bot-RL-2): Completed
+"""
+NewsGate: freeze/reduce-risk based on economic calendar — messages in English; comments in Persian."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Iterable, Dict, Any

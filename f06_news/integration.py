@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # f06_news/integration.py
-"""Build a NewsGate from config/cache — logs English, comments Persian."""
+# Status in (Bot-RL-2): Completed
+"""
+Build a NewsGate from config/cache — logs English, comments Persian."""
 from __future__ import annotations
 from typing import Optional
 import logging

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f15_scripts/check_news_gate.py
+# Status in (Bot-RL-2): Completed
 
 """
 Check NewsGate over a time range — messages in English; comments in Persian.

@@ -1,5 +1,6 @@
-# f04_features/indicators/parser.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/parser.py
+# Status in (Bot-RL-2): Completed
 
 r"""Parser برای Spec:  <name>(args)@TF  →  (name, args[], tf)
 

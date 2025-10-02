@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # f02_data/data_handler.py
+# Status in (Bot-RL-2): Complete
 r"""
 DataHandler (Bot-RL-2)
 ----------------------

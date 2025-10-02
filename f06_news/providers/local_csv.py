@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 # f06_news/providers/local_csv.py
+# Status in (Bot-RL-2): Completed
+
 """Local CSV/Parquet provider for economic calendar — messages in English; comments in Persian."""
 from __future__ import annotations
 from dataclasses import dataclass

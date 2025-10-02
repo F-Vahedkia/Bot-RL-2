@@ -1,5 +1,7 @@
-# f04_features/indicators/extras_trend.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/extras_trend.py
+# Status in (Bot-RL-2): Completed
+
 """اندیکاتورهای روندی تکمیلی: Supertrend, ADX/DI/ADXR, Aroon, KAMA/DEMA/TEMA/HMA, Ichimoku"""
 from __future__ import annotations
 

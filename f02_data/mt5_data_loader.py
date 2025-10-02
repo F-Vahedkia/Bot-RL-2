@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f02_data/mt5_data_loader.py
-
+# Status in (Bot-RL-2): Complete
 r"""
 Data Loader برای MT5 (Bot-RL-1)
 --------------------------------

@@ -1,5 +1,7 @@
-# f04_features/pipelines/fibo_pipeline.py
 # -*- coding: utf-8 -*-
+# f04_features/pipelines/fibo_pipeline.py
+# Status in (Bot-RL-2): Completed
+
 """
 Pipeline فیبوناچی (قابل‌مصرف در هستهٔ ربات)
 - ساخت سطوح فیبو per-TF (multi-leg → long)

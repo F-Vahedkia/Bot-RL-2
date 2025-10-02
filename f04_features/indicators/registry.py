@@ -1,5 +1,7 @@
-# f04_features/indicators/registry.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/registry.py
+# Status in (Bot-RL-2): Completed
+
 r"""
 رجیستری یکپارچه: core + extras + volume + patterns + levels + divergences
 فرمان اجرای برنامه از ریشه:

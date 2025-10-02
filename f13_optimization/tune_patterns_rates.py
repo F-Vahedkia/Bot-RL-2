@@ -1,5 +1,7 @@
-# f13_optimization/tune_patterns_rates.py
 # -*- coding: utf-8 -*-
+# f13_optimization/tune_patterns_rates.py
+# Status in (Bot-RL-2): Completed
+
 # Optimize candlestick pattern parameters based on occurrence rates
 
 r"""

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
+# f15_scripts/check_dry_run_config.py
+# Status in (Bot-RL-2): Completed
+
 #!/usr/bin/env python
 """
-scripts/check_dry_run_config.py
 تستِ خشک (Dry Run) برای بررسی سلامت کانفیگ پروژه Bot-RL-1
 
 کارهایی که انجام می‌دهد:

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+# f15_scripts/check_quick_download.py
+# Status in (Bot-RL-2): Completed
+
 #!/usr/bin/env python
 r"""
 scripts/check_quick_download.py

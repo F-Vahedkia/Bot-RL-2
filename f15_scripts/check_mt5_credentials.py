@@ -1,5 +1,6 @@
-# f15_scripts/check_mt5_credentials.py
 # -*- coding: utf-8 -*-
+# f15_scripts/check_mt5_credentials.py
+# Status in (Bot-RL-2): Completed
 
 """
 f15_scripts/check_mt5_credentials.py

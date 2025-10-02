@@ -1,5 +1,7 @@
-# f04_features/indicators/extras_channel.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/extras_channel.py
+# Status in (Bot-RL-2): Completed
+
 """کانال‌ها: Donchian, Chaikin Volatility"""
 from __future__ import annotations
 import pandas as pd

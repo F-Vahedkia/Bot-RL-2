@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # f06_news/schemas.py
-"""News data models (Bot-RL-2) — messages in English; comments in Persian."""
+# Status in (Bot-RL-2): Completed
+"""
+News data models (Bot-RL-2) — messages in English; comments in Persian."""
 from __future__ import annotations
 
 from dataclasses import dataclass

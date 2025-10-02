@@ -23,14 +23,38 @@ from f10_utils.config_loader import load_config
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]  # .../f03_env → ریشهٔ پروژه
 
-
-def paths_from_cfg(cfg: Dict[str, Any]) -> Dict[str, Path]:
+'''
+def paths_from_cfg_old1(cfg: Dict[str, Any]) -> Dict[str, Path]:
     p = cfg.get("paths", {}) or {}
     processed = _project_root() / (p.get("processed_dir") or "f02_data/processed")
     cache = _project_root() / (p.get("cache_dir") or "f02_cache")
     processed.mkdir(parents=True, exist_ok=True)
     cache.mkdir(parents=True, exist_ok=True)
     return {"processed": processed, "cache": cache}
+'''
+def paths_from_cfg(cfg: Dict[str, Any]) -> Dict[str, Path]:
+    """
+    خواندن مسیرها از هر دو ساختار:
+      - cfg["project"]["paths"][...]
+      - cfg["paths"][...]
+    و برگرداندن دیکتی با کلیدهای حداقل: processed, cache, models_dir.
+    """
+    def _p(key: str, default: str) -> Path:
+        p_proj = ((cfg.get("project") or {}).get("paths") or {})
+        p_flat = (cfg.get("paths") or {})
+        raw = p_proj.get(key) or p_flat.get(key) or default
+        return _project_root() / raw
+
+    processed = _p("processed_dir", "f02_data/processed")
+    cache     = _p("cache_dir",     "f02_cache")
+    models    = _p("models_dir",    "f12_models")
+
+    for d in (processed, cache, models):
+        d.mkdir(parents=True, exist_ok=True)
+
+    return {"processed": processed, "cache": cache, "models_dir": models}
+
+
 
 # --- بارگذاری دیتای پردازش‌شده ---
 

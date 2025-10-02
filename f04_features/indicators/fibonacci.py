@@ -1,5 +1,6 @@
-# f04_features/indicators/fibonacci.py
 # -*- coding: utf-8 -*-
+# f04_features/indicators/fibonacci.py
+# Status in (Bot-RL-2): Completed
 
 from __future__ import annotations
 from dataclasses import dataclass

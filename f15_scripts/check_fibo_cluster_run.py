@@ -1,5 +1,6 @@
-# f15_scripts/check_fibo_cluster_run.py
 # -*- coding: utf-8 -*-
+# f15_scripts/check_fibo_cluster_run.py
+# Status in (Bor-RT-2): Completed
 r"""
 اسکریپت اسموک‌ران واقعی خوشه‌های فیبوناچی — Bot-RL-2
 
