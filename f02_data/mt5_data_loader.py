@@ -336,7 +336,7 @@ class MT5DataLoader:
         self.raw_dir: Path = _resolve_raw_dir(self.cfg)
 
         # گزینه‌های دانلود از config
-        dl = self.cfg.get("download_defaults", {}) or {}
+        dl = ((self.cfg.get("env") or {}).get("download_defaults") or {})
         self.default_symbols: List[str] = list(dl.get("symbols") or [])
         self.default_timeframes: List[str] = list(dl.get("timeframes") or [])
         self.default_lookback: int = int(dl.get("lookback_bars", 5000))

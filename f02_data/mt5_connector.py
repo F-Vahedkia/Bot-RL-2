@@ -148,7 +148,7 @@ class MT5Connector:
     # ---------------------------
     @staticmethod
     def _read_credentials_from_config(cfg: Dict[str, Any]) -> MT5Credentials:
-        mt5c = (cfg.get("mt5_credentials") or {}) if isinstance(cfg, dict) else {}
+        mt5c = (((cfg.get("executor") or {}).get("mt5_credentials")) or {}) if isinstance(cfg, dict) else {}
         login = mt5c.get("login")
         # تلاش برای تبدیل login به int (در صورت رشته بودن)
         try:
@@ -164,7 +164,7 @@ class MT5Connector:
 
     @staticmethod
     def _read_options_from_config(cfg: Dict[str, Any]) -> MT5ConnectorOptions:
-        dd = (cfg.get("download_defaults") or {}) if isinstance(cfg, dict) else {}
+        dd = (((cfg.get("env") or {}).get("download_defaults")) or {}) if isinstance(cfg, dict) else {}
         init_opts = dd.get("initialize_retry", {}) if isinstance(dd, dict) else {}
         return MT5ConnectorOptions(
             max_retries=int(init_opts.get("max_retries", 10)),
@@ -348,7 +348,7 @@ class MT5Connector:
         # توضیح فارسی: ابتدا از download_defaults.symbols بخوان؛ اگر نبود از مسیرهای قدیمی‌تر.
         symbols: List[str] = []
         try:
-            dd = (self.cfg.get("download_defaults") or {})
+            dd = (((self.cfg.get("env") or {}).get("download_defaults")) or {})
             symbols = list(dd.get("symbols") or [])
             if not symbols:
                 data = self.cfg.get("data_fetch_defaults", {}) or {}
@@ -485,6 +485,82 @@ class MT5Connector:
             self.shutdown()
         except Exception:
             pass
+
+
+    # ---------------------------------------------------------------------------------
+    # Symbol specs snapshot (for overlay)  — aligns with project style
+    # ---------------------------------------------------------------------------------
+    def get_symbol_specs(self, symbols: list[str]) -> dict:
+        """
+        دریافت مشخصات نمادها از MT5 و بازگرداندن ساختاری مناسب برای ذخیره در overlay.
+        خروجی:
+            {
+              "meta": {"as_of": "...Z", "account_currency": "...", "login": 12345, "server": "..."},
+              "symbol_specs": {
+                 "XAUUSD": {
+                    "digits": 2, "point": 0.01, "trade_tick_value": 1.0, "trade_tick_size": 0.01,
+                    "contract_size": 100.0, "volume_min": 0.01, "volume_step": 0.01,
+                    "volume_max": 100.0, "stops_level": 50
+                 },
+                 ...
+              }
+            }
+        """
+        import datetime as _dt
+        try:
+            self.ensure_connection()
+        except Exception as ex:  # pragma: no cover
+            logger.error("Could not ensure MT5 connection: %s", ex)
+            return {"meta": {"connected": False}, "symbol_specs": {}}
+
+        acct = None
+        try:
+            acct = mt5.account_info() if _HAS_MT5 else None
+        except Exception:
+            acct = None
+
+        meta = {
+            "as_of": _dt.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            "connected": bool(acct is not None),
+            "account_currency": getattr(acct, "currency", None) if acct else None,
+            "login": getattr(acct, "login", None) if acct else None,
+            "server": getattr(acct, "server", None) if acct else None,
+        }
+
+        specs = {}
+        for sym in symbols:
+            si = None
+            try:
+                si = mt5.symbol_info(sym) if _HAS_MT5 else None
+                if si is None and _HAS_MT5:
+                    mt5.symbol_select(sym, True)
+                    si = mt5.symbol_info(sym)
+            except Exception:
+                si = None
+
+            if si is None:
+                logger.warning("Symbol not available or info missing: %s", sym)
+                continue
+
+            try:
+                item = {
+                    "digits": getattr(si, "digits", None),
+                    "point": getattr(si, "point", None),
+                    "trade_tick_value": getattr(si, "trade_tick_value", None),
+                    "trade_tick_size": getattr(si, "trade_tick_size", None),
+                    "contract_size": getattr(si, "trade_contract_size", None) or getattr(si, "contract_size", None),
+                    "volume_min": getattr(si, "volume_min", None),
+                    "volume_step": getattr(si, "volume_step", None),
+                    "volume_max": getattr(si, "volume_max", None),
+                    "stops_level": getattr(si, "stops_level", None),
+                }
+            except Exception as ex:
+                logger.exception("Failed to build specs for %s: %s", sym, ex)
+                continue
+
+            specs[sym] = item
+
+        return {"meta": meta, "symbol_specs": specs}
 
 
 # =====================================================================================

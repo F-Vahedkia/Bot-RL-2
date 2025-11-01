@@ -56,7 +56,7 @@ def main() -> int:
     try:
         # 1) بارگذاری صریح کانفیگ، بدون ENV override
         cfg = load_config(args.config, enable_env_override=False)
-        creds = (cfg.get("mt5_credentials") or {})
+        creds = (((cfg.get("executor") or {}).get("mt5_credentials")) or {})
         log.info("mt5_credentials from config: %s", {
             "login": creds.get("login"),
             "server": creds.get("server"),

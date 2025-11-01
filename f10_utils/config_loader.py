@@ -51,18 +51,35 @@ def _default_config_path() -> Path:
     """
     return _project_root() / "f01_config" / "config.yaml"
 
-def _read_yaml_file(path: Union[str, Path]) -> Dict[str, Any]:
+def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False) -> Dict[str, Any]:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {p}")
     with p.open("r", encoding="utf-8") as f:
         try:
-            data = yaml.safe_load(f) or {}
+            if fail_on_duplicates:
+                class _UniqueKeyLoader(yaml.SafeLoader):
+                    pass
+                def _construct_mapping(loader, node, deep=False):
+                    mapping = {}
+                    for key_node, value_node in node.value:
+                        key = loader.construct_object(key_node, deep=deep)
+                        if key in mapping:
+                            raise ValueError(f"Duplicate YAML key: {key} in {p}")
+                        mapping[key] = loader.construct_object(value_node, deep=deep)
+                    return mapping
+                _UniqueKeyLoader.add_constructor(
+                    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping
+                )
+                data = yaml.load(f, Loader=_UniqueKeyLoader) or {}
+            else:
+                data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
             raise ValueError(f"YAML parse error at {p}: {e}")
     if not isinstance(data, dict):
         raise ValueError(f"Root of YAML must be a mapping (dict). Got: {type(data)}")
     return data
+
 
 def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
     """merge عمیق دیکشنری‌ها با حفظ نوع‌ها و عدم دست‌کاری base."""
@@ -94,7 +111,9 @@ class ConfigLoader:
     def __init__(self,
                  config_path: Optional[Union[str, Path]] = None,
                  env_prefix: str = "BOT_",
-                 enable_env_override: bool = True):
+                 enable_env_override: bool = True,
+                 validate_mode: str = "warn",
+                 allow_extensions: bool = True):
         """
         config_path: مسیر YAML. اگر None باشد از f01_config/config.yaml استفاده می‌شود.
         env_prefix: پیشوند کلیدهای محیطی (مثلاً BOT_). جستجوی بدون پیشوند نیز انجام می‌شود.
@@ -114,6 +133,10 @@ class ConfigLoader:
         self.env_prefix: str = env_prefix
         self.enable_env_override: bool = bool(enable_env_override)
 
+        self.validate_mode: str = str(validate_mode).lower()
+        self.allow_extensions: bool = bool(allow_extensions)
+        self._fail_on_dupe_keys: bool = (self.validate_mode == "strict")
+
         self.config: Dict[str, Any] = {}
         self.reload()
 
@@ -125,7 +148,7 @@ class ConfigLoader:
           - overlays: list[str] → در انتها روی نتیجه merge می‌کند (بالاترین اولویت)
         مسیرها می‌توانند نسبی به ریشهٔ پروژه یا مطلق باشند.
         """
-        root_cfg = _read_yaml_file(self.config_path)
+        root_cfg = _read_yaml_file(self.config_path, fail_on_duplicates=self._fail_on_dupe_keys)
 
         def _resolve(p: str) -> Path:
             pp = Path(p)
@@ -138,7 +161,7 @@ class ConfigLoader:
             if not isinstance(files, list):
                 raise ValueError(f"'{section}' must be a list of file paths.")
             for f in files:
-                merged = _deep_merge(merged, _read_yaml_file(_resolve(f)))
+                merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
 
         # سپس YAML اصلی را روی Base بنشانیم
         merged = _deep_merge(merged, {k: v for k, v in root_cfg.items() if k not in ("extends", "bases", "overlays")})
@@ -148,7 +171,7 @@ class ConfigLoader:
         if not isinstance(overlays, list):
             raise ValueError("'overlays' must be a list of file paths.")
         for f in overlays:
-            merged = _deep_merge(merged, _read_yaml_file(_resolve(f)))
+            merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
 
         return merged
 
@@ -260,8 +283,7 @@ class ConfigLoader:
         return out
 
     # ---------- اعتبارسنجی حداقلی/ارتقایافته ----------
-    @staticmethod
-    def _validate(cfg: Dict[str, Any]) -> None:
+    def _validate(self, cfg: Dict[str, Any]) -> None:
         """
         بررسی حضور کلیدهای حیاتی و نوع داده‌ها. در صورت مشکل، ValueError می‌دهد.
         هستهٔ حیاتی (الزامی):
@@ -273,6 +295,67 @@ class ConfigLoader:
           - rl.algorithm, env.action_space.type
           - paths.logs_dir/models_dir/config_versions_dir
         """
+        # --- حالت ولیدیشن و لیست کلیدهای مجاز سطح-۱ ---
+        # توضیح:
+        # این پچ هیچ کلید جدیدی به کانفیگ اضافه نمی‌کند؛ فقط ولیدیشن و حالت‌ها را پیاده می‌کند.
+        # حالت پیش‌فرض warn است و با strict، هم «کلید ناشناخته» و هم «کلید تکراری YAML» خطا می‌شود.ب
+        mode = getattr(self, "validate_mode", "warn")
+        def _warn(msg: str) -> None:
+            if mode == "warn":
+                logger.warning("Config validation warning: %s", msg)
+
+        allowed_top = {
+            "version","project","paths","overlays","env","features","risk","evaluation",
+            "executor","training","monitoring","safety","self_optimize","cicd","scripts",
+            "secrets","per_symbol_overrides","extensions",
+            "account_currency","symbol_specs"
+        }
+        # کلیدهای ناشناختهٔ سطح-۱
+        unknown = [k for k in cfg.keys() if k not in allowed_top and k not in ("extends","bases")]
+        if unknown:
+            msg = f"Unknown top-level keys: {unknown}"
+            if mode == "strict":
+                raise ValueError(msg)
+            _warn(msg)
+        # extensions اجازهٔ هر ساختاری دارد (اختیاری)
+        if "extensions" in cfg and not isinstance(cfg.get("extensions"), dict):
+            raise ValueError("`extensions` must be a mapping (dict)")
+        if getattr(self, "allow_extensions", True) is False and "extensions" in cfg:
+            msg = "`extensions` section is not allowed by current settings"
+            if mode == "strict":
+                raise ValueError(msg)
+            _warn(msg)
+        # نسخهٔ شِما/کانفیگ (string/int)
+        ver = cfg.get("schema_version", cfg.get("version", None))
+        if ver is not None and not isinstance(ver, (str, int, float)):
+            raise ValueError("`version`/`schema_version` must be str/int/float")
+        # symbol_specs (اگر merge شده باشد)
+        sym = cfg.get("symbol_specs")
+        if sym is not None:
+            if not isinstance(sym, dict):
+                raise ValueError("`symbol_specs` must be a mapping of SYMBOL -> spec")
+            allowed_spec_keys = {
+                "digits","point","trade_tick_value","trade_tick_size","contract_size",
+                "volume_min","volume_step","volume_max","stops_level","pip_value_per_lot"
+            }
+            for sym_name, spec in sym.items():
+                if not isinstance(spec, dict):
+                    raise ValueError(f"symbol_specs.{sym_name} must be a mapping")
+                extra = [k for k in spec.keys() if k not in allowed_spec_keys]
+                if extra:
+                    msg = f"symbol_specs.{sym_name} unknown keys: {extra}"
+                    if mode == "strict":
+                        raise ValueError(msg)
+                    _warn(msg)
+                # نوع‌های اصلی عددی/None
+                for k in ("digits","point","trade_tick_value","trade_tick_size","contract_size",
+                        "volume_min","volume_step","volume_max","pip_value_per_lot"):
+                    if k in spec and spec[k] is not None and not isinstance(spec[k], (int, float)):
+                        raise ValueError(f"symbol_specs.{sym_name}.{k} must be numeric (or null)")
+                if "stops_level" in spec and spec["stops_level"] is not None and not isinstance(spec["stops_level"], (int, float)):
+                    raise ValueError(f"symbol_specs.{sym_name}.stops_level must be numeric (or null)")
+
+
         # ---- هستهٔ حیاتی
         eval_ = cfg.get("evaluation") or {}
         gates = eval_.get("acceptance_gates") or {}
@@ -329,7 +412,7 @@ class ConfigLoader:
                 _warn("self_optimize.acceptance_gates exists but lacks max_drawdown_max; will fall back to evaluation gates.")
 
         # rl & env
-        rl = cfg.get("rl") or {}
+        rl = ((cfg.get("training") or {}).get("rl") or {})
         if "algorithm" not in rl:
             _warn("rl.algorithm is missing (default assumed: PPO).")
         env = cfg.get("env") or {}

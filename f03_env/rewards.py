@@ -39,7 +39,8 @@ def _atr_series(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) 
 # --- توابع پاداش ---
 
 def reward_pnl(position: int, ret_t1: float, cfg: RewardConfig) -> float:
-    """پاداش PnL ساده (سهمی از بازده) منهای هزینه‌ها."""
+    """
+    # پاداش PnL ساده (سهمی از بازده) منهای هزینه‌ها.
     gross = position * ret_t1
     # هزینه‌ها را ساده تخمین می‌زنیم (spread + slippage تبدیل شده به بازده نسبی)
     spread_cost = (cfg.cost_spread_pts * cfg.point_value)
@@ -47,6 +48,11 @@ def reward_pnl(position: int, ret_t1: float, cfg: RewardConfig) -> float:
     commission_cost = cfg.cost_commission_per_lot  # ثابت به‌ازای هر معامله (می‌توان پویا کرد)
     net = gross - (spread_cost + slippage_cost + commission_cost)
     return float(net)
+    """
+    """پاداش PnL ساده بر پایهٔ بازده نسبی؛ هزینه‌ها در Env کسر می‌شوند (A1/A2)."""
+    gross = float(position) * float(ret_t1)
+    return float(gross)
+
 
 def reward_logret(position: int, logret_t1: float, cfg: RewardConfig) -> float:
     return float(position) * float(logret_t1)

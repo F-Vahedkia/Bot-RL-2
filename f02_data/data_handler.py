@@ -301,9 +301,9 @@ class DataHandler:
         # Setting directories
         self.raw_dir: Path = _raw_dir_from_cfg(self.cfg)
         self.proc_dir: Path = _processed_dir_from_cfg(self.cfg)
-        
+
         # پیش‌فرض تایم‌فریم‌ها (اگر کاربر مشخص نکند)
-        dl = self.cfg.get("download_defaults", {}) or {}
+        dl = ((self.cfg.get("env") or {}).get("download_defaults") or {})
         self.default_timeframes: List[str] = list(dl.get("timeframes") or [])
 
         # فرمت ذخیره (اگر CLI ندهد)
@@ -364,12 +364,31 @@ class DataHandler:
 
         # 3) ویژگی‌های زمانی
         merged = _add_time_features(merged, self.cfg)
+    
+        dts = merged.index.to_series().diff(); gap_thr = dts.median()*5 if len(dts.dropna()) else pd.Timedelta(0)
+        merged["qc_gap"] = dts > gap_thr
+        c = "close" if "close" in merged.columns else next((x for x in merged.columns if x.endswith("_close")), None)
+        merged["qc_spike"], merged["qc_stale"] = ((merged[c].pct_change().abs() > 0.05) if c else False), ((merged[c].diff().abs().eq(0)) if c else False)
+        
+        # QC summary (log counts of flags across all TFs)
+        qc_cols = [k for k in ["qc_gap","qc_spike","qc_stale"] if k in merged.columns]
+        if qc_cols:
+            logger.info("QC flags (counts): %s", {c: int(merged[c].sum()) for c in qc_cols})
 
         # 4) پاکسازی نهایی: حذف رکوردهای دارای NaN کامل (در صورت نیاز می‌توان سفت‌گیرانه‌تر کرد)
         merged.sort_index(inplace=True)
         if merged.index.tz is None:
             merged.index = merged.index.tz_localize(timezone.utc)
         merged = merged[~merged.index.duplicated(keep="last")]
+
+        # برای نگهداشتن کانتکست آخرین بیلد
+        self._last_build_context = {
+            "symbol": symbol,
+            "base_tf": base_tf,
+            "timeframes": list(tfs),
+            "rows": int(len(merged)),
+            "columns": list(merged.columns),
+        }
 
         return merged
 
@@ -401,6 +420,27 @@ class DataHandler:
             pd.Series(meta).to_json(force_ascii=False, indent=2),
             encoding="utf-8"
         )
+
+        # ========== Manifest برای تکرارپذیری
+        manifest = {
+            "symbol": meta["symbol"],
+            "base_timeframe": meta["base_timeframe"],
+            "rows": meta["rows"],
+            "columns": meta["columns"],
+            "created_at_utc": meta["updated_at_utc"],
+            "config_version": (self.cfg.get("version") or "unknown"),
+            "timeframes_used": (self._last_build_context or {}).get("timeframes", []),
+            "features": {
+                "time_features": (self.cfg.get("features", {}) or {}).get("time_features", {}),
+            },
+        }
+        manifest_path = out.with_suffix(".manifest.json")
+        manifest_path.write_text(
+            pd.Series(manifest).to_json(force_ascii=False, indent=2),
+            encoding="utf-8"
+        )
+        # ========== 
+
         logger.info("Processed data saved: %s (rows=%d, cols=%d)", out, len(df), len(df.columns))
         return out
 

@@ -57,6 +57,8 @@ class BaseTradingEnv(gym.Env if gym else object):
     # نگاشت سادهٔ اکشن‌های گسسته به پوزیشن (-1,0,+1)
     @staticmethod
     def action_to_position(action: int) -> int:
+        # اگر آرایه بود، عنصر اول را بگیر
         if isinstance(action, (np.ndarray, list, tuple)):
             action = int(action[0])
+        # فقط کلیپ؛ نگاشت گسسته در آداپتر SB3 انجام می‌شود
         return int(np.clip(action, -1, 1))

@@ -17,21 +17,12 @@ import numpy as np
 import pandas as pd
 
 from f10_utils.config_loader import load_config
-
+from f10_utils.config_ops import _deep_get
 # --- مسیر پروژه و فایل‌ها ---
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[1]  # .../f03_env → ریشهٔ پروژه
 
-'''
-def paths_from_cfg_old1(cfg: Dict[str, Any]) -> Dict[str, Path]:
-    p = cfg.get("paths", {}) or {}
-    processed = _project_root() / (p.get("processed_dir") or "f02_data/processed")
-    cache = _project_root() / (p.get("cache_dir") or "f02_cache")
-    processed.mkdir(parents=True, exist_ok=True)
-    cache.mkdir(parents=True, exist_ok=True)
-    return {"processed": processed, "cache": cache}
-'''
 def paths_from_cfg(cfg: Dict[str, Any]) -> Dict[str, Path]:
     """
     خواندن مسیرها از هر دو ساختار:
@@ -106,6 +97,59 @@ def time_slices(cfg: Dict[str, Any]) -> Dict[str, Tuple[pd.Timestamp, pd.Timesta
 
 def slice_df_by_range(df: pd.DataFrame, a: pd.Timestamp, b: pd.Timestamp) -> pd.DataFrame:
     return df.loc[(df.index >= a) & (df.index <= b)].copy()
+
+
+# --- Split by ratios + session alignment (NY 17:00) ---
+def _tf_to_minutes(base_tf: str) -> int:
+    s = str(base_tf).upper()
+    return int(s[1:]) if s.startswith("M") else (int(s[1:])*60 if s.startswith("H") else (int(s[1:])*1440 if s.startswith("D") else 1))
+
+def _snap_right_to_session(ts: pd.Timestamp, align: Dict[str, Any], tf_mins: int) -> pd.Timestamp:
+    tz = (align or {}).get("tz") or "America/New_York"
+    hhmm = (align or {}).get("hhmm") or "17:00"
+    hh, mm = map(int, hhmm.split(":"))
+    loc = ts.tz_convert(tz)
+    tgt = loc.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    if tgt < loc: tgt = tgt + pd.Timedelta(days=1)
+    if tf_mins > 1:
+        rem = tgt.minute % tf_mins
+        if rem: tgt = tgt + pd.Timedelta(minutes=(tf_mins - rem))
+    return tgt.tz_convert("UTC")
+
+def build_slices_from_ratios(idx: pd.DatetimeIndex, cfg: Dict[str, Any]) -> Dict[str, Tuple[pd.Timestamp, pd.Timestamp]]:
+    env_cfg = (cfg.get("env") or {})
+    split = (env_cfg.get("split") or {})
+    ratios = (split.get("ratios") or {})
+    try:
+        r_tr = float(ratios.get("train", 0)); r_va = float(ratios.get("val", 0)); r_te = float(ratios.get("test", 0))
+    except Exception:
+        return {}
+    if (r_tr <= 0) or (r_va <= 0) or (r_te <= 0) or (len(idx) < 3): return {}
+    n = len(idx); i1 = max(1, int(n * r_tr)); i2 = max(i1 + 1, int(n * (r_tr + r_va)))
+    # مرزهای اولیه (بین i-1 و i)
+    t1 = idx[min(i1, n-1)]; t2 = idx[min(i2, n-1)]
+    tf_mins = _tf_to_minutes((env_cfg.get("base_tf") or "M1"))
+    align = (split.get("align") or {"tz":"America/New_York","hhmm":"17:00"})
+    # اسنپ هر مرز به 17:00 نیویورک (لبهٔ کندل/سشن)
+    t1a = _snap_right_to_session(pd.Timestamp(t1).tz_convert("UTC"), align, tf_mins)
+    t2a = _snap_right_to_session(pd.Timestamp(t2).tz_convert("UTC"), align, tf_mins)
+    # اندیس‌های هم‌تراز روی دیتاست
+    j1 = int(idx.searchsorted(t1a, side="left")); j2 = int(idx.searchsorted(t2a, side="left"))
+    j1 = max(1, min(j1, n-1)); j2 = max(j1+1, min(j2, n-1))
+    
+    # clamp to safe bounds
+    n = len(idx)
+    j1 = max(0, min(j1, n - 2))
+    j2 = max(1, min(j2, n - 1))
+    if j1 >= j2:
+        j1 = max(0, j2 - 1)
+    
+    return {
+        "train": (idx[0],        idx[j1-1]),
+        "val":   (idx[j1],       idx[j2-1]),
+        "test":  (idx[j2],       idx[-1]),
+    }
+
 
 # --- انتخاب ستون‌های مشاهده ---
 
@@ -186,3 +230,83 @@ def load_scaler(cache_dir: Path, tag: str) -> Optional[Scaler]:
         return None
     obj = json.loads(p.read_text())
     return Scaler(mean_=obj.get("mean_", {}), std_=obj.get("std_", {}))
+
+# -------------------------------------
+# توسط دو تابع زیر:
+# خروجی «گزارش Split + Warmup» (اجرای خودکار هنگام ساخت Env)
+# -------------------------------------
+def split_summary_path(symbol: str, base_tf: str, cfg: Dict[str, Any]) -> Path:
+    """
+    مسیر فایل گزارش Split برای یک (symbol, base_tf) را برمی‌گرداند.
+    خروجی در کنار processed ذخیره می‌شود تا با نسخهٔ داده هم‌مکان باشد.
+    """
+    paths = paths_from_cfg(cfg)
+    sym_dir = (paths["processed"] / symbol.upper())
+    sym_dir.mkdir(parents=True, exist_ok=True)
+    return sym_dir / f"{base_tf.upper()}.split.json"
+
+
+def write_split_summary(idx: pd.DatetimeIndex,
+                        slices: Dict[str, Tuple[pd.Timestamp, pd.Timestamp]],
+                        warmup_bars: int,
+                        symbol: str,
+                        base_tf: str,
+                        cfg: Dict[str, Any]) -> Path:
+    """
+    یک گزارش JSON از مرزهای train/val/test (پس از اسنپ)، شمار کندل‌ها،
+    و مقدار warmup تولید می‌کند. این گزارش برای QA و تکرارپذیری استفاده می‌شود.
+    """
+    # -----------------------------
+    # محاسبهٔ طول هر بخش روی ایندکس
+    # -----------------------------
+    a1, b1 = slices.get("train", (idx[0], idx[-1]))
+    a2, b2 = slices.get("val",   (idx[0], idx[-1]))
+    a3, b3 = slices.get("test",  (idx[0], idx[-1]))
+
+    def _count(a, b):
+        return int(idx.searchsorted(b, "right") - idx.searchsorted(a, "left"))
+
+    # نقطهٔ شروع مؤثرِ val/test بعد از warmup (فقط برای QA و اطلاع)
+    def _effective_start(a):
+        pos = int(idx.searchsorted(a, side="left"))
+        pos0 = max(0, pos - int(warmup_bars))
+        if pos - pos0 < 1:
+            pos0 = max(0, pos - 1)
+        return pd.Timestamp(idx[pos0]).tz_convert("UTC").isoformat()
+
+    obj = {
+        "symbol": symbol.upper(),
+        "base_tf": base_tf.upper(),
+        "warmup_bars": int(warmup_bars),
+        "train": {"start": pd.Timestamp(a1).tz_convert("UTC").isoformat(),
+                  "end":   pd.Timestamp(b1).tz_convert("UTC").isoformat(),
+                  "bars":  _count(a1, b1)},
+        "val":   {"start": pd.Timestamp(a2).tz_convert("UTC").isoformat(),
+                  "end":   pd.Timestamp(b2).tz_convert("UTC").isoformat(),
+                  "bars":  _count(a2, b2),
+                  "effective_start_after_warmup": _effective_start(a2)},
+        "test":  {"start": pd.Timestamp(a3).tz_convert("UTC").isoformat(),
+                  "end":   pd.Timestamp(b3).tz_convert("UTC").isoformat(),
+                  "bars":  _count(a3, b3),
+                  "effective_start_after_warmup": _effective_start(a3)},
+    }
+
+    out = split_summary_path(symbol, base_tf, cfg)
+    out.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
+
+# اولویت اسپرد: سری بروکر ← کانفیگ costs.spread_pts ← صفر
+def resolve_spread_selection(cfg, df=None, has_broker_series=False):
+    bt = _deep_get(cfg, "evaluation.backtest", {})
+    trc = _deep_get(cfg, "trading.costs", {})
+    col = None
+    if (has_broker_series or bool(bt.get("reuse_historical_spread"))) and df is not None:
+        cols = [c for c in df.columns if ("spread" in c.lower()) and df[c].notna().any()]
+        col = cols[0] if cols else None
+    if col:
+        return {"use_series": True, "column": col, "value": 0.0, "source": "broker_data"}
+        
+    v = max(float(trc.get("spread_pts", 0.0)), 0.0)
+    src = "config_costs" if "spread_pts" in trc else "zero_default"
+    return {"use_series": False, "value": v, "source": src}

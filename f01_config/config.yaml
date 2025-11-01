@@ -22,42 +22,120 @@ paths:
     checkpoints_dir: f12_models/checkpoints
     experiments_dir: f12_models/experiments
   news_dir: f02_data/news
-mt5_credentials:
-  login: 12345678
-  password: Password
-  server: Server
-download_defaults:
-  symbols:
-  - USDCAD
+overlays:
+- f01_config/symbol_specs.yaml
+
+
+
+
+
+env:
+  base_tf: M5
+  use_ohlc: true
+  use_volume: true
+  use_spread: false
+  reward_mode: pnl
+  observation:
+    resample_to_base_tf: M5
+    clip_values: true
+    clip_range:
+    - -5
+    - 5
+  action_space:
+    type: discrete
+    dim: 5
+    discrete_actions:
+    - HOLD
+    - OPEN_LONG
+    - OPEN_SHORT
+    - CLOSE_POSITION
+  reward:
+    type: risk_adjusted_pnl
+    params:
+      dd_penalty: 2.5
+      trade_cost_penalty: 1.0
+  termination:
+    max_episode_steps: 5000
+    stop_on_margin_call: true
+    stop_on_max_drawdown_pct: 0.2
+  window_size: 128
+  normalize: true
+  split:
+    ratios:
+      train: 0.7
+      val: 0.15
+      test: 0.15
+    fixed:
+      train:
+      - '2025-08-21'
+      - '2025-08-25'
+      val:
+      - '2025-08-25'
+      - '2025-08-26'
+      test:
+      - '2025-08-26'
+      - '2099-12-31'
+    align:
+      unit: session
+      tz: America/New_York
+      hhmm: '17:00'
+    warmup:
+      mode: auto
+      margin_bars: 32
+    flat_at_boundary: true
+  features_whitelist:
+  - __rsi_
+  - __macd_
+  - __ema_close_
+  - __atr_
+  - __bb_
+  - __stoch_
+  - __sar_
+  - __supertrend_
+  features_blacklist:
+  - qc_*
+  download_defaults:
+    symbols:
+    - XAUUSD
+    - EURUSD
+    - GBPUSD
+    - USDJPY
+    - USDCHF
+    - USDCAD
+    - AUDUSD
+    - NZDUSD
+    timeframes:
+    - H1
+    lookback_bars: 2000
+    batch_size: 50
+    save_format: parquet
+    align_to_session: true
+    data_raw: f02_data/raw
+    data_processed: f02_data/processed
   timeframes:
-  - H1
-  lookback_bars: 2000
-  batch_size: 50
-  save_format: parquet
-  align_to_session: true
-  data_raw: f02_data/raw
-  data_processed: f02_data/processed
-timeframes:
-- M1
-- M5
-- M30
-- H4
-- D1
-- W1
-n_candles_per_tf: 256
-n_candles: 256
-start_date: null
-end_date: null
-sessions:
-  asia:
-    start_utc: 00:00
-    end_utc: 08:00
-  london:
-    start_utc: 08:00
-    end_utc: '16:00'
-  newyork:
-    start_utc: '13:00'
-    end_utc: '21:00'
+  - M1
+  - M5
+  - M30
+  - H4
+  - D1
+  - W1
+  n_candles_per_tf: 256
+  n_candles: 256
+  sessions:
+    asia:
+      start_utc: 00:00
+      end_utc: 08:00
+    london:
+      start_utc: 08:00
+      end_utc: '16:00'
+    newyork:
+      start_utc: '13:00'
+      end_utc: '21:00'
+
+
+
+
+
 features:
   pipeline:
     use_default_set: true
@@ -95,11 +173,11 @@ features:
   - pat_pin(ratio=2.0)@M5
   - pat_pin(ratio=2.0)@H1
   - pat_pin(ratio=2.0)@H4
-  - pat_pin(ratio=2.249999999999999)@D1
+  - pat_pin(ratio=2.25)@D1
   - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@M5
   - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H1
   - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H4
-  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.549999999999998,opp_wick_k=1.25)@D1
+  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.55,opp_wick_k=1.25)@D1
   - pat_harami@M5
   - pat_harami@H1
   - pat_harami@H4
@@ -107,7 +185,7 @@ features:
   - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@M5
   - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H1
   - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H4
-  - pat_inside_outside(min_range_k_atr=1.5000000000000009,atr_win=14)@D1
+  - pat_inside_outside(min_range_k_atr=1.50,atr_win=14)@D1
   - pat_marubozu(wick_frac=0.10)@M5
   - pat_marubozu(wick_frac=0.10)@H1
   - pat_marubozu(wick_frac=0.10)@H4
@@ -273,148 +351,39 @@ features:
               exit_th: 0.25
   price_action_params:
     anti_lookahead: true
-
     market_structure:
       lookback: 3
-
     regime:
       atr_window: 14
       width_window: 20
       slope_window: 12
       spike_thr_atr: 1.8
-      channel_slope_thr: 0.20
-
+      channel_slope_thr: 0.2
     breakouts:
       range_window: 20
       min_periods: 10
       confirm_closes: 1
       retest_lookahead: 5
       fail_break_lookahead: 3
-
     microchannels:
       min_len: 3
-      near_extreme_thr: 0.20
-
+      near_extreme_thr: 0.2
     mtf:
       bias_window_base: 8
       bias_window_higher: 8
       fillna_confluence: 0.5
-
     confluence:
       weights:
         structure: 0.25
         zones: 0.25
-        imbalance: 0.20
-        mtf: 0.10
-        extras: 0.20     # ← جدید
-      strong_entry_threshold: 0.70
+        imbalance: 0.2
+        mtf: 0.1
+        extras: 0.2
+      strong_entry_threshold: 0.7
       filter_threshold: 0.35
-env:
-  observation:
-    resample_to_base_tf: M5
-    standardize_inputs: true
-    clip_values: true
-    clip_range:
-    - -5
-    - 5
-  action_space:
-    type: discrete
-    discrete_actions:
-    - HOLD
-    - OPEN_LONG
-    - OPEN_SHORT
-    - CLOSE_POSITION
-    fractional_position_sizes:
-    - 0.25
-    - 0.5
-    - 1.0
-  reward:
-    type: risk_adjusted_pnl
-    params:
-      dd_penalty: 2.5
-      trade_cost_penalty: 1.0
-  termination:
-    max_episode_steps: 5000
-    stop_on_margin_call: true
-    stop_on_max_drawdown_pct: 0.2
-  window_size: 128
-  normalize: true
-  split:
-    train:
-    - '2025-08-21'
-    - '2025-08-25'
-    val:
-    - '2025-08-25'
-    - '2025-08-26'
-    test:
-    - '2025-08-26'
-    - '2099-12-31'
-  features_whitelist:
-  - __rsi_
-  - __macd_
-  - __ema_close_
-  - __atr_
-  - __bb_
-  - __stoch_
-  - __sar_
-  - __supertrend_
-rl:
-  algorithm: PPO
-  policy: MlpPolicy
-  hyperparams:
-    ppo:
-      n_steps: 2048
-      batch_size: 256
-      gamma: 0.99
-      gae_lambda: 0.95
-      clip_range: 0.2
-      ent_coef: 0.01
-      vf_coef: 0.5
-      max_grad_norm: 0.5
-      learning_rate: 0.0003
-      target_kl: 0.02
-    sac:
-      learning_rate: 0.0003
-      buffer_size: 1000000
-      batch_size: 256
-      gamma: 0.99
-      tau: 0.005
-      ent_coef: auto
-      train_freq: 1
-      gradient_steps: 1
-training:
-  total_timesteps: 2000000
-  eval_freq_steps: 25000
-  checkpoint_interval_steps: 50000
-  max_checkpoints_to_keep: 10
-  resume_if_exists: true
-  early_stop:
-    enabled: true
-    metric: eval/sharpe
-    patience_evals: 5
-    min_delta: 0.01
-  experiment_name: ppo_baseline_mtf
-evaluation:
-  backtest:
-    commissions_per_lot_usd: 7.0
-    slippage_pips_mean: 2
-    slippage_pips_std: 1
-    reuse_historical_spread: true
-    cross_validation:
-      enabled: true
-      folds: 3
-      method: expanding_window
-      min_trades_per_fold: 30
-  acceptance_gates: &id001
-    sharpe_min: 0.8
-    profit_factor_min: 1.2
-    winrate_min: 0.48
-    max_drawdown_max: 0.12
-    turnover_max_per_day: 80
-    min_trades_total: 200
 risk:
   risk_per_trade: 0.01
-  max_daily_loss_pct: 0.03
+  max_daily_loss_pct: 0.02
   max_total_drawdown_pct: 0.2
   position_sizing:
     method: fixed_fractional
@@ -436,6 +405,24 @@ risk:
     max_open_positions: 1
     max_positions_per_symbol: 1
     cooldown_minutes_after_stop: 15
+evaluation:
+  backtest:
+    commissions_per_lot_usd: 7.0
+    slippage_pips_mean: 2
+    slippage_pips_std: 1
+    reuse_historical_spread: true
+    cross_validation:
+      enabled: true
+      folds: 3
+      method: expanding_window
+      min_trades_per_fold: 30
+  acceptance_gates:
+    sharpe_min: 0.8
+    profit_factor_min: 1.2
+    winrate_min: 0.48
+    max_drawdown_max: 0.12
+    turnover_max_per_day: 80
+    min_trades_total: 200
 executor:
   live_trading: false
   order:
@@ -443,7 +430,8 @@ executor:
     retry_attempts: 3
     timeout_sec: 3.0
     partial_fill_handling: cancel_remaining
-  slippage_cap_pips: 6
+  price_point: 0.1
+  slippage_cap_pips: 3
   sync_with_env_behaviors: true
   canary_deployment:
     enabled: true
@@ -455,55 +443,93 @@ executor:
       max_dd_live: 0.03
   rollback:
     on_breach: true
-self_optimize:
-  schedule:
-    daily_utc: '22:30'
-    weekly_utc: Fri 21:00
-  steps:
-    data_refresh: true
-    hparam_search:
-      enabled: false
-      max_trials: 20
-      sampler: tpe
-      space:                   # ← نام تازه؛ قبلاً وجود نداشت
-        pa.market_structure.lookback:        [2, 3, 4, 5]
-
-        pa.regime.atr_window:                {min: 10, max: 24, step: 1}
-        pa.regime.width_window:              {min: 10, max: 30, step: 1}
-        pa.regime.slope_window:              {min: 6,  max: 20, step: 1}
-        pa.regime.spike_thr_atr:             {choices: [1.4, 1.6, 1.8, 2.0, 2.2, 2.5]}
-        pa.regime.channel_slope_thr:         {min: 0.10, max: 0.35, step: 0.05}
-
-        pa.breakouts.range_window:           {min: 6,  max: 30, step: 1}
-        pa.breakouts.min_periods:            {rule: "min_periods = max(3, range_window//3)"}   # قانون وابسته
-        pa.breakouts.confirm_closes:         {choices: [1, 2, 3]}
-        pa.breakouts.retest_lookahead:       {choices: [3, 5, 8]}
-        pa.breakouts.fail_break_lookahead:   {choices: [2, 3, 5]}
-
-        pa.microchannels.min_len:            {choices: [3, 4, 5, 6]}
-        pa.microchannels.near_extreme_thr:   {choices: [0.10, 0.15, 0.20, 0.25, 0.30]}
-
-        pa.mtf.bias_window_base:             {min: 6,  max: 16, step: 1}
-        pa.mtf.bias_window_higher:           {min: 6,  max: 20, step: 1}
-        pa.mtf.fillna_confluence:            {choices: [0.3, 0.5]}
-
-        pa.confluence.weights:               {choices:
-                                                [[0.30, 0.30, 0.20, 0.20],
-                                                [0.35, 0.25, 0.20, 0.20],
-                                                [0.25, 0.35, 0.20, 0.20],
-                                                [0.30, 0.25, 0.20, 0.25]]}
-        pa.confluence.strong_entry_threshold: {min: 0.60, max: 0.80, step: 0.02}
-        pa.confluence.filter_threshold:       {min: 0.30, max: 0.50, step: 0.02}
-    finetune:
-      enabled: true
-      steps: 75000
-      mix_replay_with_recent_pct: 0.2
-    backtest:
-      enabled: true
-    deploy:
-      staging_then_promote: true
-  acceptance_gates: *id001
-  alerts_on_change: true
+  latency_sla_ms: 2000
+  qc:
+    stale_seconds: 8
+    spike_pips: 25
+  mt5_credentials:
+    login: 12345678
+    password: Password
+    server: Server
+training:
+  total_timesteps: 2000000
+  eval_freq_steps: 25000
+  checkpoint_interval_steps: 50000
+  max_checkpoints_to_keep: 10
+  resume_if_exists: true
+  early_stop:
+    enabled: true
+    metric: eval/sharpe
+    patience_evals: 8
+    min_delta: 0.01
+  experiment_name: ppo_baseline_mtf
+  rl:
+    algorithm: PPO
+    policy: MlpPolicy
+    hyperparams:
+      ppo:
+        n_steps: 2048
+        batch_size: 256
+        gamma: 0.99
+        gae_lambda: 0.95
+        clip_range: 0.2
+        ent_coef: 0.01
+        vf_coef: 0.5
+        max_grad_norm: 0.5
+        learning_rate: 0.0003
+        target_kl: 0.01
+        n_epochs: 10
+        clip_range_vf: 0.2
+      sac:
+        learning_rate: 0.0003
+        buffer_size: 1000000
+        batch_size: 256
+        gamma: 0.99
+        tau: 0.005
+        ent_coef: auto
+        train_freq: 1
+        gradient_steps: 1
+        learning_starts: 10000
+        target_entropy: auto
+      td3:
+        learning_rate: 0.0003
+        buffer_size: 1000000
+        batch_size: 256
+        gamma: 0.99
+        tau: 0.005
+        train_freq: 1
+        gradient_steps: 1
+        policy_delay: 2
+        noise_sigma: 0.1
+        noise_clip: 0.3
+      a2c:
+        n_steps: 5
+        gamma: 0.99
+        ent_coef: 0.0
+        vf_coef: 0.5
+        max_grad_norm: 0.5
+        learning_rate: 0.0007
+      dqn:
+        learning_rate: 0.00025
+        buffer_size: 100000
+        batch_size: 128
+        gamma: 0.99
+        train_freq: 1
+        exploration_fraction: 0.1
+        exploration_final_eps: 0.01
+        learning_starts: 50000
+        target_update_interval: 1000
+        tau: 1.0
+      ddpg:
+        learning_rate: 0.0003
+        buffer_size: 1000000
+        batch_size: 256
+        gamma: 0.99
+        tau: 0.005
+        train_freq: 1
+        gradient_steps: 1
+        action_noise: normal(0.1)
+        policy_delay: 2
 monitoring:
   logging:
     level: INFO
@@ -558,15 +584,134 @@ safety:
     - EUR
     - GBP
     - JPY
-per_symbol_overrides:
-  XAUUSD:
-    risk:
-      risk_per_trade: 0.005
-      sl_atr_mult: 1.8
-    evaluation:
-      acceptance_gates:
-        sharpe_min: 0.9
-        max_drawdown_max: 0.1
+self_optimize:
+  schedule:
+    daily_utc: '22:30'
+    weekly_utc: Fri 21:00
+  steps:
+    data_refresh: true
+    hparam_search:
+      enabled: false
+      max_trials: 20
+      sampler: tpe
+      space:
+        pa.market_structure.lookback:
+        - 2
+        - 3
+        - 4
+        - 5
+        pa.regime.atr_window:
+          min: 10
+          max: 24
+          step: 1
+        pa.regime.width_window:
+          min: 10
+          max: 30
+          step: 1
+        pa.regime.slope_window:
+          min: 6
+          max: 20
+          step: 1
+        pa.regime.spike_thr_atr:
+          choices:
+          - 1.4
+          - 1.6
+          - 1.8
+          - 2.0
+          - 2.2
+          - 2.5
+        pa.regime.channel_slope_thr:
+          min: 0.1
+          max: 0.35
+          step: 0.05
+        pa.breakouts.range_window:
+          min: 6
+          max: 30
+          step: 1
+        pa.breakouts.min_periods:
+          rule: min_periods = max(3, range_window//3)
+        pa.breakouts.confirm_closes:
+          choices:
+          - 1
+          - 2
+          - 3
+        pa.breakouts.retest_lookahead:
+          choices:
+          - 3
+          - 5
+          - 8
+        pa.breakouts.fail_break_lookahead:
+          choices:
+          - 2
+          - 3
+          - 5
+        pa.microchannels.min_len:
+          choices:
+          - 3
+          - 4
+          - 5
+          - 6
+        pa.microchannels.near_extreme_thr:
+          choices:
+          - 0.1
+          - 0.15
+          - 0.2
+          - 0.25
+          - 0.3
+        pa.mtf.bias_window_base:
+          min: 6
+          max: 16
+          step: 1
+        pa.mtf.bias_window_higher:
+          min: 6
+          max: 20
+          step: 1
+        pa.mtf.fillna_confluence:
+          choices:
+          - 0.3
+          - 0.5
+        pa.confluence.weights:
+          choices:
+          - - 0.3
+            - 0.3
+            - 0.2
+            - 0.2
+          - - 0.35
+            - 0.25
+            - 0.2
+            - 0.2
+          - - 0.25
+            - 0.35
+            - 0.2
+            - 0.2
+          - - 0.3
+            - 0.25
+            - 0.2
+            - 0.25
+        pa.confluence.strong_entry_threshold:
+          min: 0.6
+          max: 0.8
+          step: 0.02
+        pa.confluence.filter_threshold:
+          min: 0.3
+          max: 0.5
+          step: 0.02
+    finetune:
+      enabled: true
+      steps: 75000
+      mix_replay_with_recent_pct: 0.2
+    backtest:
+      enabled: true
+    deploy:
+      staging_then_promote: true
+  acceptance_gates:
+    sharpe_min: 0.8
+    profit_factor_min: 1.2
+    winrate_min: 0.48
+    max_drawdown_max: 0.12
+    turnover_max_per_day: 80
+    min_trades_total: 200
+  alerts_on_change: true
 cicd:
   enabled: false
   run_unit_tests_on_push: true
@@ -587,3 +732,14 @@ secrets:
     MT5_PATH: MT5_PATH
     TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN
     TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID
+per_symbol_overrides:
+  XAUUSD:
+    risk:
+      risk_per_trade: 0.005
+      sl_atr_mult: 1.8
+    evaluation:
+      acceptance_gates:
+        sharpe_min: 0.9
+        max_drawdown_max: 0.1
+      backtest:
+        #point_value: 10.0
