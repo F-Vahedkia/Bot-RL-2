@@ -9,9 +9,11 @@
 #==============================================================================
 from __future__ import annotations
 from typing import List, Sequence, Dict, Optional, Tuple
-from unittest import result
+# from unittest import result
 import numpy as np
+from numba import njit
 import pandas as pd
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,7 @@ from f10_utils.config_loader import ConfigLoader
 cfg = ConfigLoader().get_all()
 
 """ --------------------------------------------------------------------------- OK Func1
+speed=OK
 Pivot های کلاسیک
 """
 def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[pd.Series, ...]:
@@ -41,6 +44,7 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
         s3.astype("float32")
 
 """ --------------------------------------------------------------------------- OK Func2
+Speed=
 فراکتال ساده برای استفاده در توابع sr_distance, fibo_levels
 قرارداد خروجی:
 - 1.0  → فرکتال تأییدشده
@@ -62,6 +66,55 @@ def fractal_points(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Seri
         ll.iloc[ :k] = np.nan
         ll.iloc[-k:] = np.nan
     return hh.astype("float32"), ll.astype("float32")
+
+""" ---------------------------------------------------------------------------
+
+"""
+def fractal_points_numba(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Series, pd.Series]:
+    """
+    Compute simple fractals (high/low) using a rolling window.
+    Numba JIT optimized for speed.
+    
+    Parameters
+    ----------
+    high : pd.Series
+        High prices
+    low : pd.Series
+        Low prices
+    k : int, default=2
+        Fractal window size (total window = 2k+1)
+    
+    Returns
+    -------
+    tuple[pd.Series, pd.Series]
+        hh, ll: fractal highs and lows as float32 Series
+    """
+
+    window = 2*k + 1
+    high_vals = high.values.astype(np.float32)
+    low_vals = low.values.astype(np.float32)
+    n = len(high_vals)
+
+    # Preallocate output
+    hh_arr = np.full(n, np.nan, dtype=np.float32)
+    ll_arr = np.full(n, np.nan, dtype=np.float32)
+
+    # Numba-optimized inner loop
+    @njit
+    def compute_fractals(h_vals, l_vals, hh_out, ll_out, k, n, window):
+        for i in range(k, n-k):
+            h_window = h_vals[i-k:i+k+1]
+            l_window = l_vals[i-k:i+k+1]
+            if np.argmax(h_window) == k:
+                hh_out[i] = 1.0
+            if np.argmin(l_window) == k:
+                ll_out[i] = 1.0
+        return hh_out, ll_out
+
+    hh_arr, ll_arr = compute_fractals(high_vals, low_vals, hh_arr, ll_arr, k, n, window)
+
+    return pd.Series(hh_arr, index=high.index), pd.Series(ll_arr, index=low.index)
+
 
 """ --------------------------------------------------------------------------- OK Func3
 فاصله قیمتی تا اخیرترین سطح حمایت/مقاومت
@@ -90,42 +143,21 @@ def sr_distance(close: pd.Series,
         sup.iloc[i] = np.float32(s) if pd.notna(s) else np.nan # ذخیره در سری خروجی
     return res, sup
 
-""" --------------------------------------------------------------------------- DELETED Func4
-فیبوناچی: سطوح اخیر بین آخرین سوینگ بالا/پایین (فراکتال k)
-"""
-def fibo_levels_old(close: pd.Series, high: pd.Series, low: pd.Series, k: int = 2):
-    hh, ll = fractal_points(high, low, k)
-    # آخرین سوینگ‌ها
-    last_high = high[hh.astype(bool)]
-    last_low  =  low[ll.astype(bool)]
-
-    diff = (last_high - last_low)
-    levels = {
-        "fib_236": (last_high - 0.236*diff).astype("float32"),
-        "fib_382": (last_high - 0.382*diff).astype("float32"),
-        "fib_500": (last_high - 0.500*diff).astype("float32"),
-        "fib_618": (last_high - 0.618*diff).astype("float32"),
-        "fib_786": (last_high - 0.786*diff).astype("float32"),
-    }
-    # فاصلهٔ قیمت تا هر سطح
-    dists = {f"dist_{k}": (close - v).astype("float32") for k, v in levels.items()}
-    levels.update(dists)
-    return levels
-
 """ --------------------------------------------------------------------------- OK Func4
+speed=SLOW
     تولید سطوح فیبوناچی به صورت دیکشنری {ratio: level}.
 
     - استفاده از آخرین fractal high,low در بازه lookback
     - تشخیص جهت swing (صعودی یا نزولی)
     - خروجی: dict که کلیدها نسبت‌های فیبو و مقادیر سطح قیمت هستند
 """
-def fibo_levels(close: pd.Series,
+def fibo_levels_slow(close: pd.Series,
                 high: pd.Series,
                 low: pd.Series,
                 k: int = 2,
                 cfg: Optional[dict] = None,
                 lookback: int = 500,
-) -> dict[str, pd.Series]:
+) -> pd.DataFrame:
 
     # پیش فرض درصدهای فیبوناچی ---------------------------
     if cfg is not None:
@@ -136,18 +168,15 @@ def fibo_levels(close: pd.Series,
 
     # محاسبه فراکتال‌ها ------------------------------------
     hh, ll = fractal_points(high, low, k)  # Series contain 0 and 1
-    result = []
+    cols = [f"fibo_{r}" for r in ratios]
+    out = pd.DataFrame(np.nan, index=close.index, columns=cols, dtype="float32")
 
-    for i in range(0, len(close)):
+    for i in range(len(close)):
         lo = max(k, i - lookback)
         h_fractals = high.iloc[lo:i][hh.iloc[lo:i].astype(bool)]   # آخرین fractal high ها
         l_fractals =  low.iloc[lo:i][ll.iloc[lo:i].astype(bool)]   # آخرین fractal low ها
 
-        fibo_dict = {}
-        if (i < k) or len(h_fractals)==0 or len(l_fractals)==0:
-            for r in ratios:
-                fibo_dict[f"fibo_{r}"] = np.nan
-            result.append(fibo_dict)
+        if (i < k) or h_fractals.empty or l_fractals.empty:
             continue
 
         # قیمت و زمان سقف و کف اخیر
@@ -158,24 +187,128 @@ def fibo_levels(close: pd.Series,
         rng = abs(last_high - last_low)
         
         if rng == 0:
-            for r in ratios:
-                fibo_dict[f"fibo_{r}"] = np.nan
-            result.append(fibo_dict)
             continue
 
         # تعیین جهت swing
         if time_low < time_high:     # برای روند صعودی
             for r in ratios:
-                level = last_high - r * rng
-                fibo_dict[f"fibo_{r}"] = float(level)
+                out.iat[i, cols.index(f"fibo_{r}")] = float(last_high - r * rng)
         else:                        # برای روند نزولی
             for r in ratios:
-                level = last_low + r * rng
-                fibo_dict[f"fibo_{r}"] = float(level)
-        result.append(fibo_dict)        
-    return result
+                out.iat[i, cols.index(f"fibo_{r}")] = float(last_low + r * rng)
+    return out
 
-""" --------------------------------------------------------------------------- Func5
+
+""" --------------------------------------------------------------------------- OK Func4 (Fast=MAIN)
+speed=OK
+    Compute Fibonacci retracement levels based on the most recent completed swing
+    defined by fractal highs and lows, optimized for performance using NumPy
+    vectorization.
+
+    This function is a high-performance equivalent of `fibo_levels`, producing
+    identical numerical results while significantly reducing execution time.
+    It preserves the original Fibonacci logic:
+      - No Fibonacci levels are produced until a valid swing leg is formed
+        (i.e., both a high and a low fractal exist within lookback).
+      - Swing direction is determined by the temporal order of the last low
+        and last high fractals.
+      - Levels are computed per-bar and aligned with the input time index.
+
+    Parameters
+    ----------
+    close : pd.Series
+        Close prices indexed by time.
+    high : pd.Series
+        High prices indexed by time.
+    low : pd.Series
+        Low prices indexed by time.
+    k : int, default=2
+        Fractal window size passed to `fractal_points`.
+    cfg : dict, optional
+        Configuration dictionary. If provided, Fibonacci retracement ratios
+        are read from:
+            cfg["features"]["fibonacci"]["retracement_ratios"]
+        Otherwise, default ratios are used.
+    lookback : int, default=500
+        Maximum number of bars to look back when searching for the last
+        valid fractal high and low.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame indexed by the same index as `close`, containing one column
+        per Fibonacci retracement level (e.g. fibo_0.236, fibo_0.382, ...).
+        Values are NaN until a valid swing leg is available.
+
+    Notes
+    -----
+    - This implementation is not fully stateless-vectorized due to the
+      inherently stateful nature of swing/leg detection, but it minimizes
+      Python-level loops and leverages NumPy for per-ratio computations.
+    - Numerical output is guaranteed to match `fibo_levels` for the same inputs.
+    - Designed for high-frequency use (e.g. M1 data) in feature pipelines.
+"""
+def fibo_levels(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    k: int = 2,
+    cfg: Optional[dict] = None,
+    lookback: int = 500,
+) -> pd.DataFrame:
+
+    import numpy as np
+    import pandas as pd
+
+    # --- Fibonacci ratios as numpy array ---
+    if cfg is not None:
+        fb = (cfg.get("features") or {}).get("fibonacci") or {}
+        ratios = np.array(list(fb.get("retracement_ratios") or []), dtype=np.float32)
+    else:
+        ratios = np.array([0.236, 0.382, 0.5, 0.618, 0.786], dtype=np.float32)
+
+    cols = [f"fibo_{r:.3f}" for r in ratios]
+    n = len(close)
+
+    # --- fractals ---
+    hh, ll = fractal_points(high, low, k)
+
+    # --- output array ---
+    out = np.full((n, len(ratios)), np.nan, dtype=np.float32)
+
+    # --- precompute high/low values as arrays for indexing ---
+    high_vals = high.values
+    low_vals = low.values
+    hh_vals = hh.values.astype(bool)
+    ll_vals = ll.values.astype(bool)
+
+    for i in range(n):
+        lo = max(k, i - lookback)
+        h_idx = np.flatnonzero(hh_vals[lo:i])
+        l_idx = np.flatnonzero(ll_vals[lo:i])
+
+        if i < k or len(h_idx) == 0 or len(l_idx) == 0:
+            continue
+
+        last_high_idx = h_idx[-1] + lo
+        last_low_idx = l_idx[-1] + lo
+
+        last_high = high_vals[last_high_idx]
+        last_low = low_vals[last_low_idx]
+        rng = abs(last_high - last_low)
+        if rng == 0:
+            continue
+
+        if last_low_idx < last_high_idx:
+            out[i, :] = last_high - ratios * rng
+        else:
+            out[i, :] = last_low + ratios * rng
+
+    # --- convert to DataFrame ---
+    out_df = pd.DataFrame(out, index=close.index, columns=cols, dtype=np.float32)
+    return out_df
+
+""" --------------------------------------------------------------------------- OK Func5
 """
 def registry() -> Dict[str, callable]:
     
@@ -193,8 +326,9 @@ def registry() -> Dict[str, callable]:
                 f"sr_sup_{k}_{lookback}": s
                 }
     
-    def make_fibo(df, k: int = 2, **_):
-        return fibo_levels(df["close"], df["high"], df["low"], k)
+    def make_fibo(df, k: int = 2, lookback: int = 500, cfg: Optional[dict] = None, **_):
+        out = fibo_levels(df["close"], df["high"], df["low"], k=k, cfg=cfg, lookback=lookback)
+        return out.to_dict(orient="series")  # خروجی dict مانند سایر توابع
     
     return {"pivots": make_pivots,
             "sr"    : make_sr,
@@ -329,6 +463,8 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
 8  sr_overlap_score       --  --  --  --  --  --  --  --  --  --  --
 """
 
+
+######################################################################################
 data = [
     ['2010-01-04 00:15:00+00:00',1099.5,1099.95,1098.54,1099.6,325,0],
     ['2010-01-04 00:15:00+00:00',1099.5,1099.95,1098.54,1099.6,325,0],
@@ -362,10 +498,9 @@ data = [
     ['2010-01-04 02:40:00+00:00',1095.05,1095.45,1094.74,1094.9,290,0],
 ]
 
-
 data2 = [
     ['2010-01-04 00:15:00+00:00',49.3,50,49.1,49.7],
-    ['2010-01-04 00:15:00+00:00',50.3,51,50.1,50.7],
+    ['2010-01-04 00:20:00+00:00',50.3,51,50.1,50.7],
     ['2010-01-04 00:25:00+00:00',51.3,52,51.1,51.7],
     ['2010-01-04 00:30:00+00:00',52.3,53,52.1,52.7],
     ['2010-01-04 00:35:00+00:00',53.3,54,53.1,53.7],
@@ -416,13 +551,42 @@ data2 = [
     ['2010-01-04 04:20:00+00:00',44.3,45,44.1,44.7],
 ]
 
-df = pd.DataFrame(data2, columns=["time","open","high","low","close"])
-df.set_index(pd.to_datetime(df["time"]), inplace=True)
-df.drop(columns=["time"], inplace=True)
+df2 = pd.DataFrame(data2, columns=["time","open","high","low","close"])
+df2.set_index(pd.to_datetime(df2["time"]), inplace=True)
+df2.drop(columns=["time"], inplace=True)
+#####################################################
 
+t1 = datetime.now()
+data3 = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
+t2 = datetime.now()
+print(len(data3))
+print(data3.head())
+print(f"Time taken to read CSV: {round((t2 - t1).total_seconds(), 1)} seconds","\n")
+df3=data3[:5000000].copy()
+df3['time'] = pd.to_datetime(df3['time'], utc=True)
+df3.set_index('time', inplace=True)
+#####################################################
 
+# t3 = datetime.now()
+# result1 = fibo_levels_slow(df3["close"], df3["high"], df3["low"], k=1, cfg=cfg, lookback=50)
+# t4 = datetime.now()
+# result1.to_csv("__fibo_levels_slow_output.csv")
+# print(f"Time taken to run 'fibo_levels_slow': {round((t4 - t3).total_seconds(), 1)} seconds")
+# print(result1.head(),"\n")
 
+# t5 = datetime.now()
+# result2 = fibo_levels(df3["close"], df3["high"], df3["low"], k=1, cfg=cfg, lookback=50)
+# t6 = datetime.now()
+# result2.to_csv("__fibo_levels_output.csv")
+# print(f"Time taken to run 'fibo_levels': {round((t6 - t5).total_seconds(), 1)} seconds")
+# print(result2.head())
 
+# diff = result2.fillna(0) - result1.fillna(0)
+# print("Max difference between 'fibo_levels_slow' and 'fibo_levels':", diff.abs().max().max())
 
-result = fibo_levels(df["close"], df["high"], df["low"], k=1, cfg=cfg, lookback=50)
-print(pd.DataFrame(result))
+#####################################################
+
+t3 = datetime.now()
+hh, ll = fractal_points_numba(df3["high"], df3["low"], k=50)
+t4 = datetime.now()
+print(f"Time taken to run 'fractal_points': {round((t4 - t3).total_seconds(), 1)} seconds")

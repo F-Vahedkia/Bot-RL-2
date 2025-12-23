@@ -123,6 +123,8 @@ features:
         - 0.5
     retracement_ratios:
     - 0.236
+    retracement_ratios_____:
+    - 0.236
     - 0.382
     - 0.500
     - 0.618

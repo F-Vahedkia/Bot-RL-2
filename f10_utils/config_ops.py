@@ -78,7 +78,7 @@ def _parse_path(path: PathLike) -> List[Union[str, int]]:
         out.append(buf) # append remaining buffer
     return out
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------
 def deep_set(obj: Any, path: PathLike, value: Any, create_missing: bool = True) -> Any:
     """
     مقدار را در مسیر دلخواه قرار می‌دهد (in-place)
@@ -167,7 +167,7 @@ def deep_set(obj: Any, path: PathLike, value: Any, create_missing: bool = True) 
 
     return obj
 
-
+# ---------------------------------------------------------
 def yaml_set(path_to_yaml: str, key_path: PathLike, value: Any, create_missing: bool = True, save_backup: bool = True) -> None:
     """
     فایل YAML را باز می‌کند، deep_set را اعمال می‌کند و ذخیره می‌کند.

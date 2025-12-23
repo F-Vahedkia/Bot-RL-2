@@ -5,7 +5,7 @@
 Docstring for f02_data._ExamCaller_write_specs_yaml:
 
 این برنامه یک نمونه است برای نمایش اینکه چگونه
-تابع write_specs_yaml را از یک ماژول دیگر فراخوانی کنیم
+تابع write_specs_yaml را از ماژول f02_data.symbol_specs_snapshot فراخوانی کنیم
 تابع write_specs_yaml در واقع تابع اصلی و ماحصل فایل symbol_specs_snapshot.py است
 
 Run:
