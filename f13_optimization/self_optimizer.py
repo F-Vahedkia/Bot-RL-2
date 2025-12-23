@@ -103,7 +103,7 @@ except Exception:  # pragma: no cover
 
 # پل و وایرینگ پرایس‌اکشن (فایل‌هایی که همین پروژه دارد)
 from f13_optimization.hparam_bridge import apply_pa_hparams_to_config
-from f04_features.price_action.config_wiring import build_pa_features_from_config
+from f03_features.price_action.config_wiring import build_pa_features_from_config
 
 # YAML (fallback اگر loader داخلی نبود)
 try:

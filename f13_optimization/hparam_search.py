@@ -48,7 +48,7 @@ from copy import deepcopy
 from typing import Any, Dict, Optional, Tuple, List
 
 from f13_optimization.hparam_bridge import apply_pa_hparams_to_config
-from f04_features.price_action.config_wiring import build_pa_features_from_config  # جهت اطمینان از وایرینگ
+from f03_features.price_action.config_wiring import build_pa_features_from_config  # جهت اطمینان از وایرینگ
 # ارزیابی درون‌پردازه‌ای، اگر در دسترس باشد:
 try:
     from f08_evaluation.backtest import run_backtest  # type: ignore

@@ -5,138 +5,80 @@ project:
   base_currency: USD
   random_seed: 42
   enable_env_override: true
+
+
+
+
+extends:
+- f01_config/extend_config.yaml   # کمترین اهمیت- کمتر از همین فایل کانفیگ 
+# - f01_config/extend_config_2.yaml # اهمیتش از بالایی بیشتر است 
+bases:
+- f01_config/base_config.yaml     #اهمیت این فایل بیشتراز extendsهااست-اماازهمین فایل کانفیگ(config.yaml) و از overlaysها کمتر است 
+# - f01_config/base_config_2.yaml   # اهمیت این فایل از بالایی ها بیشتر است 
+overlays:
+- f01_config/symbol_specs.yaml    # بیشترین اهمیت- بیش از حتی همین فایل کانفیگ(config.yaml) 
+# - f01_config/symbol_specs_22.yaml
+# - f01_config/symbol_specs_33.yaml
+# ---------------------------------------------------------
+
+
+
 paths:
   root_dir: .
-  data_dir: f02_data
-  raw_dir: f02_data/raw
+  config_versions_dir: f01_config/versions  ####
+  
+  data_dir:      f02_data
+  raw_dir:       f02_data/raw
   processed_dir: f02_data/processed
-  logs_dir: logs
-  reports_dir: reports
-  cache_dir: f02_data/cache
-  models_dir: f12_models
-  config_versions_dir: f01_config/versions
-  tmp_dir: tmp
+  news_dir:      f02_data/news
+  cache_dir:     f02_data/cache  ####
+
+  models_dir: f12_models  ####
   models:
-    production_dir: f12_models/production
-    staging_dir: f12_models/staging
+    production_dir:  f12_models/production
+    staging_dir:     f12_models/staging
     checkpoints_dir: f12_models/checkpoints
     experiments_dir: f12_models/experiments
-  news_dir: f02_data/news
-overlays:
-- f01_config/symbol_specs.yaml
+  
+  logs_dir:    _logs  ####
+  reports_dir: _reports  ####
+  tmp_dir:     _tmp   ####
 
 
 
 
+connection:                                                     # Used at: mt5_connector.py
+  mt5_credentials:                                              # Used at: mt5_connector.py / _read_credentials_from_config()
+    login: 00000000                                             #
+    password: Password                                          #
+    server: Server                                              #
+    terminal_path: "C:/Program Files/Alpari MT5/terminal64.exe" # 
 
-env:
-  base_tf: M5
-  use_ohlc: true
-  use_volume: true
-  use_spread: false
-  reward_mode: pnl
-  observation:
-    resample_to_base_tf: M5
-    clip_values: true
-    clip_range:
-    - -5
-    - 5
-  action_space:
-    type: discrete
-    dim: 5
-    discrete_actions:
-    - HOLD
-    - OPEN_LONG
-    - OPEN_SHORT
-    - CLOSE_POSITION
-  reward:
-    type: risk_adjusted_pnl
-    params:
-      dd_penalty: 2.5
-      trade_cost_penalty: 1.0
-  termination:
-    max_episode_steps: 5000
-    stop_on_margin_call: true
-    stop_on_max_drawdown_pct: 0.2
-  window_size: 128
-  normalize: true
-  split:
-    ratios:
-      train: 0.7
-      val: 0.15
-      test: 0.15
-    fixed:
-      train:
-      - '2025-08-21'
-      - '2025-08-25'
-      val:
-      - '2025-08-25'
-      - '2025-08-26'
-      test:
-      - '2025-08-26'
-      - '2099-12-31'
-    align:
-      unit: session
-      tz: America/New_York
-      hhmm: '17:00'
-    warmup:
-      mode: auto
-      margin_bars: 32
-    flat_at_boundary: true
-  features_whitelist:
-  - __rsi_
-  - __macd_
-  - __ema_close_
-  - __atr_
-  - __bb_
-  - __stoch_
-  - __sar_
-  - __supertrend_
-  features_blacklist:
-  - qc_*
-  download_defaults:
-    symbols:
-    - XAUUSD
-    - EURUSD
-    - GBPUSD
-    - USDJPY
-    - USDCHF
-    - USDCAD
-    - AUDUSD
-    - NZDUSD
-    timeframes:
-    - H1
-    lookback_bars: 2000
-    batch_size: 50
-    save_format: parquet
-    align_to_session: true
-    data_raw: f02_data/raw
-    data_processed: f02_data/processed
-  timeframes:
-  - M1
-  - M5
-  - M30
-  - H4
-  - D1
-  - W1
-  n_candles_per_tf: 256
-  n_candles: 256
-  sessions:
-    asia:
-      start_utc: 00:00
-      end_utc: 08:00
-    london:
-      start_utc: 08:00
-      end_utc: '16:00'
-    newyork:
-      start_utc: '13:00'
-      end_utc: '21:00'
-
+  initialize_retry:                             # Used at: mt5_connector.py / _read_options_from_config()
+    max_retries: 2  # int                       #
+    retry_delay: 5.0  # float                   #
+    backoff_multiplier: 1.0  # float            #
+    auto_select_symbols: True  # bool           #
+    check_trade_allowed: False  # bool          #
+    symbol_activation_timeout: 0.0  # float     #
+    ensure_on_each_call: True  # bool           #
 
 
 
 
 features:
+  time_features:            ####################
+    add_hour_of_day: true      # Used at: data_handler.py / _add_time_features()
+    add_day_of_week: true      #
+    add_session_flags: true    #
+    normalize_time: true       # 
+
+  base_timeframe: M5           # Used at: data_handler.py / class DataHandler / __init__
+
+  representation:
+    default: "binary"
+    mapping: ""
+
   pipeline:
     use_default_set: true
     include:
@@ -145,7 +87,6 @@ features:
       fibonacci: true
       support_resistance: true
       volatility: true
-  base_timeframe: M1
   shift_features_by: 1
   drop_na_head: true
   indicators:
@@ -162,57 +103,7 @@ features:
   - stoch(14,3)@M1
   - vwap@M1
   - cmf(20)@M1
-  - pat_engulf@M5
-  - pat_engulf@H1
-  - pat_engulf@H4
-  - pat_engulf@D1
-  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@M5
-  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@H1
-  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@H4
-  - pat_doji(atr_ratio_thresh=0.12,range_ratio_thresh=0.25,atr_win=14)@D1
-  - pat_pin(ratio=2.0)@M5
-  - pat_pin(ratio=2.0)@H1
-  - pat_pin(ratio=2.0)@H4
-  - pat_pin(ratio=2.25)@D1
-  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@M5
-  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H1
-  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.0,opp_wick_k=1.25)@H4
-  - pat_hammer_star(min_body_frac=0.0,wick_ratio=2.55,opp_wick_k=1.25)@D1
-  - pat_harami@M5
-  - pat_harami@H1
-  - pat_harami@H4
-  - pat_harami@D1
-  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@M5
-  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H1
-  - pat_inside_outside(min_range_k_atr=0.50,atr_win=14)@H4
-  - pat_inside_outside(min_range_k_atr=1.50,atr_win=14)@D1
-  - pat_marubozu(wick_frac=0.10)@M5
-  - pat_marubozu(wick_frac=0.10)@H1
-  - pat_marubozu(wick_frac=0.10)@H4
-  - pat_marubozu(wick_frac=0.10)@D1
-  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@M5
-  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@H1
-  - pat_tweezer(tol_frac=null,tol_k=0.25,tol_mode="atr_price",atr_win=14)@H4
-  - pat_tweezer(tol_frac=null,tol_k=1.3877787807814457e-17,tol_mode="atr_price",atr_win=14)@D1
-  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@M5
-  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@H1
-  - pat_3soldiers_crows(min_body_atr=0.25,atr_win=14)@H4
-  - pat_3soldiers_crows(min_body_atr=0.3,atr_win=14)@D1
-  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@M5
-  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@H1
-  - pat_morning_evening(small_body_atr=0.30,atr_win=14)@H4
-  - pat_morning_evening(small_body_atr=0.10000000000000002,atr_win=14)@D1
-  - pat_piercing_dark(min_body_ratio=0.20)@M5
-  - pat_piercing_dark(min_body_ratio=0.20)@H1
-  - pat_piercing_dark(min_body_ratio=0.20)@H4
-  - pat_piercing_dark(min_body_ratio=0.65)@D1
-  - pat_belt(wick_frac=0.10)@M5
-  - pat_belt(wick_frac=0.10)@H1
-  - pat_belt(wick_frac=0.10)@H4
-  - pat_belt(wick_frac=0.0)@D1
-  - pivots@M1
-  - sr(2,500)@M1
-  - fibo(2)@M1
+ 
   fibonacci:
     enabled: true
     swing_window_bars: 200
@@ -233,7 +124,7 @@ features:
     retracement_ratios:
     - 0.236
     - 0.382
-    - 0.5
+    - 0.500
     - 0.618
     - 0.786
     - 0.886
@@ -296,19 +187,14 @@ features:
     caching:
       enabled: false
       ttl_bars: 500
-  time_features:
-    add_hour_of_day: true
-    add_day_of_week: true
-    add_session_flags: true
-    normalize_time: true
   support_resistance:
     enabled: true
     lookback_bars: 1500
     cluster_tolerance_pips: 15
-    sr_advanced:
-      common:
-        atr_window: 14
-        max_bars_alive: 5
+    sr_advanced:                   # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== start
+      common:                      #
+        atr_window: 14             #
+        max_bars_alive: 5          #
         w_size: 0.5
         w_age: 0.3
         w_touch: 0.2
@@ -345,10 +231,10 @@ features:
           H1:
             supply_demand:
               base_atr_max: 1.0
-              impulse_atr_min: 0.8
-            sr_fusion:
-              enter_th: 0.35
-              exit_th: 0.25
+              impulse_atr_min: 0.8 #
+            sr_fusion:             #
+              enter_th: 0.35       #
+              exit_th: 0.25        # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== end
   price_action_params:
     anti_lookahead: true
     market_structure:
@@ -381,6 +267,129 @@ features:
         extras: 0.2
       strong_entry_threshold: 0.7
       filter_threshold: 0.35
+
+
+
+
+env:
+  download_defaults:        # 
+    symbols:                # Only symbols sed at:
+    - XAUUSD                #        mt5_connector.py / _auto_select_symbols()
+    - EURUSD                # 
+    - GBPUSD                # All of this part used at:
+    - USDJPY                #        mt5_data_loader.py / class MT5DataLoader / __init__
+    - USDCHF                # 
+    - USDCAD                # 
+    - AUDUSD                # 
+    - NZDUSD                # 
+    timeframes:             # 
+    - M1                    # 
+    - M5                    #
+    - M30                   #
+    - H4                    #
+    - D1                    #
+    - W1                    #
+    lookback_bars: 20       # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
+    date_from: 2010-01-01 #  در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+    date_to:   now        # مقدار date_to میتواند NOW یا now هم اختیار کند 
+    range_policy: date      # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
+    batch_size: 50          #
+    save_format: parquet    # csv | parquet
+
+    align_to_session: true
+    data_raw: f02_data/raw               # در path هم کمی متفاوت آورده شده اند 
+    data_processed: f02_data/processed   # در path هم کمی متفاوت آورده شده اند 
+
+
+  base_tf: M5
+  use_ohlc: true
+  use_volume: true
+  use_spread: false
+  reward_mode: pnl
+  observation:
+    resample_to_base_tf: M5
+    clip_values: true
+    clip_range:
+    - -5
+    - 5
+  action_space:
+    type: discrete
+    dim: 3
+    read_from_config: true
+    #discrete_actions: [STEP_-2, STEP_-1, HOLD, STEP_+1, STEP_+2]  # ۵‌سطح سازگار با نگاشت داخلی
+    discrete_actions: [short, hold, long]
+    mapping:
+      levels: [-1, 0, 1]       # ایندکس اکشن ← تغییر جهت/شدت
+      gate_from_flat_requires_extreme: false  # فقط ±2 اجازه ورود مستقیم از حالت فلت
+  reward:
+    type: risk_adjusted_pnl
+    params:
+      dd_penalty: 2.5
+      trade_cost_penalty: 1.0
+  termination:
+    max_episode_steps: 5000
+    stop_on_margin_call: true
+    stop_on_max_drawdown_pct: 0.2
+  window_size: 128
+  normalize: true
+  split:
+    ratios:
+      train: 0.7
+      val: 0.15
+      test: 0.15
+    fixed:
+      train:
+      - '2025-08-21'
+      - '2025-08-25'
+      val:
+      - '2025-08-25'
+      - '2025-08-26'
+      test:
+      - '2025-08-26'
+      - '2099-12-31'
+    align:
+      unit: session
+      tz: America/New_York
+      hhmm: '17:00'
+    warmup:
+      mode: auto
+      margin_bars: 32
+    flat_at_boundary: true
+  features_whitelist:
+  - __rsi_
+  - __macd_
+  - __ema_close_
+  - __atr_
+  - __bb_
+  - __stoch_
+  - __sar_
+  - __supertrend_
+  features_blacklist:
+  - qc_*
+
+  timeframes:
+  - M1
+  - M5
+  - M30
+  - H4
+  - D1
+  - W1
+  n_candles_per_tf: 256
+  n_candles: 256
+  sessions:         ##################
+    asia:                   # This part is used in:
+      start_utc: 00:00      #     data_handler.py / _add_session_flags ()
+      end_utc: 08:00        #
+    london:                 #
+      start_utc: 08:00      #
+      end_utc: '16:00'      #
+    newyork:                #
+      start_utc: '13:00'    #
+      end_utc: '21:00'      #
+
+
+
+
 risk:
   risk_per_trade: 0.01
   max_daily_loss_pct: 0.02
@@ -391,8 +400,8 @@ risk:
     lot_step: 0.01
     max_lot: 10.0
     use_atr_for_sl: true
-    sl_atr_mult: 1.5
-    tp_atr_mult: 2.0
+    sl_atr_mult: 5.5
+    tp_atr_mult: 10.0
     breakeven:
       enabled: true
       at_r_multiple: 1.0
@@ -405,52 +414,10 @@ risk:
     max_open_positions: 1
     max_positions_per_symbol: 1
     cooldown_minutes_after_stop: 15
-evaluation:
-  backtest:
-    commissions_per_lot_usd: 7.0
-    slippage_pips_mean: 2
-    slippage_pips_std: 1
-    reuse_historical_spread: true
-    cross_validation:
-      enabled: true
-      folds: 3
-      method: expanding_window
-      min_trades_per_fold: 30
-  acceptance_gates:
-    sharpe_min: 0.8
-    profit_factor_min: 1.2
-    winrate_min: 0.48
-    max_drawdown_max: 0.12
-    turnover_max_per_day: 80
-    min_trades_total: 200
-executor:
-  live_trading: false
-  order:
-    type: market
-    retry_attempts: 3
-    timeout_sec: 3.0
-    partial_fill_handling: cancel_remaining
-  price_point: 0.1
-  slippage_cap_pips: 3
-  sync_with_env_behaviors: true
-  canary_deployment:
-    enabled: true
-    volume_multiplier: 0.5
-    min_duration_minutes: 60
-    promote_criteria:
-      min_trades: 5
-      min_pnl_usd: 0.0
-      max_dd_live: 0.03
-  rollback:
-    on_breach: true
-  latency_sla_ms: 2000
-  qc:
-    stale_seconds: 8
-    spike_pips: 25
-  mt5_credentials:
-    login: 12345678
-    password: Password
-    server: Server
+# ---------------------------------------------------------
+
+
+
 training:
   total_timesteps: 2000000
   eval_freq_steps: 25000
@@ -530,60 +497,60 @@ training:
         gradient_steps: 1
         action_noise: normal(0.1)
         policy_delay: 2
-monitoring:
-  logging:
-    level: INFO
-    to_console: true
-    to_file: true
-    file_path: logs/bot.log
-    rotate_max_bytes: 10485760
-    rotate_backups: 5
-    jsonl: true
-  alerts:
-    enable_telegram: true
-    telegram:
-      bot_token_env: TELEGRAM_BOT_TOKEN
-      chat_id_env: TELEGRAM_CHAT_ID
-    email:
-      enabled: false
-      smtp_host: ''
-      smtp_user_env: SMTP_USER
-      smtp_pass_env: SMTP_PASS
-      to: []
-  reporting:
-    daily_summary: true
-    weekly_summary: true
-    include_equity_curve: true
-    include_trade_log: true
-safety:
-  hard_kill_switch:
+
+
+
+    
+evaluation:
+  backtest:
+    commissions_per_lot_usd: 7.0
+    slippage_pips_mean: 2
+    slippage_pips_std: 1
+    reuse_historical_spread: true
+    cross_validation:
+      enabled: true
+      folds: 3
+      method: expanding_window
+      min_trades_per_fold: 30
+  acceptance_gates:
+    sharpe_min: 0.8
+    profit_factor_min: 1.2
+    winrate_min: 0.48
+    max_drawdown_max: 0.12
+    turnover_max_per_day: 80
+    min_trades_total: 200
+
+
+
+
+executor:
+  live_trading: false
+  order:
+    type: market
+    retry_attempts: 3
+    timeout_sec: 3.0
+    partial_fill_handling: cancel_remaining
+  price_point: 0.1
+  slippage_cap_pips: 3
+  sync_with_env_behaviors: true
+  canary_deployment:
     enabled: true
-    conditions:
-    - name: max_daily_loss
-      metric: live/daily_loss_pct
-      op: '>='
-      value: 0.03
-    - name: max_drawdown_total
-      metric: live/total_drawdown_pct
-      op: '>='
-      value: 0.2
-    - name: too_many_trades
-      metric: live/trades_per_day
-      op: '>'
-      value: 120
-  news_filter:
-    enabled: true
-    high_impact_freeze_minutes_before: 31
-    high_impact_freeze_minutes_after: 16
-    medium_impact_freeze_minutes_before: 16
-    medium_impact_freeze_minutes_after: 11
-    sources:
-    - forexfactory
-    currencies:
-    - USD
-    - EUR
-    - GBP
-    - JPY
+    volume_multiplier: 0.5
+    min_duration_minutes: 60
+    promote_criteria:
+      min_trades: 5
+      min_pnl_usd: 0.0
+      max_dd_live: 0.03
+  rollback:
+    on_breach: true
+  latency_sla_ms: 2000
+  qc:
+    stale_seconds: 8
+    spike_pips: 25
+
+
+
+
 self_optimize:
   schedule:
     daily_utc: '22:30'
@@ -712,17 +679,91 @@ self_optimize:
     turnover_max_per_day: 80
     min_trades_total: 200
   alerts_on_change: true
+# ---------------------------------------------------------
+
+
+
+monitoring:
+  logging:
+    level: INFO
+    to_console: true
+    to_file: true
+    file_path: logs/bot.log
+    rotate_max_bytes: 10485760
+    rotate_backups: 5
+    jsonl: true
+  alerts:
+    enable_telegram: true
+    telegram:
+      bot_token_env: TELEGRAM_BOT_TOKEN
+      chat_id_env: TELEGRAM_CHAT_ID
+    email:
+      enabled: false
+      smtp_host: ''
+      smtp_user_env: SMTP_USER
+      smtp_pass_env: SMTP_PASS
+      to: []
+  reporting:
+    daily_summary: true
+    weekly_summary: true
+    include_equity_curve: true
+    include_trade_log: true
+
+
+
+
+safety:
+  hard_kill_switch:
+    enabled: true
+    conditions:
+    - name: max_daily_loss
+      metric: live/daily_loss_pct
+      op: '>='
+      value: 0.03
+    - name: max_drawdown_total
+      metric: live/total_drawdown_pct
+      op: '>='
+      value: 0.2
+    - name: too_many_trades
+      metric: live/trades_per_day
+      op: '>'
+      value: 120
+  news_filter:
+    enabled: true
+    high_impact_freeze_minutes_before: 31
+    high_impact_freeze_minutes_after: 16
+    medium_impact_freeze_minutes_before: 16
+    medium_impact_freeze_minutes_after: 11
+    sources:
+    - forexfactory
+    currencies:
+    - USD
+    - EUR
+    - GBP
+    - JPY
+
+
+
+
 cicd:
   enabled: false
   run_unit_tests_on_push: true
   run_backtest_on_main: true
   artifact_retention_days: 30
+
+
+
+
 scripts:
   download_data: scripts/run_download.py
   train: scripts/run_train.py
   backtest: scripts/run_backtest.py
   deploy: scripts/run_deploy.py
   self_optimize: scripts/run_self_optimize.py
+
+
+
+
 secrets:
   use_env: true
   env_keys:
@@ -732,11 +773,15 @@ secrets:
     MT5_PATH: MT5_PATH
     TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN
     TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID
+
+
+
+
 per_symbol_overrides:
   XAUUSD:
     risk:
       risk_per_trade: 0.005
-      sl_atr_mult: 1.8
+      sl_atr_mult: 5
     evaluation:
       acceptance_gates:
         sharpe_min: 0.9

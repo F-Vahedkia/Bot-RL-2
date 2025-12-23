@@ -16,7 +16,7 @@ import time, json
 from pathlib import Path
 
 from f10_utils.config_loader import load_config
-from f03_env.utils import paths_from_cfg
+from f04_env.utils import paths_from_cfg
 # [PROMO:IMPORTS] — unique anchor
 from f08_evaluation.backtest import run_backtest
 

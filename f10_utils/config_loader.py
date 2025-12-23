@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 # f10_utils/config_loader.py
-# Status in (Bot-RL-2): Completed
+# Status in (Bot-RL-2): Reviewed before 1404/09/05
 
 """
-ConfigLoader (نسخهٔ پیشرفته برای Bot-RL-1)
--------------------------------------------
 امکانات (کامل و توسعه‌پذیر):
 - بارگذاری YAML از مسیر پیش‌فرض پروژه یا مسیر دلخواه
 - بارگذاری متغیرهای محیطی از .env (در ریشهٔ پروژه) و اوورراید کلیدها
-- پشتیبانی merge چند-فایلی: top-level keys: `extends` (Baseها) و `overlays` (اوِررایدها)
+- پشتیبانی merge چند-فایلی: top-level keys: `extends` (Base ها) و `overlays` (اوِررایدها)
 - اعتبارسنجی شِمای حداقلی و ارتقایافته (بر اساس Basic_2ok و نیازهای Self-Optimize/Executor)
 - aliasing برای سازگاری نام‌های قدیمی/جدید (مثلاً max_dd_max -> max_drawdown_max)
 - ابزارهای کمکی مسیرها و نسخه‌گذاری: `save_config_versioned(cfg, prefix="prod_")`
-- API: get(key, default), get_all(copy=False), reload(), dump(path), ensure_dirs()
+- API: get_all(copy=False), reload(), dump(path), ensure_dirs()
+-      maybe: get(key, default)
 
 نکته:
 - فقط از کتابخانه‌های استاندارد + PyYAML + python-dotenv استفاده شده.
@@ -26,7 +25,7 @@ import copy
 import yaml
 import logging
 
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, Literal, Optional, Union, List, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
 from dotenv import load_dotenv
@@ -34,10 +33,11 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# ابزارهای کمکی سطح پایین
-# ============================================================
+# ابزارهای کمکی سطح پایین 
+# ============================================================ OK ALL
 # جایگزینِ مقاوم:
 def _project_root() -> Path:
+    """  پوشه ای که دارای زیرپوشه های f01, f10 باشد را به عنوان پوشه ریشه معرفی میکند  """
     here = Path(__file__).resolve()
     for p in [here.parent, *here.parents]:
         if (p / "f01_config").exists() and (p / "f10_utils").exists():
@@ -45,10 +45,7 @@ def _project_root() -> Path:
     return here.parent  # fallback
 
 def _default_config_path() -> Path:
-    """
-    مسیر پیش‌فرض فایل کانفیگ.
-    بنا به درخواست کاربر، از `config.yaml` استفاده می‌کنیم.
-    """
+    """  مسیر پیش‌فرض فایل کانفیگ. """
     return _project_root() / "f01_config" / "config.yaml"
 
 def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False) -> Dict[str, Any]:
@@ -56,8 +53,12 @@ def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False)
     if not p.exists():
         raise FileNotFoundError(f"Config file not found: {p}")
     with p.open("r", encoding="utf-8") as f:
+    #with open(p, "r", encoding="utf-8") as f:     # has no difference with above line
+        # بلوک try سعی می‌کند فایل YAML را بخواند و تبدیل به دیکشنری کند. 
         try:
+            # توسط شرط زیر تعیین میکنیم که روی «تکراری بودن کلیدها» سخت‌گیر باشیم یا نباشیم 
             if fail_on_duplicates:
+                # ----------
                 class _UniqueKeyLoader(yaml.SafeLoader):
                     pass
                 def _construct_mapping(loader, node, deep=False):
@@ -68,21 +69,28 @@ def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False)
                             raise ValueError(f"Duplicate YAML key: {key} in {p}")
                         mapping[key] = loader.construct_object(value_node, deep=deep)
                     return mapping
-                _UniqueKeyLoader.add_constructor(
-                    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping
-                )
+                
+                _UniqueKeyLoader.add_constructor(                     # یعنی این لودر 
+                    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,   # برای دیکشنری ها 
+                    _construct_mapping)                               # از این تابع استفاده کند 
+                # ----------
+                #  خط زیر فایل را میخواند و اگر فایل خالی بود، یک دیکشنری خالی برمیگرداند 
                 data = yaml.load(f, Loader=_UniqueKeyLoader) or {}
             else:
+                # در صورتیکه وجود کلیدهای تکراری مجاز باشند، خط زیر اجرا میشود 
                 data = yaml.safe_load(f) or {}
         except yaml.YAMLError as e:
+            # در صورتی به این نقطه میرسیم که فایل yaml ایراد داشته و خوانده نشود 
             raise ValueError(f"YAML parse error at {p}: {e}")
+    
     if not isinstance(data, dict):
         raise ValueError(f"Root of YAML must be a mapping (dict). Got: {type(data)}")
     return data
 
-
 def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
-    """merge عمیق دیکشنری‌ها با حفظ نوع‌ها و عدم دست‌کاری base."""
+    """merge عمیق دیکشنری‌ها با حفظ نوع‌ها و عدم دست‌کاری base.
+    _deep_merge(low importance dict, high importance dict)
+    """
     if not isinstance(base, dict) or not isinstance(overlay, dict):
         return copy.deepcopy(overlay)
     out = copy.deepcopy(base)
@@ -94,25 +102,24 @@ def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]
     return out
 
 def _ensure_dir(d: Union[str, Path]) -> Path:
-    p = Path(d)
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    p = Path(d)           # تبدیل نمودن d به یک شیء path و ذخیره آن در p 
+    p.mkdir(parents=True, exist_ok=True) # در مسیر شیء path پوشه را همراه با والدینش میسازد 
+                                         # اگر پوشه مزبور موجود بود، خطا نمیگیرد 
+    return p   # در نهایت همان شیء Path را (که حالا مطمئنیم پوشه‌اش روی دیسک وجود دارد) برمی‌گرداند. 
 
 def _now_utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 # ============================================================
 # ConfigLoader
-# ============================================================
+# ============================================================ OK ALL
 class ConfigLoader:
-    """
-    لودر کانفیگ پروژه با امکانات Merge/ENV/Validation/Versioning.
-    """
+    """   لودر کانفیگ پروژه با امکانات Merge/ENV/Validation/Versioning.  """
     def __init__(self,
                  config_path: Optional[Union[str, Path]] = None,
                  env_prefix: str = "BOT_",
                  enable_env_override: bool = True,
-                 validate_mode: str = "warn",
+                 validate_mode: str = "warn",     # "warn" or "strict"
                  allow_extensions: bool = True):
         """
         config_path: مسیر YAML. اگر None باشد از f01_config/config.yaml استفاده می‌شود.
@@ -135,38 +142,54 @@ class ConfigLoader:
 
         self.validate_mode: str = str(validate_mode).lower()
         self.allow_extensions: bool = bool(allow_extensions)
-        self._fail_on_dupe_keys: bool = (self.validate_mode == "strict")
+        self._fail_on_dupe_keys: bool = (self.validate_mode == "warn")  #>>>     !=
 
         self.config: Dict[str, Any] = {}
+        # بارگذاری اولیه کانفیگ 
         self.reload()
 
     # ---------- بارگذاری اولیه با merge لایه‌ای ----------
     def _load_yaml_layered(self) -> Dict[str, Any]:
         """
-        YAML اصلی را می‌خواند و اگر کلیدهای top-level زیر وجود داشت ادغام می‌کند:
+        config.yaml اصلی را می‌خواند و اگر کلیدهای top-level زیر وجود داشت ادغام می‌کند:
           - extends: list[str]  → به ترتیب خوانده و به‌عنوان Base merge می‌کند (اولی کم‌اهمیت‌تر)
           - overlays: list[str] → در انتها روی نتیجه merge می‌کند (بالاترین اولویت)
         مسیرها می‌توانند نسبی به ریشهٔ پروژه یا مطلق باشند.
         """
+        
+        # خواندن کانفیگ و ذخیره آن در یک دیکشنری به نام root_cfg 
         root_cfg = _read_yaml_file(self.config_path, fail_on_duplicates=self._fail_on_dupe_keys)
 
+        """ Absolute path
+        یک مسیر مانند p را به مسیر مطلق تبدیل نموده و برمی گرداند
+        """
         def _resolve(p: str) -> Path:
             pp = Path(p)
             return pp if pp.is_absolute() else (self.base_dir / pp)
 
-        # extends / bases
+        """ extends / bases
+        اگر در کانفیگ بنویسی:
+        extends:
+          - f01_config/base_common.yaml
+          - f01_config/base_live.yaml
+         یا به‌جای extends از bases استفاده کنی،
+این لیست‌ها به‌عنوان فایل‌های Base خوانده می‌شوند و با _deep_merge روی هم merge می‌شوند.         
+        extends و bases کلیدهای اختیاری top-level هستند برای لایه‌بندی کانفیگ.
+        این لایه، ضعیف ترین لایه است.
+        """
         merged: Dict[str, Any] = {}
         for section in ("extends", "bases"):
             files = root_cfg.get(section, []) or []
             if not isinstance(files, list):
                 raise ValueError(f"'{section}' must be a list of file paths.")
             for f in files:
+                # _deep_merge(low importance dict, high importance dict)
                 merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
 
-        # سپس YAML اصلی را روی Base بنشانیم
+        # سپس تمام بخشهای config.yaml اصلی، غیر از extends و bases و overlays را روی bases, extends بنشانیم 
         merged = _deep_merge(merged, {k: v for k, v in root_cfg.items() if k not in ("extends", "bases", "overlays")})
 
-        # overlays
+        # overlays روی همه قبلی ها نوشته میشود و قویترین لایه است 
         overlays = root_cfg.get("overlays", []) or []
         if not isinstance(overlays, list):
             raise ValueError("'overlays' must be a list of file paths.")
@@ -177,18 +200,24 @@ class ConfigLoader:
 
     # ---------- ENV name helper ----------
     def _env_name_for_path(self, path: Iterable[str]) -> str:
-        # مثال مسیر: ["mt5_credentials","login"] -> BOT_MT5_CREDENTIALS_LOGIN
+        """ «اسم متغیر محیطی برای این مسیر» 
+        env = مخفف environment variable
+       در اینجا منظور از path عبارت است از (مسیرِ کلیدها داخل ساختار کانفیگ) 
+        مثال مسیر: ["mt5_credentials","login"] -> BOT_MT5_CREDENTIALS_LOGIN
+        """
         return f"{self.env_prefix}{'_'.join(p.upper() for p in path)}"
 
     # ---------- casting ----------
     def _cast_env_value(self, val_str: str, original_value: Any):
         """
+        env = مخفف environment variable
         تلاش برای تبدیل مقدار ENV به نوع مناسب:
         - "true"/"false" → bool
         - int/float
-        - لیست comma-separated
-        - در غیر اینصورت string
+        - comma-separated list
+        - otherwise: string
         """
+        # bool
         s = (val_str or "").strip()
         if s.lower() in ("true", "false"):
             return s.lower() == "true"
@@ -210,36 +239,40 @@ class ConfigLoader:
     # ---------- اعمال ENV ----------
     def _apply_env_overrides(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
         """
+        این تابع کل کانفیگ را می‌گردد و هر جا برای یک مسیر، متغیر محیطی متناظر پیدا کند،
+        مقدار کانفیگ را با مقدار ENV (بعد از cast) جایگزین می‌کند.
+
         برای هر برگ از ساختار cfg، اگر ENV متناظر وجود داشته باشد، مقدار override می‌شود.
         جستجو با دو نام انجام می‌شود: با پیشوند (BOT_...) و بدون پیشوند (برای راحتی).
         """
-        def recurse(node, path):
+        def recurse(path, node):
             if isinstance(node, dict):
-                return {k: recurse(v, path + [k]) for k, v in node.items()}
+                return {k: recurse(path + [k], v) for k, v in node.items()}
             if not self.enable_env_override:
                 return node
-            # با پیشوند
+            # os ماژول استاندارد سیستم‌عامل پایتون است :آموزشی 
+            # ------ با پیشوند ------ 
             env_name = self._env_name_for_path(path)
-            env_val = os.getenv(env_name)
+            env_val = os.getenv(env_name) #از متغیرهای محیطی سیستم، مقدار متغیری به نام env_name را بخوان 
             if env_val is not None:
                 try:
-                    casted = self._cast_env_value(env_val, node)
+                    casted = self._cast_env_value(env_val, node)  #برای این مسیر، مقدار جدید این است 
                     logger.debug("ENV override %s (%s) = %r", ".".join(path), env_name, casted)
                     return casted
                 except Exception:
                     logger.exception("Failed to cast env var %s", env_name)
-                    return node
-            # بدون پیشوند
+                    return node  # اگر مقدار جدید که در فضای حافظه است، قابل cast نبود، همان مقدار node قدیم برمیگردد 
+            # ------ بدون پیشوند ------ 
             env_no_prefix = "_".join(p.upper() for p in path)
             env_val2 = os.getenv(env_no_prefix)
             if env_val2 is not None:
                 try:
-                    return self._cast_env_value(env_val2, node)
+                    return self._cast_env_value(env_val2, node)  #برای این مسیر، مقدار جدید این است 
                 except Exception:
-                    return node
-            return node
+                    return node  # اگر مقدار جدید که در فضای حافظه است، قابل cast نبود، همان مقدار node قدیم برمیگردد 
+            return node  #اگر در حافظه، مقدار جدیدی برای آن path وجود نداشت، همان مقدار node قدیم برمیگردد 
 
-        return recurse(cfg, [])
+        return recurse([], cfg)
 
     # ---------- سازگاری نام کلیدها (Aliases) ----------
     def _apply_compatibility_aliases(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -247,9 +280,9 @@ class ConfigLoader:
         نگاشت برخی نام‌های قدیمی به جدید برای جلوگیری از ناسازگاری.
         مثال‌ها:
           - evaluation.acceptance_gates.max_dd_max  →  max_drawdown_max
-          - executor.canary.volume_mult            →  executor.canary_deployment.volume_multiplier
-          - executor.slippage_max_pips             →  executor.slippage_cap_pips
-          - training.total_steps                   →  training.total_timesteps
+          - executor.canary.volume_mult             →  executor.canary_deployment.volume_multiplier
+          - executor.slippage_max_pips              →  executor.slippage_cap_pips
+          - training.total_steps                    →  training.total_timesteps
         """
         out = copy.deepcopy(cfg)
         try:
@@ -298,17 +331,21 @@ class ConfigLoader:
         # --- حالت ولیدیشن و لیست کلیدهای مجاز سطح-۱ ---
         # توضیح:
         # این پچ هیچ کلید جدیدی به کانفیگ اضافه نمی‌کند؛ فقط ولیدیشن و حالت‌ها را پیاده می‌کند.
-        # حالت پیش‌فرض warn است و با strict، هم «کلید ناشناخته» و هم «کلید تکراری YAML» خطا می‌شود.ب
+        # حالت پیش‌فرض warn است و با strict، هم «کلید ناشناخته» و هم «کلید تکراری YAML» خطا می‌شود.
         mode = getattr(self, "validate_mode", "warn")
         def _warn(msg: str) -> None:
             if mode == "warn":
                 logger.warning("Config validation warning: %s", msg)
 
         allowed_top = {
-            "version","project","paths","overlays","env","features","risk","evaluation",
-            "executor","training","monitoring","safety","self_optimize","cicd","scripts",
-            "secrets","per_symbol_overrides","extensions",
-            "account_currency","symbol_specs"
+            "version", "project",
+            "extends", "bases", "overlays",
+            "paths", "connection", "features", "env", "risk",
+            "training", "evaluation", "executor", "self_optimize",
+            "monitoring", "safety", "cicd", "scripts", "secrets", "per_symbol_overrides",
+            
+            "account_currency", "symbol_specs",   # for symbol_specs.yaml
+            "extensions",                         # for custom extensions
         }
         # کلیدهای ناشناختهٔ سطح-۱
         unknown = [k for k in cfg.keys() if k not in allowed_top and k not in ("extends","bases")]
@@ -432,56 +469,102 @@ class ConfigLoader:
         YAML لایه‌ای را بارگذاری می‌کند → aliasing → اوورراید ENV → اعتبارسنجی → ست به self.config
         """
         raw = self._load_yaml_layered()
-        raw = self._apply_compatibility_aliases(raw)  # max_dd_max → max_drawdown_max + aliasهای دیگر
+        # اعمال نگاشت نام‌های قدیمی به جدید 
+        # raw = self._apply_compatibility_aliases(raw)   
         cfg = self._apply_env_overrides(raw)
         self._validate(cfg)
         self.config = cfg
         logger.info("Config loaded: %s (env prefix=%s)", self.config_path, self.env_prefix)
 
     # ---------- API عمومی ----------
-    def get(self, key: str, default: Any = None) -> Any:
-        """دسترسی سریع به کلیدهای سطح-اول، مثلاً get('paths')."""
-        return self.config.get(key, default)
+    #def get(self, key: str, default: Any = None) -> Any:
+        """دسترسی سریع به کلیدهای سطح-اول، مثلاً get('paths').
+        به نظر میرسد هنوز در پروژه اصلی استفاده نشده است.
+        """
+    #    return self.config.get(key, default)
 
-    def get_all(self, copy_: bool = False) -> Dict[str, Any]:
+    def get_all_old(self, copy_: bool = False) -> Dict[str, Any]:
         """بازگردانی کل کانفیگ؛ با copy_=True یک کپی سطحی برمی‌گرداند."""
         return dict(self.config) if copy_ else self.config
-
+    
+    def get_all(self, copy_: Literal["main", "shallow", "mutable-safe", "deep"] = "shallow") -> Dict[str, Any]:
+        """
+        بازگردانی کل کانفیگ
+        کانفیگ اصلی برگردانده میشود         :main
+        کپی مستقل از کلیدهای سطح اول، اصل کلیدهای سطح دوم و به بعد، برگردانده میشود      :shallow
+        کلیدها و زیرکلیدهای حساس بصورت کپی مستقل و الباقی کلیدها بصورت اصلی برگردانده میشود :mutable-safe
+        تمام کانفیگ بصورت کپی مستقل برگردانده میشود         :deep
+        """
+        if copy_ == "main":
+            return self.config
+        elif copy_ == "shallow":
+            return dict(self.config)
+        elif copy_ == "mutable-safe":
+            out = dict(self.config)  # shallow copy for top-level
+            # بلوک‌های حساس که نباید shared باشند:
+            sensitive_blocks = [
+                "evaluation",
+                "risk",
+                "executor",
+                "training",
+                "self_optimize",
+                "paths",
+                "symbol_specs",
+                "features"
+            ]
+            for key in sensitive_blocks:
+                if key in out:
+                    out[key] = copy.deepcopy(out[key])  # copy safe subtree
+            return out
+        elif copy_ == "deep":
+            return copy.deepcopy(self.config)
+        else:  # در صورت عدم وجود هر چهار کلید، کپی سطحی برگردانده میشود. 
+            return dict(self.config)
+        
     # ---------- ابزارها ----------
     def ensure_dirs(self) -> Dict[str, Path]:
         """
         ساخت دایرکتوری‌های مهم در صورت نبودن‌شان. مسیرهای ساخته‌شده را برمی‌گرداند.
+        از این متد هنوز در پروژه اصلی استفاده نشده است و در صورت استفاده میتوان به آن اصلاحاتی اعمال نمود.
         """
         made: Dict[str, Path] = {}
         paths = self.config.get("paths") or {}
-        for key in ("logs_dir", "reports_dir", "cache_dir", "models_dir", "config_versions_dir", "tmp_dir"):
+        for key in ("config_versions_dir", "cache_dir", "models_dir", "logs_dir", "reports_dir", "tmp_dir"):
             p = paths.get(key)
             if p:
                 made[key] = _ensure_dir(self.base_dir / p)
         return made
 
     def dump(self, path: Union[str, Path], *, sort_keys: bool = False) -> Path:
-        """نوشتن self.config به فایل YAML (برای خروجی‌های موقت/دیباگ)."""
+        """نوشتن self.config به فایل YAML (برای خروجی‌های موقت/دیباگ).
+        به نظر میرسد هنوز در پروژه اصلی استفاده نشده است.
+        """
         p = Path(path)
-        _ensure_dir(p.parent)
+        _ensure_dir(p.parent)   # مطمئن شدن از وجود پوشه والد 
         with p.open("w", encoding="utf-8") as f:
             yaml.safe_dump(self.config, f, allow_unicode=True, sort_keys=sort_keys)
         return p
 
 # ============================================================
-# توابع سطح ماژول (سازگاری/نسخه‌گذاری)
-# ============================================================
+# توابع سطح ماژول (سازگاری/نسخه‌گذاری) 
+# ============================================================ OK ALL
+# میتوان برای تابع زیر در صورت لزوم پارامتر copy_ را اضافه نمود : Future 
 def load_config(path: Optional[Union[str, Path]] = None,
                 env_prefix: str = "BOT_",
-                enable_env_override: bool = True) -> Dict[str, Any]:
+                enable_env_override: bool = True,
+                copy_: Literal["main", "shallow", "mutable-safe", "deep"] = "shallow"
+                ) -> Dict[str, Any]:
     """
-    کمک‌کاربر برای بارگذاری سریع: برمی‌گرداند dict کانفیگ.
+    کمک‌کاربر برای بارگذاری سریع: dict کانفیگ  برمی‌گرداند.
     اگر path ندهید، از مسیر پیش‌فرض (config.yaml) استفاده می‌شود.
     """
     loader = ConfigLoader(config_path=path, env_prefix=env_prefix, enable_env_override=enable_env_override)
-    return loader.get_all(copy_=True)
+    return loader.get_all(copy_= copy_)
 
 def _infer_versions_dir(cfg: Dict[str, Any]) -> Path:
+    """
+    این تابع مسیر فایلهای خروجی برای تابع save_config_versioned را تعیین میکند و برمیگرداند
+    """
     paths = cfg.get("paths") or {}
     base = _project_root()
     versions = paths.get("config_versions_dir") or "f01_config/versions"
@@ -512,11 +595,70 @@ def save_config_versioned(cfg: Dict[str, Any],
     return out_path
 
 # ============================================================
-# نمونهٔ آماده برای import سریع
-# ============================================================
+# نمونهٔ آماده برای import سریع 
+# ============================================================ OK ALL
 try:
-    config: Dict[str, Any] = ConfigLoader().get_all(copy_=True)
+    config: Dict[str, Any] = ConfigLoader().get_all(copy_="shallow")
 except Exception:
     # در صورت خطا، یک dict خالی ارائه می‌کنیم تا importهای قدیمی از کار نیفتند.
     logger.exception("Autoload of ConfigLoader failed; `config` set to {}.")
     config = {}
+
+# ============================================================
+# تست پوشش کد (برای توسعه‌دهندگان) 
+# ============================================================
+""" Func Names                                                Used in Functions: ...
+                                  1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21
+1  _project_root                 --  ok  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
+2  _default_config_path          --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+3  _read_yaml_file               --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
+4  _deep_merge                   --  --  --  ok  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
+5  _ensure_dir                   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  ok
+6  _now_utc_stamp                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
+7  __init__                      --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+8  _load_yaml_layered            --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
+9  _env_name_for_path            --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
+10 _cast_env_value               --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
+11 _apply_env_overrides          --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
+12 _apply_compatibility_aliases  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
+13 _validate                     --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  ok
+14 reload                        --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+15 get                 (DELETED) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+16 get_all                       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+17 ensure_dirs    (EXTERNAL USE) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+18 dump           (EXTERNAL USE) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+19 load_config    (EXTERNAL USE) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+20 _infer_versions_dir           --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
+21 save_config_versioned(Ex Use) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+"""
+
+# ============================================================
+# Methode of Use
+# ============================================================
+""" 
+--- 1. Using ConfigLoader class -----------------
+
+from config_loader import ConfigLoader
+cfg = ConfigLoader().config
+# or
+from config_loader import ConfigLoader
+cfg = ConfigLoader().get_all(copy_="shallow" | "deep" | "main" | "mutable-safe")
+
+--- 2. Using load_config function ---------------
+
+from config_loader import load_config
+cfg = load_config(path="f01_config/config.yaml", env_prefix="myBOT_",
+                  enable_env_override=True, copy_="shallow")
+# or
+cfg = load_config()  # uses default path and settings
+# or
+cfg = load_config(copy_="deep")  # deep copy of the config
+# or
+cfg = load_config(env_prefix="MYAPP_")  # custom env prefix
+# or
+cfg = load_config(enable_env_override=False)  # disable env overrides
+# or
+cfg = load_config(path="custom_config.yaml")  # custom config path
+# or
+cfg = load_config("f01_config/config.yaml", "myBOT_", True, "mutable-safe")
+"""

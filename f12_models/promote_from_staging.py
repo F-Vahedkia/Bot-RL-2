@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Tuple
 
 from f10_utils.config_loader import load_config, save_config_versioned
-from f03_env.utils import paths_from_cfg, split_summary_path
+from f04_env.utils import paths_from_cfg, split_summary_path
 from f08_evaluation.backtest import run_backtest
 
 logger = logging.getLogger("promote")

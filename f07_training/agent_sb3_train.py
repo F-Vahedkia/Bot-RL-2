@@ -9,21 +9,22 @@ import numpy as np
 import argparse, logging, time, json
 from pathlib import Path
 from typing import Dict, Any, Optional
+from stable_baselines3.common.monitor import Monitor  # برای eval
 
 try:
     from f10_utils.config_loader import load_config
-    from f03_env.trading_env import TradingEnv, EnvConfig
-    from f03_env.utils import paths_from_cfg
+    from f04_env.trading_env import TradingEnv, EnvConfig
+    from f04_env.utils import paths_from_cfg
     from f08_evaluation.backtest import transform_obs
 except ModuleNotFoundError:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from f10_utils.config_loader import load_config
-    from f03_env.trading_env import TradingEnv, EnvConfig
-    from f03_env.utils import paths_from_cfg
+    from f04_env.trading_env import TradingEnv, EnvConfig
+    from f04_env.utils import paths_from_cfg
     from f08_evaluation.backtest import transform_obs
 
-from f03_env.utils import paths_from_cfg, resolve_spread_selection
+from f04_env.utils import paths_from_cfg, resolve_spread_selection
 
 try:
     import gymnasium as gym
@@ -37,7 +38,7 @@ from stable_baselines3.common.callbacks import (
     # StopTrainingOnNoModelImprovement,
     BaseCallback
 )
-from stable_baselines3.common.monitor import Monitor  # برای eval
+#from f03_features.feature_store import ensure_published_from_cfg
 
 logger = logging.getLogger("sb3_train")
 logging.basicConfig(
@@ -329,6 +330,16 @@ def main() -> int:
     window = int(args.window or env_block.get("window_size", 128))
     normalize = bool(args.normalize or env_block.get("normalize", False))
 
+    # [AUTO-PUBLISH] ساخت/تزریق فیچرها به processed بر اساس cfg قبل از ساخت Env
+    """
+    try:
+        added_cols = ensure_published_from_cfg(cfg, symbol, base_tf)
+        logger.info("Auto-publish features into processed done: %d columns.", added_cols)
+    except Exception as e:
+        logger.warning("Auto-publish skipped: %s", e)
+    """
+    # [AUTO-PUBLISH] --- end
+
     env_cfg = EnvConfig(
         symbol=symbol, base_tf=base_tf,
         window_size=window, reward_mode=(env_block.get("reward_mode") or "pnl"),
@@ -399,7 +410,7 @@ def main() -> int:
     # --- enda1
 
     # silence env logs
-    logging.getLogger("f03_env.trading_env").setLevel(logging.WARNING)
+    logging.getLogger("f04_env.trading_env").setLevel(logging.WARNING)
 
     logger.info(
         "Start training: alg=%s policy=%s total_ts=%d eval_freq=%d window=%d normalize=%s",
@@ -453,8 +464,10 @@ def main() -> int:
         name_prefix=f"{alg_name.lower()}_{symbol}_{base_tf}"
     )
 
+    logger.info("SB3 | starting learn(total_timesteps=%d)", int(total_ts))
     model.learn(total_timesteps=total_ts, callback=[eval_cb, ckpt_cb])
-
+    logger.info("SB3 | learn() finished")
+    
     ts = time.strftime("%Y%m%d_%H%M%S")
     out = staging / f"{alg_name}_{symbol}_{base_tf}_{ts}.zip"
     model.save(str(out))

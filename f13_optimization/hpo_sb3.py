@@ -25,7 +25,7 @@ from typing import Any, Dict, Optional, Tuple
 
 # --- Project imports (مطابق ساختار موجود) ---
 from f10_utils.config_loader import load_config
-from f03_env.utils import paths_from_cfg
+from f04_env.utils import paths_from_cfg
 from f08_evaluation.backtest import run_backtest  # in-process API  ← الزامی است
 from f13_optimization.hparam_search import _sample_space, _extract_objective  # استفاده از نمونه‌گیر موجود
 

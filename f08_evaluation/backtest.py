@@ -17,8 +17,8 @@ from pathlib import Path
 import numpy as np
 
 from f10_utils.config_loader import load_config
-from f03_env.trading_env import TradingEnv, EnvConfig
-from f03_env.utils import paths_from_cfg, resolve_spread_selection
+from f04_env.trading_env import TradingEnv, EnvConfig
+from f04_env.utils import paths_from_cfg, resolve_spread_selection
 try:
     from f07_training.agent_sb3 import load_sb3 as _load_sb3
 except Exception:
