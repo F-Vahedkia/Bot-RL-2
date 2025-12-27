@@ -8,14 +8,17 @@
 # Imports & Logger
 #==============================================================================
 from __future__ import annotations
-from typing import List, Sequence, Dict, Optional, Tuple
-# from unittest import result
 import numpy as np
-from numba import njit
 import pandas as pd
-from datetime import datetime
-import logging
+import matplotlib.pyplot as plt
 
+from datetime import datetime
+from typing import List, Sequence, Dict, Optional, Tuple, Any
+from numba import njit
+from .core import atr
+from .zigzag import zigzag as zig
+
+import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -44,79 +47,80 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
         s3.astype("float32")
 
 """ --------------------------------------------------------------------------- OK Func2
-Speed=
-فراکتال ساده برای استفاده در توابع sr_distance, fibo_levels
-قرارداد خروجی:
-- 1.0  → فرکتال تأییدشده
-- 0.0  → قطعاً فرکتال نیست
-- NaN  → هنوز قابل قضاوت نیست (warm-up یا ناحیهٔ look-ahead)
+Speed=OK
+with two logical branches for small and large data sets
 """
 def fractal_points(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Series, pd.Series]:
-    window = 2*k + 1
-    hh = (high.rolling(window, center=True, min_periods=window)
-              .apply(lambda x: float(np.argmax(x) == k), raw=True)
-         )
-    ll = (low.rolling(window, center=True, min_periods=window)
-              .apply(lambda x: float(np.argmin(x) == k), raw=True)
-         )
-    # حذف صریح کندل‌های ابتدایی و انتهایی که هنوز آینده یا گذشته را ندارند
-    if k > 0:
-        hh.iloc[ :k] = np.nan
-        hh.iloc[-k:] = np.nan
-        ll.iloc[ :k] = np.nan
-        ll.iloc[-k:] = np.nan
-    return hh.astype("float32"), ll.astype("float32")
-
-""" ---------------------------------------------------------------------------
-
-"""
-def fractal_points_numba(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Series, pd.Series]:
-    """
-    Compute simple fractals (high/low) using a rolling window.
-    Numba JIT optimized for speed.
+    if len(high) < 200_000:   
+        """ --- برای داده‌های کوچک‌تر از 200000، نسخه قدیمی سریع‌تر است
+        Compute simple fractals (high/low) using a rolling window [i-k : i+k+1].
+        فراکتال ساده برای استفاده در توابع sr_distance, fibo_levels
+        قرارداد خروجی:
+        - 1.0  → فرکتال تأییدشده
+        - 0.0  → قطعاً فرکتال نیست
+        - NaN  → هنوز قابل قضاوت نیست (warm-up یا ناحیهٔ look-ahead)
+        """
+        window = 2*k + 1
+        hh = (high.rolling(window, center=True, min_periods=window)
+                .apply(lambda x: float(np.argmax(x) == k), raw=True)
+            )
+        ll = (low.rolling(window, center=True, min_periods=window)
+                .apply(lambda x: float(np.argmin(x) == k), raw=True)
+            )
+        # حذف صریح کندل‌های ابتدایی و انتهایی که هنوز آینده یا گذشته را ندارند
+        if k > 0:
+            hh.iloc[ :k] = np.nan
+            hh.iloc[-k:] = np.nan
+            ll.iloc[ :k] = np.nan
+            ll.iloc[-k:] = np.nan
+        return hh.astype("float32"), ll.astype("float32")
     
-    Parameters
-    ----------
-    high : pd.Series
-        High prices
-    low : pd.Series
-        Low prices
-    k : int, default=2
-        Fractal window size (total window = 2k+1)
-    
-    Returns
-    -------
-    tuple[pd.Series, pd.Series]
-        hh, ll: fractal highs and lows as float32 Series
-    """
+    else:
+        """ --- برای داده‌های بزرگ‌تر از 200000، نسخه Numba سریع‌تر است
+        Speed=FAST (Numba JIT)
+        Compute simple fractals (high/low) using a rolling window [i-k : i+k+1].
+        Numba JIT optimized for speed.
+        
+        Parameters
+        ----------
+        high : pd.Series
+            High prices
+        low : pd.Series
+            Low prices
+        k : int, default=2
+            Fractal window size (total window = 2k+1)
+        
+        Returns
+        -------
+        tuple[pd.Series, pd.Series]
+            hh, ll: fractal highs and lows as float32 Series
+        """
+        high_vals = high.values.astype(np.float32)
+        low_vals = low.values.astype(np.float32)
+        n = len(high_vals)
 
-    window = 2*k + 1
-    high_vals = high.values.astype(np.float32)
-    low_vals = low.values.astype(np.float32)
-    n = len(high_vals)
+        # Preallocate output
+        hh_arr = np.full(n, np.nan, dtype=np.float32)
+        ll_arr = np.full(n, np.nan, dtype=np.float32)
 
-    # Preallocate output
-    hh_arr = np.full(n, np.nan, dtype=np.float32)
-    ll_arr = np.full(n, np.nan, dtype=np.float32)
+        # Numba-optimized inner loop
+        @njit
+        def compute_fractals(h_vals, l_vals, hh_out, ll_out, k, n):
+            for i in range(k, n-k):
+                h_window = h_vals[i-k:i+k+1]
+                l_window = l_vals[i-k:i+k+1]
 
-    # Numba-optimized inner loop
-    @njit
-    def compute_fractals(h_vals, l_vals, hh_out, ll_out, k, n, window):
-        for i in range(k, n-k):
-            h_window = h_vals[i-k:i+k+1]
-            l_window = l_vals[i-k:i+k+1]
-            if np.argmax(h_window) == k:
-                hh_out[i] = 1.0
-            if np.argmin(l_window) == k:
-                ll_out[i] = 1.0
-        return hh_out, ll_out
+                hh_out[i] = 1.0 if np.argmax(h_window) == k else 0.0
+                ll_out[i] = 1.0 if np.argmin(l_window) == k else 0.0
+            return hh_out, ll_out
 
-    hh_arr, ll_arr = compute_fractals(high_vals, low_vals, hh_arr, ll_arr, k, n, window)
+        hh_arr, ll_arr = compute_fractals(high_vals, low_vals, hh_arr, ll_arr, k, n)
 
-    return pd.Series(hh_arr, index=high.index), pd.Series(ll_arr, index=low.index)
+        return pd.Series(hh_arr, index=high.index), pd.Series(ll_arr, index=low.index)
 
-
-""" --------------------------------------------------------------------------- OK Func3
+""" --------------------------------------------------------------------------- OK Func3 (Not Used)
+Speed=Slow
+Logic=OK
 فاصله قیمتی تا اخیرترین سطح حمایت/مقاومت
 این تابع برای هر قیمت بسته شدن، قیمتهای اخیرترین لگ را بدست می‌آورد
 """
@@ -131,19 +135,78 @@ def sr_distance(close: pd.Series,
     res = pd.Series(index=idx, dtype="float32")    # resistance
     sup = pd.Series(index=idx, dtype="float32")    # support
     for i in range(len(idx)):
-        lo = max(0, i - lookback)                  # نگاه به گذشته و ساخت حد پایین بازه مورد نظر
-        new_hh = hh.iloc[lo:i].astype(bool)        # ساخت فیلتر بولی در بازه موردنظر
-        new_ll = ll.iloc[lo:i].astype(bool)        # ساخت فیلتر بولی در بازه موردنظر
-        prev_h = high.iloc[lo:i][new_hh]           # فراکتال‌های بالا در بازه موردنظر
-        prev_l =  low.iloc[lo:i][new_ll]           # فراکتال‌های پایین در بازه موردنظر
+        lo = max(0, i - lookback)               # نگاه به گذشته و ساخت حد پایین بازه مورد نظر
+        new_hh = (hh.iloc[lo:i] == 1)           # ساخت فیلتر بولی در بازه موردنظر
+        new_ll = (ll.iloc[lo:i] == 1)           # ساخت فیلتر بولی در بازه موردنظر
+        prev_h = high.iloc[lo:i][new_hh]        # فراکتال‌های بالا در بازه موردنظر
+        prev_l =  low.iloc[lo:i][new_ll]        # فراکتال‌های پایین در بازه موردنظر
 
-        r = (prev_h.iloc[-1] - close.iloc[i]) if len(prev_h) else np.nan # اختلاف کلوز با آخرین فراکتال بالا
-        s = (close.iloc[i] - prev_l.iloc[-1]) if len(prev_l) else np.nan # اختلاف کلوز با آخرین فراکتال پایین
+        # Guard: ensure close time is after last fractal
+        if len(prev_h) and len(prev_l) and \
+            idx[i] > prev_h.index[-1] and \
+            idx[i] > prev_l.index[-1]:
+            r = prev_h.iloc[-1] - close.iloc[i]
+            s = close.iloc[i] - prev_l.iloc[-1]
+        else:
+            r = np.nan
+            s = np.nan
+        
         res.iloc[i] = np.float32(r) if pd.notna(r) else np.nan # ذخیره در سری خروجی
         sup.iloc[i] = np.float32(s) if pd.notna(s) else np.nan # ذخیره در سری خروجی
-    return res, sup
+    return  pd.Series(res, index=close.index, dtype="float32"), \
+            pd.Series(sup, index=close.index, dtype="float32")
 
-""" --------------------------------------------------------------------------- OK Func4
+""" --------------------------------------------------------------------------- OK Func3
+Speed=FAST (Numba JIT)
+"""
+def sr_distance_numba(
+    close: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    k: int = 2,
+    lookback: int = 500
+) -> Tuple[pd.Series, pd.Series]:
+
+    # --- fractals (numba version assumed correct) ---
+    hh, ll = fractal_points(high, low, k)
+
+    close_v = close.values.astype(np.float32)
+    high_v  = high.values.astype(np.float32)
+    low_v   = low.values.astype(np.float32)
+    hh_v    = hh.values
+    ll_v    = ll.values
+
+    n = len(close_v)
+    res_v = np.full(n, np.nan, dtype=np.float32)
+    sup_v = np.full(n, np.nan, dtype=np.float32)
+
+    @njit
+    def compute_sr(close_v, high_v, low_v, hh_v, ll_v, res_v, sup_v, n, lookback):
+        for i in range(n):
+            lo = i - lookback
+            if lo < 0:
+                lo = 0
+
+            last_h = np.nan
+            last_l = np.nan
+
+            # scan backward (bounded)
+            for j in range(i - 1, lo - 1, -1):
+                if hh_v[j] == 1.0:
+                    last_h = high_v[j]
+                if ll_v[j] == 1.0:
+                    last_l = low_v[j]
+                if not np.isnan(last_h) and not np.isnan(last_l):
+                    res_v[i] = last_h - close_v[i]
+                    sup_v[i] = close_v[i] - last_l
+                    break
+
+    compute_sr(close_v, high_v, low_v, hh_v, ll_v, res_v, sup_v, n, lookback)
+
+    return  pd.Series(res_v, index=close.index, dtype="float32"), \
+            pd.Series(sup_v, index=close.index, dtype="float32")
+    
+""" --------------------------------------------------------------------------- OK Func4 (Not Used)
 speed=SLOW
     تولید سطوح فیبوناچی به صورت دیکشنری {ratio: level}.
 
@@ -173,8 +236,10 @@ def fibo_levels_slow(close: pd.Series,
 
     for i in range(len(close)):
         lo = max(k, i - lookback)
-        h_fractals = high.iloc[lo:i][hh.iloc[lo:i].astype(bool)]   # آخرین fractal high ها
-        l_fractals =  low.iloc[lo:i][ll.iloc[lo:i].astype(bool)]   # آخرین fractal low ها
+        new_hh = (hh.iloc[lo:i] == 1)
+        new_ll = (ll.iloc[lo:i] == 1)
+        h_fractals = high.iloc[lo:i][new_hh]   # آخرین fractal high ها
+        l_fractals =  low.iloc[lo:i][new_ll]   # آخرین fractal low ها
 
         if (i < k) or h_fractals.empty or l_fractals.empty:
             continue
@@ -198,8 +263,7 @@ def fibo_levels_slow(close: pd.Series,
                 out.iat[i, cols.index(f"fibo_{r}")] = float(last_low + r * rng)
     return out
 
-
-""" --------------------------------------------------------------------------- OK Func4 (Fast=MAIN)
+""" --------------------------------------------------------------------------- OK Func4
 speed=OK
     Compute Fibonacci retracement levels based on the most recent completed swing
     defined by fractal highs and lows, optimized for performance using NumPy
@@ -257,9 +321,6 @@ def fibo_levels(
     lookback: int = 500,
 ) -> pd.DataFrame:
 
-    import numpy as np
-    import pandas as pd
-
     # --- Fibonacci ratios as numpy array ---
     if cfg is not None:
         fb = (cfg.get("features") or {}).get("fibonacci") or {}
@@ -267,6 +328,7 @@ def fibo_levels(
     else:
         ratios = np.array([0.236, 0.382, 0.5, 0.618, 0.786], dtype=np.float32)
 
+    # --- Output columns names ---
     cols = [f"fibo_{r:.3f}" for r in ratios]
     n = len(close)
 
@@ -279,8 +341,8 @@ def fibo_levels(
     # --- precompute high/low values as arrays for indexing ---
     high_vals = high.values
     low_vals = low.values
-    hh_vals = hh.values.astype(bool)
-    ll_vals = ll.values.astype(bool)
+    hh_vals = (hh.values==1)
+    ll_vals = (ll.values==1)
 
     for i in range(n):
         lo = max(k, i - lookback)
@@ -304,9 +366,20 @@ def fibo_levels(
         else:
             out[i, :] = last_low + ratios * rng
 
+    # ===== موقتی و فقط برای کنترل برنامه
+    df_new = pd.concat([pd.Series(high, name="high"),
+                        pd.Series(low, name="low"),
+                        pd.Series(close, name="close"),
+                        pd.Series(hh, name="hh"),
+                        pd.Series(ll, name="ll"),
+                        pd.DataFrame(out, index=close.index, columns=cols)
+                        ], axis=1)
+    col_names = ["high", "low", "close", "hh", "ll"] + cols
+    return pd.DataFrame(df_new, index=close.index, columns=col_names, dtype=np.float32)
+    # ===== پایان موقتی
+    
     # --- convert to DataFrame ---
-    out_df = pd.DataFrame(out, index=close.index, columns=cols, dtype=np.float32)
-    return out_df
+    # return pd.DataFrame(out, index=close.index, columns=cols, dtype=np.float32)
 
 """ --------------------------------------------------------------------------- OK Func5
 """
@@ -321,7 +394,7 @@ def registry() -> Dict[str, callable]:
                 }
     
     def make_sr(df, k: int = 2, lookback: int = 500, **_):
-        r, s = sr_distance(df["close"], df["high"], df["low"], k, lookback)
+        r, s = sr_distance_numba(df["close"], df["high"], df["low"], k, lookback)
         return {f"sr_res_{k}_{lookback}": r,
                 f"sr_sup_{k}_{lookback}": s
                 }
@@ -465,128 +538,58 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
 
 
 ######################################################################################
-data = [
-    ['2010-01-04 00:15:00+00:00',1099.5,1099.95,1098.54,1099.6,325,0],
-    ['2010-01-04 00:15:00+00:00',1099.5,1099.95,1098.54,1099.6,325,0],
-    ['2010-01-04 00:25:00+00:00',1098.85,1099.55,1098.6,1099.2,252,0],
-    ['2010-01-04 00:30:00+00:00',1098.9,1099.25,1098.42,1098.83,300,0],
-    ['2010-01-04 00:35:00+00:00',1098.68,1098.9,1096.93,1097.26,383,0],
-    ['2010-01-04 00:40:00+00:00',1097.55,1098.2,1097.05,1097.73,334,0],
-    ['2010-01-04 00:45:00+00:00',1097.7,1098.2,1097.2,1097.7,269,0],
-    ['2010-01-04 00:50:00+00:00',1097.67,1098.35,1097.0,1097.0,305,0],
-    ['2010-01-04 00:55:00+00:00',1097.21,1097.21,1095.57,1095.57,293,0],
-    ['2010-01-04 01:00:00+00:00',1096.0,1096.35,1093.85,1094.59,401,0],
-    ['2010-01-04 01:05:00+00:00',1094.61,1095.0,1093.78,1094.36,380,0],
-    ['2010-01-04 01:10:00+00:00',1094.37,1094.7,1093.08,1093.4,364,0],
-    ['2010-01-04 01:15:00+00:00',1093.75,1095.15,1093.35,1095.1,376,0],
-    ['2010-01-04 01:20:00+00:00',1094.95,1095.75,1094.18,1095.3,331,0],
-    ['2010-01-04 01:25:00+00:00',1095.31,1096.45,1095.18,1095.65,313,0],
-    ['2010-01-04 01:30:00+00:00',1095.36,1095.6,1094.95,1095.06,188,0],
-    ['2010-01-04 01:35:00+00:00',1095.3,1095.55,1094.78,1094.93,209,0],
-    ['2010-01-04 01:40:00+00:00',1094.98,1096.15,1094.28,1095.68,324,0],
-    ['2010-01-04 01:45:00+00:00',1095.72,1096.9,1095.58,1096.08,297,0],
-    ['2010-01-04 01:50:00+00:00',1096.01,1096.3,1094.55,1094.55,284,0],
-    ['2010-01-04 01:55:00+00:00',1094.6,1095.6,1094.25,1094.49,298,0],
-    ['2010-01-04 02:00:00+00:00',1094.95,1095.45,1094.0,1095.11,320,0],
-    ['2010-01-04 02:05:00+00:00',1095.08,1095.75,1094.25,1095.6,300,0],
-    ['2010-01-04 02:10:00+00:00',1095.26,1095.95,1094.93,1095.37,281,0],
-    ['2010-01-04 02:15:00+00:00',1095.38,1095.7,1094.42,1094.8,265,0],
-    ['2010-01-04 02:20:00+00:00',1095.05,1095.6,1094.8,1095.06,231,0],
-    ['2010-01-04 02:25:00+00:00',1095.05,1095.65,1094.98,1095.06,204,0],
-    ['2010-01-04 02:30:00+00:00',1095.05,1095.45,1094.66,1094.9,177,0],
-    ['2010-01-04 02:35:00+00:00',1094.89,1095.25,1094.54,1095.0,276,0],
-    ['2010-01-04 02:40:00+00:00',1095.05,1095.45,1094.74,1094.9,290,0],
-]
 
-data2 = [
-    ['2010-01-04 00:15:00+00:00',49.3,50,49.1,49.7],
-    ['2010-01-04 00:20:00+00:00',50.3,51,50.1,50.7],
-    ['2010-01-04 00:25:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 00:30:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 00:35:00+00:00',53.3,54,53.1,53.7],
-    ['2010-01-04 00:40:00+00:00',54.3,55,54.1,54.7],
-    ['2010-01-04 00:45:00+00:00',55.3,56,55.1,55.7],
-    ['2010-01-04 00:50:00+00:00',56.3,57,56.1,56.7],
-    ['2010-01-04 00:55:00+00:00',57.3,58,57.1,57.7],
-    ['2010-01-04 01:00:00+00:00',56.3,57,56.1,56.7],
-    ['2010-01-04 01:05:00+00:00',55.3,56,55.1,55.7],
-    ['2010-01-04 01:10:00+00:00',54.3,55,54.1,54.7],
-    ['2010-01-04 01:15:00+00:00',53.3,54,53.1,53.7],
-    ['2010-01-04 01:20:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 01:25:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 01:30:00+00:00',50.3,51,50.1,50.7],
-    ['2010-01-04 01:35:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 01:40:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 01:45:00+00:00',53.3,54,53.1,53.7],
-    ['2010-01-04 01:50:00+00:00',54.3,55,54.1,54.7],
-    ['2010-01-04 01:55:00+00:00',55.3,56,55.1,55.7],
-    ['2010-01-04 02:00:00+00:00',54.3,55,54.1,54.7],
-    ['2010-01-04 02:05:00+00:00',53.3,54,53.1,53.7],
-    ['2010-01-04 02:10:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 02:15:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 02:20:00+00:00',50.3,51,50.1,50.7],
-    ['2010-01-04 02:25:00+00:00',49.3,50,49.1,49.7],
-    ['2010-01-04 02:30:00+00:00',50.3,51,50.1,50.7],
-    ['2010-01-04 02:35:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 02:40:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 02:45:00+00:00',53.3,54,53.1,53.7],
-    ['2010-01-04 02:50:00+00:00',52.3,53,52.1,52.7],
-    ['2010-01-04 02:55:00+00:00',51.3,52,51.1,51.7],
-    ['2010-01-04 03:00:00+00:00',50.3,51,50.1,50.7],
-    ['2010-01-04 03:05:00+00:00',49.3,50,49.1,49.7],
-    ['2010-01-04 03:10:00+00:00',48.3,49,48.1,48.7],
-    ['2010-01-04 03:15:00+00:00',47.3,48,47.1,47.7],
-    ['2010-01-04 03:20:00+00:00',46.3,47,46.1,46.7],
-    ['2010-01-04 03:25:00+00:00',45.3,46,45.1,45.7],
-    ['2010-01-04 03:30:00+00:00',44.3,45,44.1,44.7],
-    ['2010-01-04 03:35:00+00:00',43.3,44,43.1,43.7],
-    ['2010-01-04 03:40:00+00:00',42.3,43,42.1,42.7],
-    ['2010-01-04 03:45:00+00:00',41.3,42,41.1,41.7],
-    ['2010-01-04 03:50:00+00:00',40.3,41,40.1,40.7],
-    ['2010-01-04 03:55:00+00:00',39.3,40,39.1,39.7],
-    ['2010-01-04 04:00:00+00:00',40.3,41,40.1,40.7],
-    ['2010-01-04 04:05:00+00:00',41.3,42,41.1,41.7],
-    ['2010-01-04 04:10:00+00:00',42.3,43,42.1,42.7],
-    ['2010-01-04 04:15:00+00:00',43.3,44,43.1,43.7],
-    ['2010-01-04 04:20:00+00:00',44.3,45,44.1,44.7],
-]
 
-df2 = pd.DataFrame(data2, columns=["time","open","high","low","close"])
-df2.set_index(pd.to_datetime(df2["time"]), inplace=True)
-df2.drop(columns=["time"], inplace=True)
-#####################################################
-
-t1 = datetime.now()
-data3 = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
-t2 = datetime.now()
-print(len(data3))
-print(data3.head())
-print(f"Time taken to read CSV: {round((t2 - t1).total_seconds(), 1)} seconds","\n")
-df3=data3[:5000000].copy()
-df3['time'] = pd.to_datetime(df3['time'], utc=True)
-df3.set_index('time', inplace=True)
-#####################################################
+###########################################################  3
+# fibo_levels_slow, fibo_levels
 
 # t3 = datetime.now()
-# result1 = fibo_levels_slow(df3["close"], df3["high"], df3["low"], k=1, cfg=cfg, lookback=50)
+# result1 = fibo_levels_slow(df3["close"], df3["high"], df3["low"], k=5, cfg=cfg, lookback=50)
 # t4 = datetime.now()
-# result1.to_csv("__fibo_levels_slow_output.csv")
+# result1.to_csv("fibo_levels_slow.csv")
 # print(f"Time taken to run 'fibo_levels_slow': {round((t4 - t3).total_seconds(), 1)} seconds")
-# print(result1.head(),"\n")
+# # print(result1.head(),"\n")
 
 # t5 = datetime.now()
-# result2 = fibo_levels(df3["close"], df3["high"], df3["low"], k=1, cfg=cfg, lookback=50)
+# result2 = fibo_levels(df3["close"], df3["high"], df3["low"], k=5, cfg=cfg, lookback=50)
 # t6 = datetime.now()
-# result2.to_csv("__fibo_levels_output.csv")
-# print(f"Time taken to run 'fibo_levels': {round((t6 - t5).total_seconds(), 1)} seconds")
-# print(result2.head())
+# result2.to_csv("fibo_levels.csv")
+# print(f"Time taken to run 'fibo_levels     ': {round((t6 - t5).total_seconds(), 1)} seconds")
+# # print(result2.head())
 
 # diff = result2.fillna(0) - result1.fillna(0)
 # print("Max difference between 'fibo_levels_slow' and 'fibo_levels':", diff.abs().max().max())
 
-#####################################################
+###########################################################  2
+# --- sr_distance
 
-t3 = datetime.now()
-hh, ll = fractal_points_numba(df3["high"], df3["low"], k=50)
-t4 = datetime.now()
-print(f"Time taken to run 'fractal_points': {round((t4 - t3).total_seconds(), 1)} seconds")
+# t1 = datetime.now()
+# res, sup = sr_distance(df3["close"], df3["high"], df3["low"], k=10)
+# t2 = datetime.now()
+# print(f"Time taken to run 'sr_distance': {round((t2 - t1).total_seconds(), 1):.2f} seconds")
+# df1 = pd.DataFrame({"res": res, "sup": sup})
+# df1.to_csv("sr_distance.csv")
+# print(f"len(res): {len(res)}")
+
+# t3 = datetime.now()
+# res, sup = sr_distance_numba(df3["close"], df3["high"], df3["low"], k=10)
+# t4 = datetime.now()
+# print(f"Time taken to run 'sr_distance_numba': {round((t4 - t3).total_seconds(), 1):.2f} seconds")
+# df1 = pd.DataFrame({"res": res, "sup": sup})
+# df1.to_csv("sr_distance_numba.csv")
+# print(f"len(res): {len(res)}")
+
+###########################################################  1
+# --- fractal_points
+
+# t1 = datetime.now()
+# hh, ll = fractal_points(df3["high"], df3["low"], k=10)
+# t2 = datetime.now()
+# print(f"Time taken to run 'fractal_points': {round((t2 - t1).total_seconds(), 1):.2f} seconds")
+# df1 = pd.DataFrame({"hh": hh, "ll": ll})
+# df1.to_csv("fractal_points.csv")
+# print(f"len(hh): {len(hh)}")
+# print(f"type(hh)): {type(hh)}")
+# print(f"type(ll)): {type(ll)}")
+
+###########################################################

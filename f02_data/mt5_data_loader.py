@@ -22,7 +22,7 @@ python -m f02_data.mt5_data_loader   `
     --config f01_config/config.yaml  `
     --symbols XAUUSD                 `
     --timeframes M1                  `
-    --lookback 10000                 `
+    --lookback 100000                `
     --format csv
 
 python -m f02_data.mt5_data_loader  `
