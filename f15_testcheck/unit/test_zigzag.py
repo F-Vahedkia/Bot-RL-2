@@ -1,14 +1,14 @@
 # f15_testcheck/unit/test_zigzag.py
 # Test script for ZigZag indicator with debug output and visualization
 # Author: Farhad Vahedkia
-# Date: 1404/10/06- 23:09
+# Date: 1404/10/09- 17:40
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from numba import njit
 from datetime import datetime
-from f03_features.indicators.zigzag import _zigzag_mql_2, _zigzag_mql_njit_2
+from f03_features.indicators.zigzag import _zigzag_mql, _zigzag_mql_njit
 
 # ============================================================
 # Load data
@@ -29,8 +29,8 @@ print("=========================================================================
 # ============================================================
 # Call ZigZag (MQL-compatible)
 # ============================================================
-zigzag = {"no_njit": _zigzag_mql_2,
-          "by_njit": _zigzag_mql_njit_2,
+zigzag = {"no_njit": _zigzag_mql,
+          "by_njit": _zigzag_mql_njit,
           }
 for key in zigzag.keys():
     func = zigzag[key]

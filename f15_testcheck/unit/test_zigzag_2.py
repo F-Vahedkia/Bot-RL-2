@@ -1,9 +1,11 @@
+# Written by: DeepSeek at 1404/10/10- 17:40
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from numba import njit
 from datetime import datetime
-from f03_features.indicators.zigzag import _zigzag_mql_2, _zigzag_mql_njit_2
+from f03_features.indicators.zigzag import _zigzag_mql, _zigzag_mql_njit
 
 # ============================================================
 # Load data
@@ -24,8 +26,8 @@ print("=========================================================================
 # ============================================================
 # Call ZigZag (MQL-compatible)
 # ============================================================
-zigzag = {"no_njit": _zigzag_mql_2,
-          "by_njit": _zigzag_mql_njit_2,
+zigzag = {"no_njit": _zigzag_mql,
+          "by_njit": _zigzag_mql_njit,
           }
 
 for key in zigzag.keys():  # اصلاح: .keys() به جای .items
