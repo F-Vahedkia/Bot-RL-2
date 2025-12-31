@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # f03_features/indicators/levels.py
 # Status in (Bot-RL-2): Completed
 
@@ -16,7 +15,7 @@ from datetime import datetime
 from typing import List, Sequence, Dict, Optional, Tuple, Any
 from numba import njit
 from .core import atr
-from .zigzag import zigzag as zig
+from .zigzag import zigzag_mtf_adapter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -46,7 +45,7 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
         r3.astype("float32"), \
         s3.astype("float32")
 
-""" --------------------------------------------------------------------------- OK Func2
+""" --------------------------------------------------------------------------- OK Func2 (Not Used)
 Speed=OK
 with two logical branches for small and large data sets
 """
@@ -118,94 +117,191 @@ def fractal_points(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Seri
 
         return pd.Series(hh_arr, index=high.index), pd.Series(ll_arr, index=low.index)
 
+""" --------------------------------------------------------------------------- OK Func2
+This function used instead of fractal_points in sr_distance and fibo_levels
+to leverage zigzag_mtf_adapter output for hh/ll series.
+"""
+def zigzag_points_from_adapter(
+                high: pd.Series,
+                low: pd.Series,
+                tf: str,
+                depth: int,
+                deviation: float,
+                backstep: int,
+) -> tuple[pd.Series, pd.Series]:
+    """
+    Adapter:
+    Converts zigzag_mtf_adapter output into hh / ll series
+    compatible with legacy fractal-based logic.
+    
+    Output:
+    - hh: 1.0 at swing highs
+    - ll: 1.0 at swing lows
+    """
+    
+    zz = zigzag_mtf_adapter(
+        high=high,
+        low=low,
+        tf_higher=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep
+    )
+
+    hh = pd.Series(0.0, index=zz.index, dtype=np.float32)
+    ll = pd.Series(0.0, index=zz.index, dtype=np.float32)
+
+    hh.loc[zz > 0] = 1.0
+    ll.loc[zz < 0] = 1.0
+
+    return hh, ll
+
 """ --------------------------------------------------------------------------- OK Func3 (Not Used)
 Speed=Slow
 Logic=OK
 فاصله قیمتی تا اخیرترین سطح حمایت/مقاومت
 این تابع برای هر قیمت بسته شدن، قیمتهای اخیرترین لگ را بدست می‌آورد
 """
-def sr_distance(close: pd.Series,
-                high: pd.Series,
-                low: pd.Series,
-                k: int = 2,
-                lookback: int = 500
+def sr_distance(
+                df: pd.DataFrame,
+                *,
+                tf: str | None = None,
+                depth: int | None = None,
+                deviation: float | None = None,
+                backstep: int | None = None,
 ) -> Tuple[pd.Series, pd.Series]:
-    hh, ll = fractal_points(high, low, k)
-    idx = close.index
-    res = pd.Series(index=idx, dtype="float32")    # resistance
-    sup = pd.Series(index=idx, dtype="float32")    # support
-    for i in range(len(idx)):
-        lo = max(0, i - lookback)               # نگاه به گذشته و ساخت حد پایین بازه مورد نظر
-        new_hh = (hh.iloc[lo:i] == 1)           # ساخت فیلتر بولی در بازه موردنظر
-        new_ll = (ll.iloc[lo:i] == 1)           # ساخت فیلتر بولی در بازه موردنظر
-        prev_h = high.iloc[lo:i][new_hh]        # فراکتال‌های بالا در بازه موردنظر
-        prev_l =  low.iloc[lo:i][new_ll]        # فراکتال‌های پایین در بازه موردنظر
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
 
-        # Guard: ensure close time is after last fractal
-        if len(prev_h) and len(prev_l) and \
-            idx[i] > prev_h.index[-1] and \
-            idx[i] > prev_l.index[-1]:
-            r = prev_h.iloc[-1] - close.iloc[i]
-            s = close.iloc[i] - prev_l.iloc[-1]
-        else:
+    # --- ZigZag params guard (engine -> config fallback) ----
+    zz_cfg = cfg.get("features", {}).get("support_resistance", {}).get("zigzag", {})
+    base_timeframe = cfg.get("features", {}).get("base_timeframe", None)
+
+    tf        = tf        if tf        is not None else zz_cfg.get("tf", None)
+    tf        = tf        if tf        is not None else base_timeframe
+    depth     = depth     if depth     is not None else zz_cfg.get("depth", 12)
+    deviation = deviation if deviation is not None else zz_cfg.get("deviation", 5.0)
+    backstep  = backstep  if backstep  is not None else zz_cfg.get("backstep", 10)
+
+    # --- Extract ZigZag points ---
+    hh, ll = zigzag_points_from_adapter(
+        high=high,
+        low=low,
+        close=close,
+        tf=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+    )
+
+    res = pd.Series(index=close.index, dtype="float32")    # resistance
+    sup = pd.Series(index=close.index, dtype="float32")    # support
+
+    # --- Compute resistance/support from ZigZag highs/lows ---
+    last_h_val, last_h_idx = np.nan, None
+    last_l_val, last_l_idx = np.nan, None
+
+    for i in range(len(close)):
+        if hh.iloc[i] == 1:
+            last_h_val = high.iloc[i]
+            last_h_idx = i
+        if ll.iloc[i] == 1:
+            last_l_val = low.iloc[i]
+            last_l_idx = i
+
+        # assign resistance/support only if last ZigZag points exist
+        r = last_h_val - close.iloc[i] if last_h_val is not np.nan else np.nan
+        s = close.iloc[i] - last_l_val if last_l_val is not np.nan else np.nan
+
+        # Guard: ensure close time is after last ZigZag point
+        if last_h_idx is not None and last_h_idx > i:
             r = np.nan
+        if last_l_idx is not None and last_l_idx > i:
             s = np.nan
-        
-        res.iloc[i] = np.float32(r) if pd.notna(r) else np.nan # ذخیره در سری خروجی
-        sup.iloc[i] = np.float32(s) if pd.notna(s) else np.nan # ذخیره در سری خروجی
-    return  pd.Series(res, index=close.index, dtype="float32"), \
-            pd.Series(sup, index=close.index, dtype="float32")
+
+        res.iloc[i] = np.float32(r) if pd.notna(r) else np.nan
+        sup.iloc[i] = np.float32(s) if pd.notna(s) else np.nan
+
+    return res, sup
 
 """ --------------------------------------------------------------------------- OK Func3
 Speed=FAST (Numba JIT)
 """
-def sr_distance_numba(
-    close: pd.Series,
-    high: pd.Series,
-    low: pd.Series,
-    k: int = 2,
-    lookback: int = 500
-) -> Tuple[pd.Series, pd.Series]:
+def sr_distance_njit(
+            df: pd.DataFrame,
+            *,
+            tf: str | None = None,
+            depth: int | None = None,
+            deviation: float | None = None,
+            backstep: int | None = None,
+) -> tuple[pd.Series, pd.Series]:
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
 
-    # --- fractals (numba version assumed correct) ---
-    hh, ll = fractal_points(high, low, k)
+    zz_cfg = cfg.get("features", {}).get("support_resistance", {}).get("zigzag", {})
+    base_timeframe = cfg.get("features", {}).get("base_timeframe", None)
 
+    tf        = tf        if tf        is not None else zz_cfg.get("tf", None)
+    tf        = tf        if tf        is not None else base_timeframe
+    depth     = depth     if depth     is not None else zz_cfg.get("depth", 12)
+    deviation = deviation if deviation is not None else zz_cfg.get("deviation", 5.0)
+    backstep  = backstep  if backstep  is not None else zz_cfg.get("backstep", 10)
+
+    # --- Extract ZigZag points ---
+    hh, ll = zigzag_points_from_adapter(
+        high=high,
+        low=low,
+        close=close,
+        tf=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+    )
+
+    # convert to arrays for njit
+    high_v = high.values.astype(np.float32)
+    low_v  = low.values.astype(np.float32)
     close_v = close.values.astype(np.float32)
-    high_v  = high.values.astype(np.float32)
-    low_v   = low.values.astype(np.float32)
-    hh_v    = hh.values
-    ll_v    = ll.values
+    hh_v = hh.values.astype(np.float32)
+    ll_v = ll.values.astype(np.float32)
 
     n = len(close_v)
     res_v = np.full(n, np.nan, dtype=np.float32)
     sup_v = np.full(n, np.nan, dtype=np.float32)
 
     @njit
-    def compute_sr(close_v, high_v, low_v, hh_v, ll_v, res_v, sup_v, n, lookback):
+    def compute_sr(high_v, low_v, close_v, hh_v, ll_v, res_v, sup_v, n):
+        last_h_val = np.nan
+        last_l_val = np.nan
+        last_h_idx = -1
+        last_l_idx = -1
+
         for i in range(n):
-            lo = i - lookback
-            if lo < 0:
-                lo = 0
+            if hh_v[i] == 1.0:
+                last_h_val = high_v[i]
+                last_h_idx = i
+            if ll_v[i] == 1.0:
+                last_l_val = low_v[i]
+                last_l_idx = i
 
-            last_h = np.nan
-            last_l = np.nan
+            r = last_h_val - close_v[i] if not np.isnan(last_h_val) else np.nan
+            s = close_v[i] - last_l_val if not np.isnan(last_l_val) else np.nan
 
-            # scan backward (bounded)
-            for j in range(i - 1, lo - 1, -1):
-                if hh_v[j] == 1.0:
-                    last_h = high_v[j]
-                if ll_v[j] == 1.0:
-                    last_l = low_v[j]
-                if not np.isnan(last_h) and not np.isnan(last_l):
-                    res_v[i] = last_h - close_v[i]
-                    sup_v[i] = close_v[i] - last_l
-                    break
+            if last_h_idx > i:
+                r = np.nan
+            if last_l_idx > i:
+                s = np.nan
 
-    compute_sr(close_v, high_v, low_v, hh_v, ll_v, res_v, sup_v, n, lookback)
+            res_v[i] = r
+            sup_v[i] = s
 
-    return  pd.Series(res_v, index=close.index, dtype="float32"), \
-            pd.Series(sup_v, index=close.index, dtype="float32")
-    
+    compute_sr(high_v, low_v, close_v, hh_v, ll_v, res_v, sup_v, n)
+
+    return pd.Series(res_v, index=close.index, dtype="float32"), \
+           pd.Series(sup_v, index=close.index, dtype="float32")
+
 """ --------------------------------------------------------------------------- OK Func4 (Not Used)
 speed=SLOW
     تولید سطوح فیبوناچی به صورت دیکشنری {ratio: level}.
@@ -394,7 +490,7 @@ def registry() -> Dict[str, callable]:
                 }
     
     def make_sr(df, k: int = 2, lookback: int = 500, **_):
-        r, s = sr_distance_numba(df["close"], df["high"], df["low"], k, lookback)
+        r, s = sr_distance_njit(df["close"], df["high"], df["low"], k, lookback)
         return {f"sr_res_{k}_{lookback}": r,
                 f"sr_sup_{k}_{lookback}": s
                 }
@@ -538,7 +634,17 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
 
 
 ######################################################################################
+# zigzag_points_from_adapter
 
+df3 = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")[-2_000:].copy()
+
+df3["time"] = pd.to_datetime(df3["time"], utc=True)
+df3.set_index("time", inplace=True)
+
+hh, ll = zigzag_points_from_adapter(
+                df3["high"],df3["low"],tf="5min",
+                depth=12,deviation=0.05,backstep=10)
+pd.DataFrame({"hh": hh, "ll": ll}).to_csv("zigzag_points_from_adapter.csv")
 
 ###########################################################  3
 # fibo_levels_slow, fibo_levels
@@ -572,11 +678,11 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
 # print(f"len(res): {len(res)}")
 
 # t3 = datetime.now()
-# res, sup = sr_distance_numba(df3["close"], df3["high"], df3["low"], k=10)
+# res, sup = sr_distance_njit(df3["close"], df3["high"], df3["low"], k=10)
 # t4 = datetime.now()
 # print(f"Time taken to run 'sr_distance_numba': {round((t4 - t3).total_seconds(), 1):.2f} seconds")
 # df1 = pd.DataFrame({"res": res, "sup": sup})
-# df1.to_csv("sr_distance_numba.csv")
+# df1.to_csv("sr_distance_njit.csv")
 # print(f"len(res): {len(res)}")
 
 ###########################################################  1

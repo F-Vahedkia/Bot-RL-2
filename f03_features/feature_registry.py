@@ -11,18 +11,18 @@ python -m f03_features.indicators --list
 # Imports(1) & Logger
 # =============================================================================
 from __future__ import annotations
-from typing import Callable, Dict, Any, Optional
+from typing import Any, Callable, Dict, Literal, Optional
 import logging
 import numpy as np
 import pandas as pd
 
+from f03_features.indicators.zigzag import zigzag_mtf_adapter
 from f10_utils.config_ops import _deep_get
 from f10_utils.config_loader import ConfigLoader  # از f01_config/config.yaml می‌خواند
 _loader = ConfigLoader()                          # به‌طور پیش‌فرض f01_config/config.yaml را لود می‌کند
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-
 
 
 # =============================================================================
@@ -50,7 +50,6 @@ def _merge_sr_kwargs(name: str, cfg: dict, df: pd.DataFrame) -> dict:
         over = _deep_get(cfg_all, f"features.support_resistance.sr_advanced.overrides.{sym}.{tf}.{name}", {}) or {}
     # 4) ادغام نهایی: پیش‌فرض کد ← base ← component ← overrides ← پارامترهای صریح کاربر
     return {**base, **comp, **over, **(cfg or {})}
-
 
 
 # =============================================================================
@@ -428,6 +427,7 @@ _ADV: Dict[str, Callable[..., Any]] = {
     "liq_sweep": make_liq_sweep,         # <== sr_advanced
     "breaker_flip": make_breaker_flip,   # <== sr_advanced
     "sr_fusion": make_sr_fusion,         # <== sr_advanced
+    "zigzag_mtf": zigzag_mtf_adapter,    # <== zigzag.py
 }
 
 # =============================================================================

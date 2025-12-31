@@ -193,6 +193,12 @@ features:
     enabled: true
     lookback_bars: 1500
     cluster_tolerance_pips: 15
+    zigzag:         #===== Used by feature_registry.py / zigzag_mtf_adapter() ===== start
+      enabled: true
+      tf: null            # یعنی: پیش‌فرض = base_timeframe
+      depth: 12
+      deviation: 5.0
+      backstep: 10  #===== Used by feature_registry.py / zigzag_mtf_adapter() ===== end
     sr_advanced:                   # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== start
       common:                      #
         atr_window: 14             #
