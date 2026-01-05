@@ -14,9 +14,9 @@ from f03_features.indicators.zigzag import _zigzag_mql, _zigzag_mql_njit
 # Load data
 # ============================================================
 t1 = datetime.now()
-data = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
+data = pd.read_csv("f02_data/raw/XAUUSD/M5.csv")
 t2 = datetime.now()
-df = data[-400_000:].copy()
+df = data[-2_000:].copy()
 t3 = datetime.now()
 df["time"] = pd.to_datetime(data["time"], utc=True)
 df.set_index("time", inplace=True)

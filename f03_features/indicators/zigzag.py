@@ -1,11 +1,11 @@
 # f03_features/indicators/zigzag.py
+# This file is checked and OK (1404/10/10)
 
 import numpy as np
 import pandas as pd
 from numba import njit, types
 from numba.typed import List as TypedList
 from typing import Literal
-
 
 #==============================================================================
 # MQL ZIGZAG
@@ -197,7 +197,7 @@ def _zigzag_mql(
             "point": point
         }
     })
-    
+
     return zz_series
 
 
@@ -462,7 +462,6 @@ def _zigzag_mql_njit(
     
     return zz_series
 
-
 #==============================================================================
 # Wrapper function to choose between njit and non-njit based on data size
 #==============================================================================
@@ -536,40 +535,105 @@ def zigzag_mtf_adapter(
         backstep=backstep,
         point=point
     )
-    
+
+    # --- get metadata from HTF zigzag ---
+    state_series = zz_htf.attrs.get("state_series", [])  # -1: high, 1: low, 0: none
+    htf_timestamps = list(zz_htf.index)
+            
     # --- prepare LTF container ---
     zz_ltf = pd.Series(
         data=0.0,
         index=high.index,
-        name=f"zigzag_mtf_{tf_higher}"
+        name=f"zigzag_mtf_{tf_higher}",
+        dtype=np.float32
     )
+
+    # --- project HTF swings onto LTF ----------- start of old part
+    # for ts, signal in zz_htf.items():
+    #     if signal == 0:
+    #         continue
+    #     if ts not in zz_ltf.index:
+    #         ts = zz_ltf.index[zz_ltf.index.get_indexer([ts], method="ffill")[0]]
+    #     if mode == "last":
+    #         zz_ltf.loc[ts] = signal
+    #     elif mode == "forward_fill":
+    #         zz_ltf.loc[ts:] = signal
+    #
+    # --- attach metadata ---
+    # zz_ltf.attrs["source_tf"] = tf_higher
+    # zz_ltf.attrs["mode"] = mode
+    # zz_ltf.attrs["htf_legs"] = zz_htf.attrs.get("legs", [])
+
+    # return zz_ltf
+    # ------------------------------------------- end of old part
+
     
     # --- project HTF swings onto LTF ---
-    for ts, signal in zz_htf.items():
-        if signal == 0:
-            continue
-
-        if ts not in zz_ltf.index:
-            ts = zz_ltf.index[zz_ltf.index.get_indexer([ts], method="ffill")[0]]
-
-        if mode == "last":
-            zz_ltf.loc[ts] = signal
-
-        elif mode == "forward_fill":
-            zz_ltf.loc[ts:] = signal
+    if mode == "last":
+        # فقط کندل LTF متناظر با کندل HTF علامت می‌خورد
+        for ts_htf, signal in zip(htf_timestamps, state_series):
+            if signal == 0:
+                continue
+            
+            # پیدا کردن کندل LTF مربوطه (آخرین کندل LTF قبل از یا در زمان ts_htf)
+            ltf_idx = zz_ltf.index[zz_ltf.index <= ts_htf]
+            if len(ltf_idx) > 0:
+                last_ltf_idx = ltf_idx[-1]
+                zz_ltf.loc[last_ltf_idx] = signal
+    
+    elif mode == "forward_fill":
+        # Forward fill تا ظهور swing بعدی
+        prev_signal = 0
+        prev_ts = None
+        
+        # ایجاد لیست زمانی از swingها
+        swing_points = []
+        for ts_htf, signal in zip(htf_timestamps, state_series):
+            if signal != 0:
+                swing_points.append((ts_htf, signal))
+        
+        # پروجکشن forward fill
+        for i in range(len(swing_points)):
+            current_ts, current_signal = swing_points[i]
+            
+            # پیدا کردن محدوده زمانی برای این swing
+            start_idx = None
+            if i > 0:
+                # شروع از کندل بعد از swing قبلی
+                prev_ts, _ = swing_points[i-1]
+                ltf_after_prev = zz_ltf.index[zz_ltf.index > prev_ts]
+                if len(ltf_after_prev) > 0:
+                    start_idx = ltf_after_prev[0]
+            else:
+                # اولین swing - از ابتدای داده شروع کن
+                start_idx = zz_ltf.index[0]
+            
+            # پایان در کندل مربوط به swing جاری
+            ltf_up_to_current = zz_ltf.index[zz_ltf.index <= current_ts]
+            if len(ltf_up_to_current) > 0:
+                end_idx = ltf_up_to_current[-1]
+                
+                if start_idx is not None:
+                    # اعمال forward fill در محدوده
+                    mask = (zz_ltf.index >= start_idx) & (zz_ltf.index <= end_idx)
+                    zz_ltf.loc[mask] = current_signal
     
     # --- attach metadata ---
     zz_ltf.attrs["source_tf"] = tf_higher
     zz_ltf.attrs["mode"] = mode
     zz_ltf.attrs["htf_legs"] = zz_htf.attrs.get("legs", [])
-
-    return zz_ltf
-
+    zz_ltf.attrs["htf_state_series"] = state_series
+    zz_ltf.attrs["htf_timestamps"] = htf_timestamps
+    zz_ltf.attrs["params"] = {
+        "depth": depth,
+        "deviation": deviation,
+        "backstep": backstep,
+        "point": point
+    }
+    # zz_lft: حاوی کد جستجوی اکسترمم بعدی است.
+    # یعنی اگر یک کندل کمترین پایین را داشته باشد، چون بعداً باید بیشترین بالا را جستجو کند،
+    # علامت آن کندل برابر با +1 است.
+    # بنابراین اگرخروجی رامنفی کنیم،درواقع ماکزیمم یا مینیمم بودن خودآن کندل رابه خروجی داده ایم
+    return -zz_ltf
 
 #==============================================================================
-
-
-
-
-
-

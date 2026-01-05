@@ -154,7 +154,7 @@ def zigzag_points_from_adapter(
     hh.loc[zz > 0] = 1.0
     ll.loc[zz < 0] = 1.0
 
-    return hh, ll
+    return hh, ll, zz
 
 """ --------------------------------------------------------------------------- OK Func3 (Not Used)
 Speed=Slow
@@ -641,10 +641,10 @@ df3 = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")[-2_000:].copy()
 df3["time"] = pd.to_datetime(df3["time"], utc=True)
 df3.set_index("time", inplace=True)
 
-hh, ll = zigzag_points_from_adapter(
+hh, ll, zz = zigzag_points_from_adapter(
                 df3["high"],df3["low"],tf="5min",
                 depth=12,deviation=0.05,backstep=10)
-pd.DataFrame({"hh": hh, "ll": ll}).to_csv("zigzag_points_from_adapter.csv")
+pd.DataFrame({"hh": hh, "ll": ll, "zz": zz}).to_csv("zigzag_points_from_adapter.csv")
 
 ###########################################################  3
 # fibo_levels_slow, fibo_levels
