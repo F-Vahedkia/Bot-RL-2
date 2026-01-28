@@ -256,3 +256,4 @@ def build_confluence(
     out["conf_flag_filter_pass"] = flag_filter
 
     return out
+

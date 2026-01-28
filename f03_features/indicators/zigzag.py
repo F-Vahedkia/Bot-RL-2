@@ -1,470 +1,317 @@
 # f03_features/indicators/zigzag.py
-# This file is checked and OK (1404/10/10)
+# This file is checked and OK (1404/11/08)
+# Check: By use of f15_testcheck/unit/test_zigzag.py
 
 import numpy as np
 import pandas as pd
-from numba import njit, types
-from numba.typed import List as TypedList
+from numba import njit
 from typing import Literal
 
-#==============================================================================
-# MQL ZIGZAG
-#==============================================================================
-def _zigzag_mql(
-    high: pd.Series,
-    low: pd.Series,
+#==================================================================== 2 (==> OK & Final)
+# Vectorized by Numpy
+#====================================================================
+def _zigzag_mql_numpy(
+    high: np.ndarray,
+    low: np.ndarray,
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 3,
     point: float = 0.01,
-) -> pd.Series:
+) -> np.ndarray:
     
     n = len(high)
-    high_arr = high.values
-    low_arr = low.values
 
     # بافرهای اصلی
-    zz_buffer = np.zeros(n)        # نقاط ZigZag
-    high_map = np.zeros(n)         # نقاط سقف
-    low_map = np.zeros(n)          # نقاط کف
+    zz_buffer    = np.zeros(n)                 # نقاط ZigZag
+    high_map     = np.zeros(n)                 # نقاط کاندید برای سقف
+    low_map      = np.zeros(n)                 # نقاط کاندید برای کف
     state_series = np.zeros(n, dtype=np.int8)  # state: -1=high, 1=low, 0=none
-    
-    # توابع کمکی برای یافتن highest/lowest
-    def highest(arr, start, depth):
-        end = max(0, start - depth + 1)
-        max_idx = end
-        max_val = arr[end]
-        for i in range(end + 1, start + 1):
-            if arr[i] > max_val:
-                max_val = arr[i]
-                max_idx = i
-        return max_idx
-    
-    def lowest(arr, start, depth):
-        end = max(0, start - depth + 1)
-        min_idx = end
-        min_val = arr[end]
-        for i in range(end + 1, start + 1):
-            if arr[i] < min_val:
-                min_val = arr[i]
-                min_idx = i
-        return min_idx
-    
+        
     # متغیرهای ردیابی
     last_high = 0.0
     last_low = 0.0
     last_high_pos = -1
     last_low_pos = -1
-    search_mode = 0  # 0=Extremum, 1=Peak, -1=Bottom
-    
-    # --- مرحله ۱: شناسایی نقاط high/low محلی ---
+    search_mode = 0  # 0=Extremum, 1=Search next peak, -1=Search next bottom
+
+    # --------------------------------------------------------------------
+    # --- مرحله ۱: شناسایی نقاط high/low محلی کاملاً NumPy-vectorized ---
+    # ایجاد ماتریس rolling window برای low و high
+    # هر سطر = window از طول depth
+    low_windows  = np.lib.stride_tricks.sliding_window_view(low, depth)
+    high_windows = np.lib.stride_tricks.sliding_window_view(high, depth)
+
+    # مقادیر min/max هر پنجره
+    low_idx_in_window  = np.argmin(low_windows, axis=1)  # index در window
+    high_idx_in_window = np.argmax(high_windows, axis=1)
+
+    # اندیس واقعی در کل آرایه
+    low_idx  = np.arange(depth - 1, n) - (depth - 1) + low_idx_in_window
+    high_idx = np.arange(depth - 1, n) - (depth - 1) + high_idx_in_window
+
+    # مقادیر local min/max
+    low_vals  = low[low_idx]
+    high_vals = high[high_idx]
+
+    # اعمال deviation و حذف duplicate با backstep
+    low_map  = np.zeros(n)
+    high_map = np.zeros(n)
+
     for i in range(depth - 1, n):
-        # --- LOW بررسی ---
-        idx = lowest(low_arr, i, depth)
-        val = low_arr[idx]
-        
-        if val == last_low:
-            val = 0.0
-        else:
-            last_low = val
-            if (low_arr[i] - val) > deviation * point:
-                val = 0.0
-            else:
-                for b in range(1, backstep + 1):
-                    j = i - b
-                    if j >= 0 and low_map[j] != 0 and low_map[j] > val:
-                        low_map[j] = 0.0
-        
-        if low_arr[i] == val:
+        val = low_vals[i - (depth - 1)]
+        # if val != last_low and (low[i] - val) <= deviation * point: #==========
+        if (low[i] - val) <= deviation * point:
+            # حذف backstep قبلی
+            back_range = slice(max(0, i - backstep), i)
+            mask = (low_map[back_range] != 0) & (low_map[back_range] > val)
+            idx = np.where(mask)[0] + back_range.start
+            low_map[idx] = 0.0
+            # last_low = val #==========
+
+        if low[i] == val:
             low_map[i] = val
-        else:
-            low_map[i] = 0.0
-        
-        # --- HIGH بررسی ---
-        idx = highest(high_arr, i, depth)
-        val = high_arr[idx]
-        
-        if val == last_high:
-            val = 0.0
-        else:
-            last_high = val
-            if (val - high_arr[i]) > deviation * point:
-                val = 0.0
-            else:
-                for b in range(1, backstep + 1):
-                    j = i - b
-                    if j >= 0 and high_map[j] != 0 and high_map[j] < val:
-                        high_map[j] = 0.0
-        
-        if high_arr[i] == val:
+
+        val = high_vals[i - (depth - 1)]
+        # if val != last_high and (val - high[i]) <= deviation * point: #==========
+        if (val - high[i]) <= deviation * point:
+            back_range = slice(max(0, i - backstep), i)
+            mask = (high_map[back_range] != 0) & (high_map[back_range] < val)
+            idx = np.where(mask)[0] + back_range.start
+            high_map[idx] = 0.0
+            # last_high = val #==========
+
+        if high[i] == val:
             high_map[i] = val
-        else:
-            high_map[i] = 0.0
     
-    # --- مرحله ۲: انتخاب نهایی نقاط ZigZag ---
+    # --------------------------------------------------------------------
+    # --- مرحله ۲: انتخاب نهایی نقاط ZigZag با سرعت بالاتر -------------
     last_high = 0.0
     last_low = 0.0
     last_high_pos = -1
     last_low_pos = -1
     search_mode = 0  # Extremum
-    
-    legs = []
-    
+
+    # پیدا کردن اندیس‌های candidate highs/lows
+    high_idx = np.flatnonzero(high_map)
+    low_idx  = np.flatnonzero(low_map)
+
     for i in range(depth - 1, n):
-        if search_mode == 0:  # Extremum
-            if last_low == 0.0 and last_high == 0.0:
-                if high_map[i] != 0.0:
-                    last_high = high_map[i]
-                    last_high_pos = i
-                    zz_buffer[i] = last_high
-                    state_series[i] = -1  # high point
-                    search_mode = -1  # Bottom
-                
-                if low_map[i] != 0.0:
-                    last_low = low_map[i]
-                    last_low_pos = i
-                    zz_buffer[i] = last_low
-                    state_series[i] = 1   # low point
-                    search_mode = 1  # Peak
-        
-        elif search_mode == 1:  # Peak - به دنبال Low
-            if low_map[i] != 0.0 and low_map[i] < last_low and high_map[i] == 0.0:
-                if last_low_pos >= 0:
-                    zz_buffer[last_low_pos] = 0.0
-                    state_series[last_low_pos] = 0
-                
-                last_low = low_map[i]
-                last_low_pos = i
-                zz_buffer[i] = last_low
-                state_series[i] = 1
-            
-            elif high_map[i] != 0.0 and low_map[i] == 0.0:
-                last_high = high_map[i]
+        h_val = high_map[i]
+        l_val = low_map[i]
+
+        if search_mode == 0:
+            if last_high == 0.0 and h_val != 0.0:
+                last_high = h_val
                 last_high_pos = i
-                zz_buffer[i] = last_high
+                zz_buffer[i] = h_val
                 state_series[i] = -1
                 search_mode = -1
-                
-                if last_low_pos >= 0 and last_high_pos >= 0:
-                    legs.append({
-                        "start_idx": last_low_pos,
-                        "end_idx": last_high_pos,
-                        "start_price": last_low,
-                        "end_price": last_high,
-                        "direction": 1
-                    })
-        
-        elif search_mode == -1:  # Bottom - به دنبال High
-            if high_map[i] != 0.0 and high_map[i] > last_high and low_map[i] == 0.0:
+
+            elif last_low == 0.0 and l_val != 0.0:
+                last_low = l_val
+                last_low_pos = i
+                zz_buffer[i] = l_val
+                state_series[i] = 1
+                search_mode = 1
+
+        elif search_mode == 1:  # Peak -> دنبال Low
+            if l_val != 0.0 and l_val < last_low and h_val == 0.0:
+                if last_low_pos >= 0:
+                    # حذف مقدار قبلی به صورت masked
+                    zz_buffer[last_low_pos] = 0.0
+                    state_series[last_low_pos] = 0
+                last_low = l_val
+                last_low_pos = i
+                zz_buffer[i] = l_val
+                state_series[i] = 1
+            elif h_val != 0.0:
+                last_high = h_val
+                last_high_pos = i
+                zz_buffer[i] = h_val
+                state_series[i] = -1
+                search_mode = -1
+
+        elif search_mode == -1:  # Bottom -> دنبال High
+            if h_val != 0.0 and h_val > last_high and l_val == 0.0:
                 if last_high_pos >= 0:
                     zz_buffer[last_high_pos] = 0.0
                     state_series[last_high_pos] = 0
-                
-                last_high = high_map[i]
+                last_high = h_val
                 last_high_pos = i
-                zz_buffer[i] = last_high
+                zz_buffer[i] = h_val
                 state_series[i] = -1
-            
-            elif low_map[i] != 0.0 and high_map[i] == 0.0:
-                last_low = low_map[i]
+            elif l_val != 0.0:
+                last_low = l_val
                 last_low_pos = i
-                zz_buffer[i] = last_low
+                zz_buffer[i] = l_val
                 state_series[i] = 1
                 search_mode = 1
-                
-                if last_high_pos >= 0 and last_low_pos >= 0:
-                    legs.append({
-                        "start_idx": last_high_pos,
-                        "end_idx": last_low_pos,
-                        "start_price": last_high,
-                        "end_price": last_low,
-                        "direction": -1
-                    })
-    
+
     # ایجاد Series خروجی
-    zz_series = pd.Series(zz_buffer, index=high.index)
+    # zz_series = pd.Series(zz_buffer, index=high.index)
     
-    # اضافه کردن تمام metadataهای مورد نیاز
-    zz_series.attrs.update({
-        "legs": legs,
-        "state_series": state_series.tolist(),
-        "high_map": high_map.tolist(),
-        "low_map": low_map.tolist(),
-        "params": {
-            "depth": depth,
-            "deviation": deviation,
-            "backstep": backstep,
-            "point": point
-        }
-    })
+    # state_series شامل کد +1 یا -1 است که بیانگر جستجو برای کف یا سقف بعدی است
+    # اگر در کندل جاری دارای مقدار -1 باشد، یعنی این کندل سقف است و اکسترمم بعدی باید کف باشد
+    # و بالعکس
+    high_actual = np.where(state_series == -1, high, 0)
+    low_actual  = np.where(state_series == +1, low , 0)
+    
+    return state_series, high_actual, low_actual
 
-    return zz_series
-
-
-def _zigzag_mql_njit(
-    high: pd.Series,
-    low: pd.Series,
+#==================================================================== 5 (==> OK & Final)
+# Loop-wise and njit
+#====================================================================
+def _zigzag_mql_njit_loopwise(
+    high: np.ndarray,
+    low: np.ndarray,
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 3,
     point: float = 0.00001,
-) -> pd.Series:
-    #==========================================================================
-    """
-    نسخه njit کامل ZigZag با API یکسان با نسخه اصلی
-    
-    Parameters:
-    -----------
-    high : pd.Series
-        قیمت‌های high
-    low : pd.Series
-        قیمت‌های low
-    depth : int
-        عمق جستجو (default: 12)
-    deviation : float
-        حداقل انحراف (default: 5.0)
-    backstep : int
-        قدم بازگشت (default: 3)
-    point : float
-        ارزش هر pip (default: 0.00001 برای 5-digit)
-    
-    Returns:
-    --------
-    pd.Series
-        سری ZigZag با metadata کامل در attrs:
-        - state_series: آرایه stateها (-1, 0, 1)
-        - high_map: نقاط high
-        - low_map: نقاط low
-        - legs: لیست legها با فرمت اصلی
-        - params: پارامترهای ورودی
-    """
-    #==========================================================================
-    @njit
-    def _highest_njit(arr: np.ndarray, start: int, depth: int) -> int:
-        """پیدا کردن index بیشترین مقدار در بازه depth"""
-        end = max(0, start - depth + 1)
-        max_idx = end
-        max_val = arr[end]
-        for i in range(end + 1, start + 1):
-            if arr[i] > max_val:
-                max_val = arr[i]
-                max_idx = i
-        return max_idx
+) -> np.ndarray:
 
-    @njit
-    def _lowest_njit(arr: np.ndarray, start: int, depth: int) -> int:
-        """پیدا کردن index کمترین مقدار در بازه depth"""
-        end = max(0, start - depth + 1)
-        min_idx = end
-        min_val = arr[end]
-        for i in range(end + 1, start + 1):
-            if arr[i] < min_val:
-                min_val = arr[i]
-                min_idx = i
-        return min_idx
+    high_arr = high.astype(np.float64)
+    low_arr  = low.astype(np.float64)
 
-    @njit
-    def _zigzag_njit_core(
-        high_arr: np.ndarray,
-        low_arr: np.ndarray,
-        depth: int,
-        deviation: float,
-        backstep: int,
-        point: float
-    ) -> tuple:
-        """هسته اصلی ZigZag با njit - کاملاً مشابه منطق اصلی"""
-        n = len(high_arr)
-        
-        # بافرهای اصلی
-        zz_buffer = np.zeros(n)
-        high_map = np.zeros(n)
-        low_map = np.zeros(n)
-        state_series = np.zeros(n)  # -1: high, 1: low, 0: none
-        
-        # متغیرهای موقت برای مرحله اول
-        last_high_temp = 0.0
-        last_low_temp = 0.0
-        
-        # --- مرحله 1: شناسایی نقاط high/low محلی ---
+    @njit(cache=True)
+    def _zigzag_core(high_arr, low_arr, depth, deviation, backstep, point) -> np.ndarray:
+        n = high_arr.shape[0]
+
+        zz_buffer   = np.zeros(n, dtype=np.float64)
+        high_map    = np.zeros(n, dtype=np.float64)
+        low_map     = np.zeros(n, dtype=np.float64)
+        state       = np.zeros(n, dtype=np.int8)
+
+        # =========================
+        # Stage 1: local extrema
+        # =========================
         for i in range(depth - 1, n):
-            # LOW بررسی
-            idx = _lowest_njit(low_arr, i, depth)
-            val = low_arr[idx]
-            
-            if val == last_low_temp:
-                val = 0.0
+
+            # ---- LOW -----------
+            lo_idx = i
+            lo_val = low_arr[i]
+            for j in range(i - 1, i - depth, -1):
+                if j < 0:
+                    break
+                if low_arr[j] < lo_val:
+                    lo_val = low_arr[j]
+                    lo_idx = j
+
+            val = lo_val
+            if (low_arr[i] - val) <= deviation * point:
+                for b in range(1, backstep + 1):
+                    j = i - b
+                    if j >= 0 and low_map[j] != 0.0 and low_map[j] > val:
+                        low_map[j] = 0.0
             else:
-                last_low_temp = val
-                if (low_arr[i] - val) > deviation * point:
-                    val = 0.0
-                else:
-                    # backstep برای low
-                    for b in range(1, backstep + 1):
-                        j = i - b
-                        if j >= 0 and low_map[j] != 0 and low_map[j] > val:
-                            low_map[j] = 0.0
-            
+                val = 0.0
+
             if low_arr[i] == val:
                 low_map[i] = val
-            
-            # HIGH بررسی
-            idx = _highest_njit(high_arr, i, depth)
-            val = high_arr[idx]
-            
-            if val == last_high_temp:
-                val = 0.0
+
+            # ---- HIGH ----------
+            hi_idx = i
+            hi_val = high_arr[i]
+            for j in range(i - 1, i - depth, -1):
+                if j < 0:
+                    break
+                if high_arr[j] > hi_val:
+                    hi_val = high_arr[j]
+                    hi_idx = j
+
+            val = hi_val
+            if (val - high_arr[i]) <= deviation * point:
+                for b in range(1, backstep + 1):
+                    j = i - b
+                    if j >= 0 and high_map[j] != 0.0 and high_map[j] < val:
+                        high_map[j] = 0.0
             else:
-                last_high_temp = val
-                if (val - high_arr[i]) > deviation * point:
-                    val = 0.0
-                else:
-                    # backstep برای high
-                    for b in range(1, backstep + 1):
-                        j = i - b
-                        if j >= 0 and high_map[j] != 0 and high_map[j] < val:
-                            high_map[j] = 0.0
-            
+                val = 0.0
+
             if high_arr[i] == val:
                 high_map[i] = val
-        
-        # --- مرحله 2: انتخاب نهایی نقاط ZigZag و ساخت legs ---
+
+        # =========================
+        # Stage 2: zigzag resolve
+        # =========================
         last_high = 0.0
-        last_low = 0.0
-        last_high_pos = -1
-        last_low_pos = -1
-        search_mode = 0  # 0=Extremum, 1=Peak, -1=Bottom
-        
-        # ایجاد لیست‌های typed برای legs (محدودیت njit)
-        leg_starts = TypedList.empty_list(types.int64)
-        leg_ends = TypedList.empty_list(types.int64)
-        leg_start_prices = TypedList.empty_list(types.float64)
-        leg_end_prices = TypedList.empty_list(types.float64)
-        leg_directions = TypedList.empty_list(types.int64)
-        
+        last_low  = 0.0
+        last_hp   = -1
+        last_lp   = -1
+        mode      = 0
+
         for i in range(depth - 1, n):
-            if search_mode == 0:  # Extremum
-                if last_low == 0.0 and last_high == 0.0:
-                    if high_map[i] != 0.0:
-                        last_high = high_map[i]
-                        last_high_pos = i
-                        zz_buffer[i] = last_high
-                        state_series[i] = -1  # high point
-                        search_mode = -1  # Bottom
-                    
-                    if low_map[i] != 0.0:
-                        last_low = low_map[i]
-                        last_low_pos = i
-                        zz_buffer[i] = last_low
-                        state_series[i] = 1   # low point
-                        search_mode = 1  # Peak
-            
-            elif search_mode == 1:  # Peak - به دنبال Low
+
+            if mode == 0:
+                if last_high == 0.0 and high_map[i] != 0.0:
+                    last_high = high_map[i]
+                    last_hp = i
+                    zz_buffer[i] = last_high
+                    state[i] = -1
+                    mode = -1
+
+                elif last_low == 0.0 and low_map[i] != 0.0:
+                    last_low = low_map[i]
+                    last_lp = i
+                    zz_buffer[i] = last_low
+                    state[i] = 1
+                    mode = 1
+
+            elif mode == 1:
                 if low_map[i] != 0.0 and low_map[i] < last_low and high_map[i] == 0.0:
-                    if last_low_pos >= 0:
-                        zz_buffer[last_low_pos] = 0.0
-                        state_series[last_low_pos] = 0
-                    
+                    if last_lp >= 0:
+                        zz_buffer[last_lp] = 0.0
+                        state[last_lp] = 0
                     last_low = low_map[i]
-                    last_low_pos = i
+                    last_lp = i
                     zz_buffer[i] = last_low
-                    state_series[i] = 1  # low point
-                
-                elif high_map[i] != 0.0 and low_map[i] == 0.0:
+                    state[i] = 1
+
+                elif high_map[i] != 0.0:
                     last_high = high_map[i]
-                    last_high_pos = i
+                    last_hp = i
                     zz_buffer[i] = last_high
-                    state_series[i] = -1  # high point
-                    search_mode = -1  # Bottom
-                    
-                    # ثبت leg (از low به high - روند صعودی)
-                    if last_low_pos >= 0:
-                        leg_starts.append(last_low_pos)
-                        leg_ends.append(last_high_pos)
-                        leg_start_prices.append(last_low)
-                        leg_end_prices.append(last_high)
-                        leg_directions.append(1)  # صعودی
-            
-            elif search_mode == -1:  # Bottom - به دنبال High
+                    state[i] = -1
+                    mode = -1
+
+            else:
                 if high_map[i] != 0.0 and high_map[i] > last_high and low_map[i] == 0.0:
-                    if last_high_pos >= 0:
-                        zz_buffer[last_high_pos] = 0.0
-                        state_series[last_high_pos] = 0
-                    
+                    if last_hp >= 0:
+                        zz_buffer[last_hp] = 0.0
+                        state[last_hp] = 0
                     last_high = high_map[i]
-                    last_high_pos = i
+                    last_hp = i
                     zz_buffer[i] = last_high
-                    state_series[i] = -1  # high point
-                
-                elif low_map[i] != 0.0 and high_map[i] == 0.0:
+                    state[i] = -1
+
+                elif low_map[i] != 0.0:
                     last_low = low_map[i]
-                    last_low_pos = i
+                    last_lp = i
                     zz_buffer[i] = last_low
-                    state_series[i] = 1  # low point
-                    search_mode = 1  # Peak
-                    
-                    # ثبت leg (از high به low - روند نزولی)
-                    if last_high_pos >= 0:
-                        leg_starts.append(last_high_pos)
-                        leg_ends.append(last_low_pos)
-                        leg_start_prices.append(last_high)
-                        leg_end_prices.append(last_low)
-                        leg_directions.append(-1)  # نزولی
-        
-        # تبدیل لیست‌های typed به آرایه‌های numpy برای خروجی
-        legs_count = len(leg_starts)
-        legs_array = np.zeros((legs_count, 5))
-        for idx in range(legs_count):
-            legs_array[idx, 0] = leg_starts[idx]
-            legs_array[idx, 1] = leg_ends[idx]
-            legs_array[idx, 2] = leg_start_prices[idx]
-            legs_array[idx, 3] = leg_end_prices[idx]
-            legs_array[idx, 4] = leg_directions[idx]
-        
-        return zz_buffer, high_map, low_map, state_series, legs_array
+                    state[i] = 1
+                    mode = 1
+
+        return state, zz_buffer, high_map, low_map
+
     
-    #==========================================================================
-    # تبدیل به آرایه‌های numpy با نوع مناسب برای njit
-    high_arr = high.values.astype(np.float64)
-    low_arr = low.values.astype(np.float64)
-    
-    # اجرای هسته njit
-    zz_buffer, high_map, low_map, state_series, legs_array = _zigzag_njit_core(
+    state, zz, hmap, lmap = _zigzag_core(
         high_arr, low_arr, depth, deviation, backstep, point
     )
-    
-    # ایجاد Series خروجی
-    zz_series = pd.Series(zz_buffer, index=high.index)
-    
-    # تبدیل legs_array به لیست دیکت‌شوند (فرمت اصلی)
-    legs = []
-    for i in range(len(legs_array)):
-        legs.append({
-            "start_idx": int(legs_array[i, 0]),
-            "end_idx": int(legs_array[i, 1]),
-            "start_price": float(legs_array[i, 2]),
-            "end_price": float(legs_array[i, 3]),
-            "direction": int(legs_array[i, 4])
-        })
-    
-    # اضافه کردن تمام metadataهای مورد نیاز (فرمت دقیق نسخه اصلی)
-    zz_series.attrs.update({
-        "legs": legs,  # لیست legها
-        "state_series": state_series.tolist(),  # آرایه stateها
-        "high_map": high_map.tolist(),  # نقاط high
-        "low_map": low_map.tolist(),    # نقاط low
-        "params": {  # پارامترهای ورودی
-            "depth": depth,
-            "deviation": deviation,
-            "backstep": backstep,
-            "point": point
-        }
-    })
-    
-    return zz_series
 
-#==============================================================================
+    high_actual = np.zeros_like(high_arr)
+    low_actual  = np.zeros_like(low_arr)
+
+    for i in range(state.shape[0]):
+        if state[i] == -1:
+            high_actual[i] = high_arr[i]
+        elif state[i] == 1:
+            low_actual[i] = low_arr[i]
+
+    return state, high_actual, low_actual
+
+#====================================================================
 # Wrapper function to choose between njit and non-njit based on data size
-#==============================================================================
+#==================================================================== 6
 def zigzag(
     high: pd.Series,
     low: pd.Series,
@@ -472,17 +319,40 @@ def zigzag(
     deviation: float = 5.0,
     backstep: int = 10,
     point: float = 0.01,
-) -> pd.Series:
+) -> pd.DataFrame:
     
-    if(len(high) < 150_000):
-        return _zigzag_mql     (high, low, depth, deviation, backstep, point)
+    idx = high.index
+    high_np = np.ascontiguousarray(high.values, dtype=np.float64)
+    low_np  = np.ascontiguousarray(low.values,  dtype=np.float64)
+
+    if len(high_np) <= 1_000_000:
+        state, high_actual, low_actual = \
+            _zigzag_mql_numpy(
+                # dt_np,
+                high_np, low_np,
+                depth, deviation, backstep, point
+            )
     else:
-        return _zigzag_mql_njit(high, low, depth, deviation, backstep, point)
+        state, high_actual, low_actual = \
+            _zigzag_mql_njit_loopwise(
+                # dt_np,
+                high_np, low_np,
+                depth, deviation, backstep, point
+            )
 
+    return pd.DataFrame(
+        index=idx,
+        data={
+            "state": -state,
+            # در مورد state:
+            # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
+            "high" : high_actual,
+            "low"  : low_actual,
+            })
 
-#==============================================================================
+#====================================================================
 # MULTI-TIMEFRAME ADAPTER
-#==============================================================================
+#====================================================================
 def zigzag_mtf_adapter(
     high: pd.Series,
     low: pd.Series,
@@ -630,10 +500,7 @@ def zigzag_mtf_adapter(
         "backstep": backstep,
         "point": point
     }
-    # zz_lft: حاوی کد جستجوی اکسترمم بعدی است.
-    # یعنی اگر یک کندل کمترین پایین را داشته باشد، چون بعداً باید بیشترین بالا را جستجو کند،
-    # علامت آن کندل برابر با +1 است.
-    # بنابراین اگرخروجی رامنفی کنیم،درواقع ماکزیمم یا مینیمم بودن خودآن کندل رابه خروجی داده ایم
-    return -zz_ltf
 
-#==============================================================================
+    return zz_ltf
+
+#====================================================================

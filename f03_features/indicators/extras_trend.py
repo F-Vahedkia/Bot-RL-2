@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f03_features/indicators/extras_trend.py
-# Status in (Bot-RL-2): Reviewed at 040929
+# Status in (Bot-RL-2): Reviewed at 1404/09/29
 
 """اندیکاتورهای روندی تکمیلی: Supertrend, ADX/DI/ADXR, Aroon, KAMA/DEMA/TEMA/HMA, Ichimoku
 """

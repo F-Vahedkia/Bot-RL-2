@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f03_features/indicators/divergences.py
-# Status in (Bot-RL-2): Reviewed at 040928
+# Status in (Bot-RL-2): Reviewed at 1404/09/28
 """
 واگرایی کلاسیک/مخفی روی RSI و MACD - با pivot تاییدشده و shift(+1) برای حذف look-ahead
 """

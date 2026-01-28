@@ -21,8 +21,8 @@ from typing import Callable, Dict, Optional
 import pandas as pd
 
 from f03_features.price_action import (
-    breakouts as _bo,
-    confluence as _cf,
+    breakouts_1 as _bo,
+    confluence_1 as _cf,
     imbalance as _im,
     market_structure as _ms,
     microchannels as _mc,
@@ -97,14 +97,14 @@ def build_all_price_action_features(
 ) -> pd.DataFrame:
     """
     ترتیب اجرای پیشنهادی:
-      1) Market Structure
-      2) Regime Detector
-      3) Zones (SD/OB)
-      4) Imbalance & Liquidity (FVG, Sweeps)
-      5) Breakouts (وابسته به رنج/کانال rolling)
-      6) Micro-channels
-      7) MTF Context (با df_higher اختیاری)
-      8) Confluence (تجمیع نهایی)
+    1) Market Structure
+    2) Regime Detector
+    3) Zones (SD/OB)
+    4) Imbalance & Liquidity (FVG, Sweeps)
+    5) Breakouts (وابسته به رنج/کانال rolling)
+    6) Micro-channels
+    7) MTF Context (با df_higher اختیاری)
+    8) Confluence (تجمیع نهایی)
     """
     ms_kw = dict(lookback=3)
     if market_structure_kwargs: ms_kw.update(market_structure_kwargs)

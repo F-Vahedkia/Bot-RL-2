@@ -29,7 +29,6 @@ print("=========================================================================
 zigzag = {"no_njit": _zigzag_mql,
           "by_njit": _zigzag_mql_njit,
           }
-
 for key in zigzag.keys():  # اصلاح: .keys() به جای .items
     func = zigzag[key]
     t1 = datetime.now()
@@ -54,9 +53,9 @@ for key in zigzag.keys():  # اصلاح: .keys() به جای .items
         zzg_legs = pd.DataFrame(zzg.attrs["legs"])
         
         # بررسی نام ستون‌ها (ممکن است ts_start/ts_end یا start_idx/end_idx باشد)
-        if "ts_start" in zzg_legs.columns:
-            start_col = "ts_start"
-            end_col = "ts_end"
+        if "start_st" in zzg_legs.columns:
+            start_col = "start_ts"
+            end_col = "end_ts"
         elif "start_idx" in zzg_legs.columns:
             start_col = "start_idx"
             end_col = "end_idx"
@@ -110,4 +109,4 @@ for key in zigzag.keys():  # اصلاح: .keys() به جای .items
     
     print("-" * 60)
 
-print("\n✓ All tests completed successfully!")
+print("\n✓ All tests completed successfully!") 

@@ -1,24 +1,32 @@
 # f15_testcheck/unit/test_zigzag.py
 # Test script for ZigZag indicator with debug output and visualization
+# Run: python -m f15_testcheck.unit.test_zigzag.py
 # Author: Farhad Vahedkia
-# Date: 1404/10/09- 17:40
+# Date Start: 1404/10/09- 17:40
+# Date End  : 1404/11/08- 07:49
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from numba import njit
 from datetime import datetime
-from f03_features.indicators.zigzag import _zigzag_mql, _zigzag_mql_njit
+from f03_features.indicators.zigzag import (
+    _zigzag_mql,
+    _zigzag_mql_numpy,
+    _zigzag_mql_njit,
+    _zigzag_mql_njit_vectorized,
+    _zigzag_mql_njit_loopwise,
+    zigzag,
+)
 
 # ============================================================
 # Load data
 # ============================================================
 t1 = datetime.now()
-data = pd.read_csv("f02_data/raw/XAUUSD/M5.csv")
+data = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
 t2 = datetime.now()
-df = data[-2_000:].copy()
+df = data[-1_020_000:].copy()
 t3 = datetime.now()
-df["time"] = pd.to_datetime(data["time"], utc=True)
+df["time"] = pd.to_datetime(df["time"], utc=True)
 df.set_index("time", inplace=True)
 t4 = datetime.now()
 print(f"Time taken to read CSV with {len(data)} rows: {round((t2 - t1).total_seconds(), 1)} seconds")
@@ -29,20 +37,25 @@ print("=========================================================================
 # ============================================================
 # Call ZigZag (MQL-compatible)
 # ============================================================
-zigzag = {"no_njit": _zigzag_mql,
-          "by_njit": _zigzag_mql_njit,
-          }
-for key in zigzag.keys():
-    func = zigzag[key]
+zigzag_funcs = {"no_njit": _zigzag_mql,       # 1
+                "by_njit": _zigzag_mql_njit,  # 3
+                }
+for key in zigzag_funcs.keys():
+    continue
+    func = zigzag_funcs[key]
     t1 = datetime.now()
-    zzg = func(df["high"], df["low"], depth=20, deviation=5.0, backstep=4, point=0.01)
+    zzg, h_act, l_act = func(df["high"], df["low"], depth=20, deviation=5.0, backstep=4, point=0.01)
     t2 = datetime.now()
-    print(f"Time taken to run zigzag: {round((t2 - t1).total_seconds(), 1)} seconds")
+    print(f"Time taken to run zigzag ({key}): {round((t2 - t1).total_seconds(), 3)} seconds")
 
+    # ایجاد DataFrame - اصلاح نام ستون‌ها
     zzg_df = pd.DataFrame(
         index=df.index,
         data={
-            "high":df["high"],
+            "zzg Result": zzg,
+            "high_actual": h_act,
+            "low_actual": l_act,
+            "high": df["high"],
             "low": df["low"],
             "state": np.asarray(zzg.attrs["state_series"]),
             "high_map": np.asarray(zzg.attrs["high_map"]),
@@ -57,8 +70,6 @@ for key in zigzag.keys():
     zzg_legs["interval_peak"] = 0.0
     zzg_legs["interval_bttm"] = 0.0
     
-    false_numbers = 0
-    true_numbers = 0
     for i in range(len(zzg_legs)):
         leg_srt_pos = zzg_legs["start_idx"][i]
         leg_end_pos   = zzg_legs["end_idx"][i]
@@ -91,7 +102,46 @@ for key in zigzag.keys():
     print(f"Output swings CSV written to: {name_swing} with {len(zzg)} rows")
     print(f"Output legs CSV written to: {name_leg} with {len(zzg_legs)} rows \n")
 
+# ============================================================
+# Call _zigzag_mql_numpy()
+# ============================================================
+zigzag_funcs = {
+                "New_no_njit": _zigzag_mql_numpy,                # 2
+                # "New_by_njit_vec": _zigzag_mql_njit_vectorized,  # 4
+                "New_by_njit_loop": _zigzag_mql_njit_loopwise,   # 5
+                }
 
+for key in zigzag_funcs.keys():
+    # continue
+    df_index = df.index
+    func = zigzag_funcs[key]
+    t1 = datetime.now()
+    zzg, h_act, l_act = func(
+                            df["high"].values,
+                            df["low"].values,
+                            depth=20, deviation=5.0, backstep=4, point=0.01)
+    t2 = datetime.now()
+    print(f"Time taken to run zigzag ({key}): {round((t2 - t1).total_seconds(), 3)} seconds")
+    df_new = pd.DataFrame(
+        index = df_index,
+        data = {
+            "high": df["high"],
+            "low": df["low"],
+            "state": zzg,
+            "high_actual": h_act,
+            "low_actual": l_act
+        }
+    )
+    df_new.to_csv(f"{key}.csv")
+
+# ============================================================
+# Call _zigzag_mql_numpy()
+# ============================================================
+t1 = datetime.now()
+zzg_df = zigzag(df["high"], df["low"], depth=20, deviation=5.0, backstep=4, point=0.01)
+t2 = datetime.now()
+print(f"Time taken to run zigzag for {len(df)} candles: {round((t2 - t1).total_seconds(), 3)} seconds")
+zzg_df.to_csv("zigzag_Main.csv")
 
 # ============================================================
 # Extract swing prices correctly

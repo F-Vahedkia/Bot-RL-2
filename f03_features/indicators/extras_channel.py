@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f03_features/indicators/extras_channel.py
-# Status in (Bot-RL-2): Reviewed at 040928
+# Status in (Bot-RL-2): Reviewed at 1404/09/28
 
 """کانال‌ها: Donchian, Chaikin Volatility"""
 
