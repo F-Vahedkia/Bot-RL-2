@@ -1,8 +1,5 @@
 # f03_features/indicators/levels.py
-# Status in (Bot-RL-2): Completed
 
-"""Pivot های کلاسیک، S/R ساده مبتنی بر فراکتال، و فاصله تا سطوح فیبوناچی اخیر
-"""
 #==============================================================================
 # Imports & Logger
 #==============================================================================
@@ -11,11 +8,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from numba import njit
 from datetime import datetime
 from typing import List, Sequence, Dict, Optional, Tuple, Any
-from numba import njit
 from .core import atr
-from .zigzag import zigzag_mtf_adapter
+from .zigzag2 import zigzag_mtf_adapter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -45,442 +42,446 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
         r3.astype("float32"), \
         s3.astype("float32")
 
-""" --------------------------------------------------------------------------- OK Func2 (Not Used)
-Speed=OK
-with two logical branches for small and large data sets
-"""
-def fractal_points(high: pd.Series, low: pd.Series, k: int = 2) -> tuple[pd.Series, pd.Series]:
-    if len(high) < 200_000:   
-        """ --- برای داده‌های کوچک‌تر از 200000، نسخه قدیمی سریع‌تر است
-        Compute simple fractals (high/low) using a rolling window [i-k : i+k+1].
-        فراکتال ساده برای استفاده در توابع sr_distance, fibo_levels
-        قرارداد خروجی:
-        - 1.0  → فرکتال تأییدشده
-        - 0.0  → قطعاً فرکتال نیست
-        - NaN  → هنوز قابل قضاوت نیست (warm-up یا ناحیهٔ look-ahead)
-        """
-        window = 2*k + 1
-        hh = (high.rolling(window, center=True, min_periods=window)
-                .apply(lambda x: float(np.argmax(x) == k), raw=True)
-            )
-        ll = (low.rolling(window, center=True, min_periods=window)
-                .apply(lambda x: float(np.argmin(x) == k), raw=True)
-            )
-        # حذف صریح کندل‌های ابتدایی و انتهایی که هنوز آینده یا گذشته را ندارند
-        if k > 0:
-            hh.iloc[ :k] = np.nan
-            hh.iloc[-k:] = np.nan
-            ll.iloc[ :k] = np.nan
-            ll.iloc[-k:] = np.nan
-        return hh.astype("float32"), ll.astype("float32")
-    
-    else:
-        """ --- برای داده‌های بزرگ‌تر از 200000، نسخه Numba سریع‌تر است
-        Speed=FAST (Numba JIT)
-        Compute simple fractals (high/low) using a rolling window [i-k : i+k+1].
-        Numba JIT optimized for speed.
-        
-        Parameters
-        ----------
-        high : pd.Series
-            High prices
-        low : pd.Series
-            Low prices
-        k : int, default=2
-            Fractal window size (total window = 2k+1)
-        
-        Returns
-        -------
-        tuple[pd.Series, pd.Series]
-            hh, ll: fractal highs and lows as float32 Series
-        """
-        high_vals = high.values.astype(np.float32)
-        low_vals = low.values.astype(np.float32)
-        n = len(high_vals)
-
-        # Preallocate output
-        hh_arr = np.full(n, np.nan, dtype=np.float32)
-        ll_arr = np.full(n, np.nan, dtype=np.float32)
-
-        # Numba-optimized inner loop
-        @njit
-        def compute_fractals(h_vals, l_vals, hh_out, ll_out, k, n):
-            for i in range(k, n-k):
-                h_window = h_vals[i-k:i+k+1]
-                l_window = l_vals[i-k:i+k+1]
-
-                hh_out[i] = 1.0 if np.argmax(h_window) == k else 0.0
-                ll_out[i] = 1.0 if np.argmin(l_window) == k else 0.0
-            return hh_out, ll_out
-
-        hh_arr, ll_arr = compute_fractals(high_vals, low_vals, hh_arr, ll_arr, k, n)
-
-        return pd.Series(hh_arr, index=high.index), pd.Series(ll_arr, index=low.index)
-
 """ --------------------------------------------------------------------------- OK Func2
-This function used instead of fractal_points in sr_distance and fibo_levels
-to leverage zigzag_mtf_adapter output for hh/ll series.
+سطوح حمایت و مقاومت ثابت را از روی لِگ‌های زیگزاگ می‌سازد و آن‌ها را روی تمام کندل‌های هر لگ پخش می‌کند.
+
+اگر لگ صعودی باشد → مقدار کف ابتدای لگ = Support
+اگر لگ نزولی باشد → مقدار سقف ابتدای لگ = Resistance
+
+این مقدار از ابتدای لگ تا انتهای همان لگ، برای همهٔ کندل‌ها ثابت می‌ماند.
 """
-def zigzag_points_from_adapter(
-                high: pd.Series,
-                low: pd.Series,
-                tf: str,
-                depth: int,
-                deviation: float,
-                backstep: int,
-) -> tuple[pd.Series, pd.Series]:
-    """
-    Adapter:
-    Converts zigzag_mtf_adapter output into hh / ll series
-    compatible with legacy fractal-based logic.
-    
-    Output:
-    - hh: 1.0 at swing highs
-    - ll: 1.0 at swing lows
-    """
-    
+def sr_from_zigzag_legs_orig(
+    df: pd.DataFrame,
+    *,
+    tf: str,
+    depth: int,
+    deviation: float,
+    backstep: int,
+    extend_last_leg: bool = False,
+) -> pd.DataFrame:
+
     zz = zigzag_mtf_adapter(
-        high=high,
-        low=low,
+        high=df["high"],
+        low=df["low"],
         tf_higher=tf,
         depth=depth,
         deviation=deviation,
-        backstep=backstep
+        backstep=backstep,
     )
 
-    hh = pd.Series(0.0, index=zz.index, dtype=np.float32)
-    ll = pd.Series(0.0, index=zz.index, dtype=np.float32)
+    legs = zz.attrs.get("legs", [])
+    idx = df.index
+    n = len(df)
 
-    hh.loc[zz > 0] = 1.0
-    ll.loc[zz < 0] = 1.0
+    sup = pd.Series(np.nan, index=idx, dtype=np.float32)
+    res = pd.Series(np.nan, index=idx, dtype=np.float32)
 
-    return hh, ll, zz
+    for leg in legs:
+        s = leg["start_ltf_pos"]
+        e = leg["end_ltf_pos"]
+        ts = leg["start_ts"]
 
-""" --------------------------------------------------------------------------- OK Func3 (Not Used)
-Speed=Slow
-Logic=OK
-فاصله قیمتی تا اخیرترین سطح حمایت/مقاومت
-این تابع برای هر قیمت بسته شدن، قیمتهای اخیرترین لگ را بدست می‌آورد
-"""
-def sr_distance(
-                df: pd.DataFrame,
-                *,
-                tf: str | None = None,
-                depth: int | None = None,
-                deviation: float | None = None,
-                backstep: int | None = None,
-) -> Tuple[pd.Series, pd.Series]:
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
+        if leg["direction"] > 0:
+            sup.iloc[s:e] = np.float32(df.at[ts, "low"])
+        else:
+            res.iloc[s:e] = np.float32(df.at[ts, "high"])
 
-    # --- ZigZag params guard (engine -> config fallback) ----
-    zz_cfg = cfg.get("features", {}).get("support_resistance", {}).get("zigzag", {})
-    base_timeframe = cfg.get("features", {}).get("base_timeframe", None)
+    # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
+    if legs and extend_last_leg:
+        last = legs[-1]
+        s = last["end_ltf_pos"]    # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        e = n                      # انتهای دیتافریم
 
-    tf        = tf        if tf        is not None else zz_cfg.get("tf", None)
-    tf        = tf        if tf        is not None else base_timeframe
-    depth     = depth     if depth     is not None else zz_cfg.get("depth", 12)
-    deviation = deviation if deviation is not None else zz_cfg.get("deviation", 5.0)
-    backstep  = backstep  if backstep  is not None else zz_cfg.get("backstep", 10)
+        if last["direction"] < 0:
+            sup.iloc[s:e] = np.float32(df["low"].iloc[s])
+        else:
+            res.iloc[s:e] = np.float32(df["high"].iloc[s])
 
-    # --- Extract ZigZag points ---
-    hh, ll = zigzag_points_from_adapter(
-        high=high,
-        low=low,
-        close=close,
-        tf=tf,
+    return pd.DataFrame(
+        {"sr_support": sup, "sr_resistance": res},
+        index=idx,
+        dtype=np.float32,
+    )
+
+def sr_from_zigzag_legs_njit(
+    df: pd.DataFrame,
+    *,
+    tf: str,
+    depth: int,
+    deviation: float,
+    backstep: int,
+    extend_last_leg: bool = False,
+) -> pd.DataFrame:
+    """
+    Numba-optimized version of sr_from_zigzag_legs.
+    API و خروجی دقیقاً مشابه نسخه اصلی است.
+    """
+    from numba import njit
+    from .zigzag import zigzag_mtf_adapter
+
+    # --- Run zigzag_mtf_adapter ---
+    zz = zigzag_mtf_adapter(
+        high=df["high"],
+        low=df["low"],
+        tf_higher=tf,
         depth=depth,
         deviation=deviation,
         backstep=backstep,
     )
 
-    res = pd.Series(index=close.index, dtype="float32")    # resistance
-    sup = pd.Series(index=close.index, dtype="float32")    # support
+    legs = zz.attrs.get("legs", [])
+    n = len(df)
 
-    # --- Compute resistance/support from ZigZag highs/lows ---
-    last_h_val, last_h_idx = np.nan, None
-    last_l_val, last_l_idx = np.nan, None
+    sup_arr = np.full(n, np.nan, dtype=np.float32)
+    res_arr = np.full(n, np.nan, dtype=np.float32)
 
-    for i in range(len(close)):
-        if hh.iloc[i] == 1:
-            last_h_val = high.iloc[i]
-            last_h_idx = i
-        if ll.iloc[i] == 1:
-            last_l_val = low.iloc[i]
-            last_l_idx = i
+    if not legs:
+        return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
+                            index=df.index, dtype=np.float32)
 
-        # assign resistance/support only if last ZigZag points exist
-        r = last_h_val - close.iloc[i] if last_h_val is not np.nan else np.nan
-        s = close.iloc[i] - last_l_val if last_l_val is not np.nan else np.nan
+    # Prepare leg data for Numba
+    leg_array = np.array([
+        (leg["start_ltf_pos"], leg["end_ltf_pos"], leg["direction"])
+        for leg in legs
+        if leg["start_ltf_pos"] < n
+    ], dtype=np.int64)
 
-        # Guard: ensure close time is after last ZigZag point
-        if last_h_idx is not None and last_h_idx > i:
-            r = np.nan
-        if last_l_idx is not None and last_l_idx > i:
-            s = np.nan
-
-        res.iloc[i] = np.float32(r) if pd.notna(r) else np.nan
-        sup.iloc[i] = np.float32(s) if pd.notna(s) else np.nan
-
-    return res, sup
-
-""" --------------------------------------------------------------------------- OK Func3
-Speed=FAST (Numba JIT)
-"""
-def sr_distance_njit(
-            df: pd.DataFrame,
-            *,
-            tf: str | None = None,
-            depth: int | None = None,
-            deviation: float | None = None,
-            backstep: int | None = None,
-) -> tuple[pd.Series, pd.Series]:
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
-
-    zz_cfg = cfg.get("features", {}).get("support_resistance", {}).get("zigzag", {})
-    base_timeframe = cfg.get("features", {}).get("base_timeframe", None)
-
-    tf        = tf        if tf        is not None else zz_cfg.get("tf", None)
-    tf        = tf        if tf        is not None else base_timeframe
-    depth     = depth     if depth     is not None else zz_cfg.get("depth", 12)
-    deviation = deviation if deviation is not None else zz_cfg.get("deviation", 5.0)
-    backstep  = backstep  if backstep  is not None else zz_cfg.get("backstep", 10)
-
-    # --- Extract ZigZag points ---
-    hh, ll = zigzag_points_from_adapter(
-        high=high,
-        low=low,
-        close=close,
-        tf=tf,
-        depth=depth,
-        deviation=deviation,
-        backstep=backstep,
-    )
-
-    # convert to arrays for njit
-    high_v = high.values.astype(np.float32)
-    low_v  = low.values.astype(np.float32)
-    close_v = close.values.astype(np.float32)
-    hh_v = hh.values.astype(np.float32)
-    ll_v = ll.values.astype(np.float32)
-
-    n = len(close_v)
-    res_v = np.full(n, np.nan, dtype=np.float32)
-    sup_v = np.full(n, np.nan, dtype=np.float32)
+    high_vals = df["high"].values.astype(np.float32)
+    low_vals = df["low"].values.astype(np.float32)
 
     @njit
-    def compute_sr(high_v, low_v, close_v, hh_v, ll_v, res_v, sup_v, n):
-        last_h_val = np.nan
-        last_l_val = np.nan
-        last_h_idx = -1
-        last_l_idx = -1
+    def fill_sr(sup_arr, res_arr, leg_array, high_vals, low_vals):
+        for i in range(leg_array.shape[0]):
+            s = leg_array[i, 0]
+            e = leg_array[i, 1]
+            direction = leg_array[i, 2]
+            if e > len(sup_arr):
+                e = len(sup_arr)
+            if direction > 0:
+                val = low_vals[s]
+                for j in range(s, e):
+                    sup_arr[j] = val
+            else:
+                val = high_vals[s]
+                for j in range(s, e):
+                    res_arr[j] = val
+        return sup_arr, res_arr
 
-        for i in range(n):
-            if hh_v[i] == 1.0:
-                last_h_val = high_v[i]
-                last_h_idx = i
-            if ll_v[i] == 1.0:
-                last_l_val = low_v[i]
-                last_l_idx = i
+    sup_arr, res_arr = fill_sr(sup_arr, res_arr, leg_array, high_vals, low_vals)
 
-            r = last_h_val - close_v[i] if not np.isnan(last_h_val) else np.nan
-            s = close_v[i] - last_l_val if not np.isnan(last_l_val) else np.nan
+    # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
+    if legs and extend_last_leg:
+        last_leg = legs[-1]
+        s_last = last_leg["end_ltf_pos"]   # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        e_last = n                         # انتهای دیتافریم
+        direction_last = last_leg["direction"]
 
-            if last_h_idx > i:
-                r = np.nan
-            if last_l_idx > i:
-                s = np.nan
+        if s_last < n:
+            if direction_last < 0:
+                val = low_vals[s_last]
+                sup_arr[s_last:e_last] = val
+            else:
+                val = high_vals[s_last]
+                res_arr[s_last:e_last] = val
 
-            res_v[i] = r
-            sup_v[i] = s
+    return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
+                        index=df.index, dtype=np.float32)
 
-    compute_sr(high_v, low_v, close_v, hh_v, ll_v, res_v, sup_v, n)
+def sr_from_zigzag_legs(
+    df: pd.DataFrame,
+    *,
+    tf: str,
+    depth: int,
+    deviation: float,
+    backstep: int,
+    extend_last_leg: bool = False,
+    _njit_threshold: int = 1_000_000,
+) -> pd.DataFrame:
+    """
+    Smart wrapper:
+    - small DF  -> pandas implementation
+    - large DF  -> njit implementation
+    """
+    if len(df) < _njit_threshold:
+        return sr_from_zigzag_legs_orig(
+            df,
+            tf=tf,
+            depth=depth,
+            deviation=deviation,
+            backstep=backstep,
+            extend_last_leg=extend_last_leg,
+        )
+    else:
+        return sr_from_zigzag_legs_njit(
+            df,
+            tf=tf,
+            depth=depth,
+            deviation=deviation,
+            backstep=backstep,
+            extend_last_leg=extend_last_leg,
+        )
 
-    return pd.Series(res_v, index=close.index, dtype="float32"), \
-           pd.Series(sup_v, index=close.index, dtype="float32")
+""" --------------------------------------------------------------------------- OK Func3
+فاصله نرمال‌شده قیمت پایانی تا سطوح حمایت و مقاومت فعال.
+نرمال‌سازی بر اساس ATR (Average True Range) انجام می‌شود.
 
-""" --------------------------------------------------------------------------- OK Func4 (Not Used)
-speed=SLOW
-    تولید سطوح فیبوناچی به صورت دیکشنری {ratio: level}.
+پارامترها:
+-----------
+df : pd.DataFrame
+    دیتافریم شامل ستون‌های ['high', 'low', 'close'] و ایندکس زمانی
+sr : pd.DataFrame
+    دیتافریم خروجی sr_from_zigzag_legs شامل ستون‌های
+    ['sr_support', 'sr_resistance']
+atr_window : int
+    طول پنجره برای محاسبه ATR
+eps : float
+    مقدار کوچک برای جلوگیری از تقسیم بر صفر
 
-    - استفاده از آخرین fractal high,low در بازه lookback
-    - تشخیص جهت swing (صعودی یا نزولی)
-    - خروجی: dict که کلیدها نسبت‌های فیبو و مقادیر سطح قیمت هستند
+خروجی:
+-------
+pd.DataFrame با ستون‌های:
+- dist_to_support_norm
+- dist_to_resistance_norm
 """
-def fibo_levels_slow(close: pd.Series,
-                high: pd.Series,
-                low: pd.Series,
-                k: int = 2,
-                cfg: Optional[dict] = None,
-                lookback: int = 500,
+def sr_distance_from_levels(
+    df: pd.DataFrame,
+    sr: pd.DataFrame,
+    *,
+    atr_window: int = 14,
+    eps: float = 1e-8,
 ) -> pd.DataFrame:
 
-    # پیش فرض درصدهای فیبوناچی ---------------------------
-    if cfg is not None:
-        fb = (cfg.get("features") or {}).get("fibonacci") or {}
-        ratios: List[float] = list(fb.get("retracement_ratios") or [])
-    else:
-        ratios = [0.236, 0.382, 0.500, 0.618, 0.786]
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
 
-    # محاسبه فراکتال‌ها ------------------------------------
-    hh, ll = fractal_points(high, low, k)  # Series contain 0 and 1
-    cols = [f"fibo_{r}" for r in ratios]
-    out = pd.DataFrame(np.nan, index=close.index, columns=cols, dtype="float32")
+    # --- محاسبه ATR ---
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(atr_window, min_periods=1).mean().astype(np.float32)
 
-    for i in range(len(close)):
-        lo = max(k, i - lookback)
-        new_hh = (hh.iloc[lo:i] == 1)
-        new_ll = (ll.iloc[lo:i] == 1)
-        h_fractals = high.iloc[lo:i][new_hh]   # آخرین fractal high ها
-        l_fractals =  low.iloc[lo:i][new_ll]   # آخرین fractal low ها
+    # --- فاصله نرمال شده ---
+    dist_sup = ((close - sr["sr_support"]) / (atr + eps)).astype(np.float32)
+    dist_res = ((sr["sr_resistance"] - close) / (atr + eps)).astype(np.float32)
 
-        if (i < k) or h_fractals.empty or l_fractals.empty:
-            continue
+    # --- NaN propagation ---
+    dist_sup[sr["sr_support"].isna()] = np.nan
+    dist_res[sr["sr_resistance"].isna()] = np.nan
 
-        # قیمت و زمان سقف و کف اخیر
-        last_high = h_fractals.iloc[-1]
-        last_low = l_fractals.iloc[-1]
-        time_high = h_fractals.index[-1]
-        time_low = l_fractals.index[-1]
-        rng = abs(last_high - last_low)
-        
-        if rng == 0:
-            continue
-
-        # تعیین جهت swing
-        if time_low < time_high:     # برای روند صعودی
-            for r in ratios:
-                out.iat[i, cols.index(f"fibo_{r}")] = float(last_high - r * rng)
-        else:                        # برای روند نزولی
-            for r in ratios:
-                out.iat[i, cols.index(f"fibo_{r}")] = float(last_low + r * rng)
-    return out
+    return pd.DataFrame(
+        {
+            "dist_to_support_norm": dist_sup,
+            "dist_to_resistance_norm": dist_res,
+        },
+        index=df.index,
+        dtype=np.float32,
+    )
 
 """ --------------------------------------------------------------------------- OK Func4
-speed=OK
-    Compute Fibonacci retracement levels based on the most recent completed swing
-    defined by fractal highs and lows, optimized for performance using NumPy
-    vectorization.
+برای استفاده داخلی است
+"""
+def _zigzag_leg_mask_orig(zz: pd.Series) -> pd.Series:
+    legs = zz.attrs.get("legs", [])
+    if not legs:
+        return pd.Series(False, index=zz.index, dtype=bool)
 
-    This function is a high-performance equivalent of `fibo_levels`, producing
-    identical numerical results while significantly reducing execution time.
-    It preserves the original Fibonacci logic:
-      - No Fibonacci levels are produced until a valid swing leg is formed
-        (i.e., both a high and a low fractal exist within lookback).
-      - Swing direction is determined by the temporal order of the last low
-        and last high fractals.
-      - Levels are computed per-bar and aligned with the input time index.
+    mask = pd.Series(False, index=zz.index)
+    n = len(zz)
+
+    for leg in legs:
+        s = leg["start_ltf_pos"]
+        e = leg["end_ltf_pos"]
+        if s >= n:
+            continue
+        if e > n:
+            e = n
+        mask.iloc[s:e] = True
+    return mask.astype(bool)
+
+def _zigzag_leg_mask_njit(zz: pd.Series) -> pd.Series:
+    """
+    Numba-optimized version of zigzag_leg_mask.
+    Returns boolean mask True for all indices covered by zigzag legs.
+    """
+    n = len(zz)
+    mask = np.zeros(n, dtype=np.bool_)
+
+    legs = zz.attrs.get("legs", [])
+    if not legs:
+        return pd.Series(mask, index=zz.index, dtype=bool)
+
+    # Prepare leg data as NumPy array for njit
+    leg_array = np.array([(leg["start_ltf_pos"], leg["end_ltf_pos"]) for leg in legs], dtype=np.int64)
+
+    @njit
+    def fill_mask(mask_arr, leg_arr):
+        for i in range(leg_arr.shape[0]):
+            s = leg_arr[i, 0]
+            e = leg_arr[i, 1]
+            if s >= mask_arr.shape[0]:
+                continue
+            if e > mask_arr.shape[0]:
+                e = mask_arr.shape[0]
+            for j in range(s, e):
+                mask_arr[j] = True
+        return mask_arr
+
+    mask = fill_mask(mask, leg_array)
+    return pd.Series(mask, index=zz.index, dtype=bool)
+
+def _zigzag_leg_mask(
+    zz: pd.Series,
+    _njit_threshold: int = 1_400_000,
+) -> pd.Series:
+    if len(zz) < _njit_threshold:
+        return _zigzag_leg_mask_orig(zz=zz)
+    else:
+        return _zigzag_leg_mask_njit(zz=zz)
+
+""" --------------------------------------------------------------------------- OK Func5
+"""
+def fibo_levels_from_legs_orig(
+    df: pd.DataFrame,
+    zz: pd.Series,
+    ratios: Optional[Sequence[float]] = None,
+) -> pd.DataFrame:
+    """
+    Compute Fibonacci levels based on completed zigzag legs (metadata).
 
     Parameters
     ----------
-    close : pd.Series
-        Close prices indexed by time.
-    high : pd.Series
-        High prices indexed by time.
-    low : pd.Series
-        Low prices indexed by time.
-    k : int, default=2
-        Fractal window size passed to `fractal_points`.
-    cfg : dict, optional
-        Configuration dictionary. If provided, Fibonacci retracement ratios
-        are read from:
-            cfg["features"]["fibonacci"]["retracement_ratios"]
-        Otherwise, default ratios are used.
-    lookback : int, default=500
-        Maximum number of bars to look back when searching for the last
-        valid fractal high and low.
+    df : pd.DataFrame
+        DataFrame with columns ["high", "low", "close"].
+    zz : pd.Series
+        Output of zigzag_mtf_adapter with attrs["legs"].
+    ratios : Sequence[float], optional
+        Fibonacci retracement ratios. Default: [0.236, 0.382, 0.5, 0.618, 0.786]
 
     Returns
     -------
     pd.DataFrame
-        DataFrame indexed by the same index as `close`, containing one column
-        per Fibonacci retracement level (e.g. fibo_0.236, fibo_0.382, ...).
-        Values are NaN until a valid swing leg is available.
+    Columns: fibo_<ratio> with index=df.index
+    """
+    if ratios is None:
+        from f10_utils.config_loader import load_config
+        cfg = load_config()
+        feat = cfg.get("features", {})
+        fibo = feat.get("fibonacci", {})
+        ratios = fibo.get("retracement_ratios", None)
+        if ratios is None:
+            ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
 
-    Notes
-    -----
-    - This implementation is not fully stateless-vectorized due to the
-      inherently stateful nature of swing/leg detection, but it minimizes
-      Python-level loops and leverages NumPy for per-ratio computations.
-    - Numerical output is guaranteed to match `fibo_levels` for the same inputs.
-    - Designed for high-frequency use (e.g. M1 data) in feature pipelines.
-"""
-def fibo_levels(
-    close: pd.Series,
-    high: pd.Series,
-    low: pd.Series,
-    k: int = 2,
-    cfg: Optional[dict] = None,
-    lookback: int = 500,
-) -> pd.DataFrame:
-
-    # --- Fibonacci ratios as numpy array ---
-    if cfg is not None:
-        fb = (cfg.get("features") or {}).get("fibonacci") or {}
-        ratios = np.array(list(fb.get("retracement_ratios") or []), dtype=np.float32)
-    else:
-        ratios = np.array([0.236, 0.382, 0.5, 0.618, 0.786], dtype=np.float32)
-
-    # --- Output columns names ---
     cols = [f"fibo_{r:.3f}" for r in ratios]
-    n = len(close)
-
-    # --- fractals ---
-    hh, ll = fractal_points(high, low, k)
-
-    # --- output array ---
+    n = len(df)
     out = np.full((n, len(ratios)), np.nan, dtype=np.float32)
+    high_vals = df["high"].values
+    low_vals = df["low"].values
 
-    # --- precompute high/low values as arrays for indexing ---
-    high_vals = high.values
-    low_vals = low.values
-    hh_vals = (hh.values==1)
-    ll_vals = (ll.values==1)
+    for leg in zz.attrs.get("legs", []):
+        s = leg["start_ltf_pos"]
+        e = leg["end_ltf_pos"]
+        direction = leg["direction"]
 
-    for i in range(n):
-        lo = max(k, i - lookback)
-        h_idx = np.flatnonzero(hh_vals[lo:i])
-        l_idx = np.flatnonzero(ll_vals[lo:i])
-
-        if i < k or len(h_idx) == 0 or len(l_idx) == 0:
+        if s >= n:
             continue
 
-        last_high_idx = h_idx[-1] + lo
-        last_low_idx = l_idx[-1] + lo
+        start_price = df.iloc[s  ]["low" ] if direction > 0 else df.iloc[s  ]["high"]
+        end_price   = df.iloc[e-1]["high"] if direction > 0 else df.iloc[e-1]["low" ]
 
-        last_high = high_vals[last_high_idx]
-        last_low = low_vals[last_low_idx]
-        rng = abs(last_high - last_low)
+        rng = abs(end_price - start_price)
         if rng == 0:
             continue
 
-        if last_low_idx < last_high_idx:
-            out[i, :] = last_high - ratios * rng
+        if direction > 0:
+            # صعودی: fibo زیر سقف
+            out[s:e, :] = np.array([end_price - r*rng for r in ratios], dtype=np.float32)
         else:
-            out[i, :] = last_low + ratios * rng
+            # نزولی: fibo بالای کف
+            out[s:e, :] = np.array([end_price + r*rng for r in ratios], dtype=np.float32)
 
-    # ===== موقتی و فقط برای کنترل برنامه
-    df_new = pd.concat([pd.Series(high, name="high"),
-                        pd.Series(low, name="low"),
-                        pd.Series(close, name="close"),
-                        pd.Series(hh, name="hh"),
-                        pd.Series(ll, name="ll"),
-                        pd.DataFrame(out, index=close.index, columns=cols)
-                        ], axis=1)
-    col_names = ["high", "low", "close", "hh", "ll"] + cols
-    return pd.DataFrame(df_new, index=close.index, columns=col_names, dtype=np.float32)
-    # ===== پایان موقتی
+    return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
+
+
+def fibo_levels_from_legs_njit(
+    df: pd.DataFrame,
+    zz: pd.Series,
+    ratios: Optional[Sequence[float]] = None,
+) -> pd.DataFrame:
+    """
+    Fibonacci levels based on zigzag legs (metadata) - Numba-optimized.
+
+    Identical output to fibo_levels_from_legs, but much faster for millions of rows.
+    """
+    # --- Ratios ---
+    if ratios is None:
+        from f10_utils.config_loader import load_config
+        cfg = load_config()
+        feat = cfg.get("features", {})
+        fibo = feat.get("fibonacci", {})
+        ratios = fibo.get("retracement_ratios", None)
+        if ratios is None:
+            ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
     
-    # --- convert to DataFrame ---
-    # return pd.DataFrame(out, index=close.index, columns=cols, dtype=np.float32)
+    cols = [f"fibo_{r:.3f}" for r in ratios]
+    n = len(df)
+    out = np.full((n, len(ratios)), np.nan, dtype=np.float32)
+    high_vals = df["high"].values.astype(np.float32)
+    low_vals  = df["low" ].values.astype(np.float32)
 
-""" --------------------------------------------------------------------------- OK Func5
+    legs = zz.attrs.get("legs", [])
+
+    # --- Numba-compatible array version of leg processing ---
+    leg_data = []
+    for leg in legs:
+        s = leg["start_ltf_pos"]
+        e = leg["end_ltf_pos"]
+        direction = leg["direction"]
+        if s >= n or e <= s:
+            continue
+        start_price = low_vals[s] if direction > 0 else high_vals[s]
+        end_price   = high_vals[e-1] if direction > 0 else low_vals[e-1]
+        rng = abs(end_price - start_price)
+        if rng == 0:
+            continue
+        leg_data.append((s, e, direction, start_price, end_price, rng))
+
+    # --- Convert to NumPy arrays for njit ---
+    if not leg_data:
+        return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
+
+    leg_array = np.array(leg_data, dtype=np.float32)
+    
+    ratios_arr = np.array(ratios, dtype=np.float32)
+
+    @njit
+    def fill_fibo(out_arr, leg_arr, ratios_arr):
+        for i in range(leg_arr.shape[0]):
+            s = int(leg_arr[i, 0])
+            e = int(leg_arr[i, 1])
+            direction = leg_arr[i, 2]
+            end_price = leg_arr[i, 4]
+            rng = leg_arr[i, 5]
+            for j in range(len(ratios_arr)):
+                if direction > 0:
+                    val = end_price - ratios_arr[j]*rng
+                else:
+                    val = end_price + ratios_arr[j]*rng
+                for k in range(s, e):
+                    out_arr[k, j] = val
+        return out_arr
+
+    out = fill_fibo(out, leg_array, ratios_arr)
+    return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
+
+
+""" --------------------------------------------------------------------------- =Func6
 """
 def registry() -> Dict[str, callable]:
     
+    # --- func1 -------------------------------------------
     def make_pivots(df, **_):
         p, r1, s1, r2, s2, r3, s3 = pivots_classic(df["high"], df["low"], df["close"])
         return {"pivot": p,
@@ -489,22 +490,49 @@ def registry() -> Dict[str, callable]:
                 "pivot_r3": r3, "pivot_s3": s3
                 }
     
-    def make_sr(df, k: int = 2, lookback: int = 500, **_):
-        r, s = sr_distance_njit(df["close"], df["high"], df["low"], k, lookback)
-        return {f"sr_res_{k}_{lookback}": r,
-                f"sr_sup_{k}_{lookback}": s
-                }
-    
-    def make_fibo(df, k: int = 2, lookback: int = 500, cfg: Optional[dict] = None, **_):
-        out = fibo_levels(df["close"], df["high"], df["low"], k=k, cfg=cfg, lookback=lookback)
-        return out.to_dict(orient="series")  # خروجی dict مانند سایر توابع
-    
-    return {"pivots": make_pivots,
-            "sr"    : make_sr,
-            "fibo"  : make_fibo
-            }
+    # --- func2 -------------------------------------------
+    def make_sr_zigzag(df, tf, depth, deviation, backstep, **_):
+        return sr_from_zigzag_legs(
+            df,
+            tf=tf,
+            depth=depth,
+            deviation=deviation,
+            backstep=backstep,
+        ).to_dict(orient="series")
 
-# --- New Added ----------------------------------------------------- 040607
+    # --- func3 -------------------------------------------
+    def make_sr_distance(df, tf, depth, deviation, backstep, atr_window=14, **_):
+        # ابتدا SR levels بساز
+        sr = sr_from_zigzag_legs(
+            df,
+            tf=tf,
+            depth=depth,
+            deviation=deviation,
+            backstep=backstep,
+        )
+        # سپس فاصله نرمال‌شده تا سطوح
+        return sr_distance_from_levels(
+            df=df,
+            sr=sr,
+            atr_window=atr_window
+        ).to_dict(orient="series")
+
+    # --- func4 -------------------------------------------
+
+    def make_fibo_from_legs(df, zz, ratios=None, **_):
+        return fibo_levels_from_legs_orig(   #########################################
+            df,
+            zz,
+            ratios=ratios
+        ).to_dict(orient="series")
+
+    return {
+        "pivots": make_pivots,
+        "sr": make_sr_zigzag,
+        "fibo": make_fibo_from_legs,
+        "sr_distance": make_sr_distance
+    }
+# --- New Added -----------------------------------------------------
 """
 افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
 - round_levels(...): تولید سطوح رُند حول یک لنگر
@@ -518,7 +546,7 @@ def registry() -> Dict[str, callable]:
 - همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
 """
 
-""" --------------------------------------------------------------------------- Func6
+""" --------------------------------------------------------------------------- Func7
 ADR (Average Daily Range)
 """
 def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
@@ -550,7 +578,7 @@ def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Serie
     adr_intraday = adr_daily.reindex(df.index, method="ffill")
     return adr_intraday
 
-""" --------------------------------------------------------------------------- Func7
+""" --------------------------------------------------------------------------- Func8
 """
 def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> pd.DataFrame:
     """
@@ -578,7 +606,7 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     out = pd.concat([day_open, dist_abs, dist_pct], axis=1)
     return out
 
-""" --------------------------------------------------------------------------- Func8
+""" --------------------------------------------------------------------------- Func9
 S/R Overlap Score (0..1)
 """
 def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
@@ -617,85 +645,3 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
     score = min(1.0, max(0.0, base + bonus))
     return float(score)
 
-# =====================================================================================
-# تست پوشش کد (برای توسعه‌دهندگان) 
-# =====================================================================================
-""" Func Names                           Used in Functions: ...
-                           1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18
-1  pivots_classic         --  --  --  --  ok  --  --  --  --  --  --
-2  fractal_points         --  --  ok  ok  --  --  --  --  --  --  --
-3  sr_distance            --  --  --  --  ok  --  --  --  --  --  --
-4  fibo_levels            --  --  --  --  ok  --  --  --  --  --  --
-5  registry               --  --  --  --  --  --  --  --  --  --  --
-6  compute_adr            --  --  --  --  --  --  --  --  --  --  --
-7  adr_distance_to_open   --  --  --  --  --  --  --  --  --  --  --
-8  sr_overlap_score       --  --  --  --  --  --  --  --  --  --  --
-"""
-
-
-######################################################################################
-# zigzag_points_from_adapter
-
-df3 = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")[-2_000:].copy()
-
-df3["time"] = pd.to_datetime(df3["time"], utc=True)
-df3.set_index("time", inplace=True)
-
-hh, ll, zz = zigzag_points_from_adapter(
-                df3["high"],df3["low"],tf="5min",
-                depth=12,deviation=0.05,backstep=10)
-pd.DataFrame({"hh": hh, "ll": ll, "zz": zz}).to_csv("zigzag_points_from_adapter.csv")
-
-###########################################################  3
-# fibo_levels_slow, fibo_levels
-
-# t3 = datetime.now()
-# result1 = fibo_levels_slow(df3["close"], df3["high"], df3["low"], k=5, cfg=cfg, lookback=50)
-# t4 = datetime.now()
-# result1.to_csv("fibo_levels_slow.csv")
-# print(f"Time taken to run 'fibo_levels_slow': {round((t4 - t3).total_seconds(), 1)} seconds")
-# # print(result1.head(),"\n")
-
-# t5 = datetime.now()
-# result2 = fibo_levels(df3["close"], df3["high"], df3["low"], k=5, cfg=cfg, lookback=50)
-# t6 = datetime.now()
-# result2.to_csv("fibo_levels.csv")
-# print(f"Time taken to run 'fibo_levels     ': {round((t6 - t5).total_seconds(), 1)} seconds")
-# # print(result2.head())
-
-# diff = result2.fillna(0) - result1.fillna(0)
-# print("Max difference between 'fibo_levels_slow' and 'fibo_levels':", diff.abs().max().max())
-
-###########################################################  2
-# --- sr_distance
-
-# t1 = datetime.now()
-# res, sup = sr_distance(df3["close"], df3["high"], df3["low"], k=10)
-# t2 = datetime.now()
-# print(f"Time taken to run 'sr_distance': {round((t2 - t1).total_seconds(), 1):.2f} seconds")
-# df1 = pd.DataFrame({"res": res, "sup": sup})
-# df1.to_csv("sr_distance.csv")
-# print(f"len(res): {len(res)}")
-
-# t3 = datetime.now()
-# res, sup = sr_distance_njit(df3["close"], df3["high"], df3["low"], k=10)
-# t4 = datetime.now()
-# print(f"Time taken to run 'sr_distance_numba': {round((t4 - t3).total_seconds(), 1):.2f} seconds")
-# df1 = pd.DataFrame({"res": res, "sup": sup})
-# df1.to_csv("sr_distance_njit.csv")
-# print(f"len(res): {len(res)}")
-
-###########################################################  1
-# --- fractal_points
-
-# t1 = datetime.now()
-# hh, ll = fractal_points(df3["high"], df3["low"], k=10)
-# t2 = datetime.now()
-# print(f"Time taken to run 'fractal_points': {round((t2 - t1).total_seconds(), 1):.2f} seconds")
-# df1 = pd.DataFrame({"hh": hh, "ll": ll})
-# df1.to_csv("fractal_points.csv")
-# print(f"len(hh): {len(hh)}")
-# print(f"type(hh)): {type(hh)}")
-# print(f"type(ll)): {type(ll)}")
-
-###########################################################

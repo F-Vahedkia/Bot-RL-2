@@ -147,9 +147,7 @@ def _zigzag_mql_numpy(
                 state_series[i] = 1
                 search_mode = 1
 
-    # ایجاد Series خروجی
-    # zz_series = pd.Series(zz_buffer, index=high.index)
-    
+   
     # state_series شامل کد +1 یا -1 است که بیانگر جستجو برای کف یا سقف بعدی است
     # اگر در کندل جاری دارای مقدار -1 باشد، یعنی این کندل سقف است و اکسترمم بعدی باید کف باشد
     # و بالعکس
@@ -307,6 +305,9 @@ def _zigzag_mql_njit_loopwise(
         elif state[i] == 1:
             low_actual[i] = low_arr[i]
 
+    # state شامل کد +1 یا -1 است که بیانگر جستجو برای کف یا سقف بعدی است
+    # اگر در کندل جاری دارای مقدار -1 باشد، یعنی این کندل سقف است و اکسترمم بعدی باید کف باشد
+    # و بالعکس
     return state, high_actual, low_actual
 
 #====================================================================
@@ -319,40 +320,93 @@ def zigzag(
     deviation: float = 5.0,
     backstep: int = 10,
     point: float = 0.01,
+    addmeta: bool = True,
 ) -> pd.DataFrame:
     
     idx = high.index
     high_np = np.ascontiguousarray(high.values, dtype=np.float64)
     low_np  = np.ascontiguousarray(low.values,  dtype=np.float64)
+    bytes_used = high_np.nbytes + low_np.nbytes
 
-    if len(high_np) <= 1_000_000:
-        state, high_actual, low_actual = \
-            _zigzag_mql_numpy(
-                # dt_np,
-                high_np, low_np,
-                depth, deviation, backstep, point
-            )
+    # Using "bytes_used <= 1_280_000"  isntead of "len(high_np) <= 80_000"
+    if bytes_used <= 1_280_000:
+        state, high_actual, low_actual = _zigzag_mql_numpy(
+            high_np, low_np, depth, deviation, backstep, point
+        )
     else:
-        state, high_actual, low_actual = \
-            _zigzag_mql_njit_loopwise(
-                # dt_np,
-                high_np, low_np,
-                depth, deviation, backstep, point
-            )
+        state, high_actual, low_actual = _zigzag_mql_njit_loopwise(
+            high_np, low_np, depth, deviation, backstep, point
+        )
 
-    return pd.DataFrame(
+    # --- state correction ----------------------------------------------------
+    # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
+    # یعنی در سقفها برابر با +1 است و در کفها برابر با -1 است    
+    state = -1 * state
+    
+    # --- main result of this function ----------------------------------------
+    zz_df = pd.DataFrame(
         index=idx,
         data={
-            "state": -state,
-            # در مورد state:
-            # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
+            "state": state,        # at HIGHs: state = +1, at LOWs: state = -1
             "high" : high_actual,
             "low"  : low_actual,
+        }
+    )
+
+    if not addmeta:
+        return zz_df
+    
+    # --- build zigzag legs metadata ------------------------------------------
+    # leg = فاصله بین دو اکسترمم متوالی با جهت مشخص
+    legs = []
+    last_idx = None
+    last_state = 0
+    for idx_val, state_val in zip(idx, state):
+        if state_val == 0:
+            continue
+
+        if last_idx is not None:
+            legs.append({
+                "start_idx": last_idx,
+                "end_idx": idx_val,
+                "direction": int(state_val),
             })
 
+        last_idx = idx_val
+        last_state = state_val
+
+    # --- attach metadata -----------------------------------------------------
+    zz_df.attrs["legs"] = legs
+    return zz_df
+
 #====================================================================
-# MULTI-TIMEFRAME ADAPTER
+# MULTI-TIMEFRAME ZIGZAG ADAPTER
+"""
+- Computes ZigZag on higher timeframe (HTF)
+- Projects HTF swing points onto lower timeframe (LTF)
+
+Parameters
+----------
+high, low : pd.Series
+    LTF price series (DatetimeIndex required)
+tf_higher : str
+    Pandas resample rule (e.g. '5T', '15T', '1H', '4H', '1D')
+mode : 'last' | 'forward_fill'
+    Projection mode to LTF
+    'last':         → Marks the swing only at the first LTF candle where the HTF swing is confirmed.
+                (فقط نقطه شروع swing در LTF علامت می‌خورد)
+    'forward_fill': → Propagates the HTF swing signal forward on all LTF candles until the next HTF swing appears.
+                (سیگنال swing در تمام کندل‌های LTF تا ظهور swing بعدی ادامه می‌یابد)
+    
+Returns
+-------
+pd.Series
+    MTF-aware ZigZag aligned to LTF index
+"""
 #====================================================================
+# برای ساخت لگهای ساختار بازار باید از متادیتای ضمیمه شده به خروجی این تابع استفاده کنیم
+# چرا که اگر از خروجی اصلی تابع استفاده کنیم، نمیتوانیم لگهای نامعتبر را بحساب نیاوریم
+# و در نتیجه لگهای نامعتبر هم به اجبار به عنوان ساختار بازار در نظر گرفته میشوند
 def zigzag_mtf_adapter(
     high: pd.Series,
     low: pd.Series,
@@ -363,54 +417,34 @@ def zigzag_mtf_adapter(
     point: float = 0.01,
     mode: Literal["last", "forward_fill"] = "forward_fill",
 ) -> pd.Series:
-    """
-    Multi-Timeframe ZigZag Adapter
-    --------------------------------
-    - Computes ZigZag on higher timeframe (HTF)
-    - Projects HTF swing points onto lower timeframe (LTF)
-
-    Parameters
-    ----------
-    high, low : pd.Series
-        LTF price series (DatetimeIndex required)
-    tf_higher : str
-        Pandas resample rule (e.g. '5T', '15T', '1H', '4H', '1D')
-    mode : 'last' | 'forward_fill'
-        Projection mode to LTF
-        'last':         → Marks the swing only at the first LTF candle where the HTF swing is confirmed.
-                    (فقط نقطه شروع swing در LTF علامت می‌خورد)
-        'forward_fill': → Propagates the HTF swing signal forward on all LTF candles until the next HTF swing appears.
-                    (سیگنال swing در تمام کندل‌های LTF تا ظهور swing بعدی ادامه می‌یابد)
-        
-    Returns
-    -------
-    pd.Series
-        MTF-aware ZigZag aligned to LTF index
-    """
     
-    # --- validation ---
-    if not isinstance(high.index, pd.DatetimeIndex):
+    # --- validation ----------------------------------------------------------
+    if not isinstance(high.index, pd.DatetimeIndex) or not isinstance(low.index, pd.DatetimeIndex):
         raise ValueError("high/low must have DatetimeIndex")
     
-    # --- build HTF OHLC ---
-    htf = pd.DataFrame({"high": high, "low": low}).resample(tf_higher) \
-                  .agg({"high": "max", "low": "min"}).dropna()
-    
-    # --- run original ZigZag on HTF ---
+    # --- build HTF OHLC ------------------------------------------------------
+    htf = (
+        pd.DataFrame({"high": high, "low": low})
+            .resample(tf_higher)
+            .agg({"high": "max", "low": "min"})
+            .dropna()
+    )
+    # --- run original ZigZag on HTF ------------------------------------------
     zz_htf = zigzag(
         high=htf["high"],
         low=htf["low"],
         depth=depth,
         deviation=deviation,
         backstep=backstep,
-        point=point
+        point=point,
+        addmeta=True,
     )
 
-    # --- get metadata from HTF zigzag ---
-    state_series = zz_htf.attrs.get("state_series", [])  # -1: high, 1: low, 0: none
-    htf_timestamps = list(zz_htf.index)
+    # --- get metadata from HTF zigzag ----------------------------------------
+    htf_state_series = zz_htf["state"]
             
-    # --- prepare LTF container ---
+    # --- prepare LTF container -----------------------------------------------
+    # ساختن یک دیتافریم خالی، البته با اندکسهای زمانی معلوم
     zz_ltf = pd.Series(
         data=0.0,
         index=high.index,
@@ -418,88 +452,52 @@ def zigzag_mtf_adapter(
         dtype=np.float32
     )
 
-    # --- project HTF swings onto LTF ----------- start of old part
-    # for ts, signal in zz_htf.items():
-    #     if signal == 0:
-    #         continue
-    #     if ts not in zz_ltf.index:
-    #         ts = zz_ltf.index[zz_ltf.index.get_indexer([ts], method="ffill")[0]]
-    #     if mode == "last":
-    #         zz_ltf.loc[ts] = signal
-    #     elif mode == "forward_fill":
-    #         zz_ltf.loc[ts:] = signal
-    #
-    # --- attach metadata ---
-    # zz_ltf.attrs["source_tf"] = tf_higher
-    # zz_ltf.attrs["mode"] = mode
-    # zz_ltf.attrs["htf_legs"] = zz_htf.attrs.get("legs", [])
-
-    # return zz_ltf
-    # ------------------------------------------- end of old part
-
-    
-    # --- project HTF swings onto LTF ---
+    # --- project HTF swings onto LTF -----------------------------------------
     if mode == "last":
-        # فقط کندل LTF متناظر با کندل HTF علامت می‌خورد
-        for ts_htf, signal in zip(htf_timestamps, state_series):
-            if signal == 0:
-                continue
-            
-            # پیدا کردن کندل LTF مربوطه (آخرین کندل LTF قبل از یا در زمان ts_htf)
-            ltf_idx = zz_ltf.index[zz_ltf.index <= ts_htf]
-            if len(ltf_idx) > 0:
-                last_ltf_idx = ltf_idx[-1]
-                zz_ltf.loc[last_ltf_idx] = signal
-    
+        for ts_htf, signal in htf_state_series.items():
+            if signal != 0 and ts_htf in zz_ltf.index:
+                zz_ltf.at[ts_htf] = signal
+
+
     elif mode == "forward_fill":
-        # Forward fill تا ظهور swing بعدی
-        prev_signal = 0
-        prev_ts = None
-        
-        # ایجاد لیست زمانی از swingها
-        swing_points = []
-        for ts_htf, signal in zip(htf_timestamps, state_series):
-            if signal != 0:
-                swing_points.append((ts_htf, signal))
-        
-        # پروجکشن forward fill
-        for i in range(len(swing_points)):
-            current_ts, current_signal = swing_points[i]
-            
-            # پیدا کردن محدوده زمانی برای این swing
-            start_idx = None
-            if i > 0:
-                # شروع از کندل بعد از swing قبلی
-                prev_ts, _ = swing_points[i-1]
-                ltf_after_prev = zz_ltf.index[zz_ltf.index > prev_ts]
-                if len(ltf_after_prev) > 0:
-                    start_idx = ltf_after_prev[0]
-            else:
-                # اولین swing - از ابتدای داده شروع کن
-                start_idx = zz_ltf.index[0]
-            
-            # پایان در کندل مربوط به swing جاری
-            ltf_up_to_current = zz_ltf.index[zz_ltf.index <= current_ts]
-            if len(ltf_up_to_current) > 0:
-                end_idx = ltf_up_to_current[-1]
-                
-                if start_idx is not None:
-                    # اعمال forward fill در محدوده
-                    mask = (zz_ltf.index >= start_idx) & (zz_ltf.index <= end_idx)
-                    zz_ltf.loc[mask] = current_signal
-    
-    # --- attach metadata ---
-    zz_ltf.attrs["source_tf"] = tf_higher
-    zz_ltf.attrs["mode"] = mode
-    zz_ltf.attrs["htf_legs"] = zz_htf.attrs.get("legs", [])
-    zz_ltf.attrs["htf_state_series"] = state_series
-    zz_ltf.attrs["htf_timestamps"] = htf_timestamps
-    zz_ltf.attrs["params"] = {
-        "depth": depth,
-        "deviation": deviation,
-        "backstep": backstep,
-        "point": point
-    }
+        # --- collect valid HTF swings (exact timestamp only)
+        swings = [(ts, sig) for ts, sig in htf_state_series.items()
+                if sig != 0 and ts in zz_ltf.index]
+
+        # --- forward fill between consecutive swings
+        for (ts0, sig0), (ts1, _) in zip(swings[:-1], swings[1:]):
+            zz_ltf.loc[ts0:ts1] = sig0
+
+
+    # --- project HTF legs onto LTF (metadata only, no signal logic) ----------
+    htf_legs = zz_htf.attrs.get("legs", [])
+    ltf_index = zz_ltf.index
+
+    ltf_legs = []
+
+    for leg in htf_legs:
+        start_ts = leg["start_idx"]
+        end_ts   = leg["end_idx"]
+
+        if start_ts not in ltf_index or end_ts not in ltf_index:
+            continue
+
+        start_pos = ltf_index.get_loc(start_ts)
+        end_pos   = ltf_index.get_loc(end_ts)
+
+        if end_pos <= start_pos:
+            continue
+
+        ltf_legs.append({
+            "start_ts": start_ts,
+            "end_ts": end_ts,
+            "direction": leg["direction"],
+            "start_ltf_pos": int(start_pos),
+            "end_ltf_pos": int(end_pos),
+        })
+
+    # --- attach metadata to zz_ltf -------------------------------------------
+    zz_ltf.attrs["legs"] = ltf_legs
 
     return zz_ltf
 
