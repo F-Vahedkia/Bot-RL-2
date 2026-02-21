@@ -1,16 +1,13 @@
 # f03_features/indicators/zigzag.py
-# Created at (1404/10/--)
-# Check: By use of f15_testcheck/unit/test_z1A_zigzag.py
-# Check: By use of f15_testcheck/unit/test_z1B_zigzag_LegsMetadata.py
-# Check: By use of f15_testcheck/unit/test_z2_zigzag_mtf_adapter.py
-# Completed at (1404/12/02)
+# This file is checked and OK (1404/11/08)
+# Check: By use of f15_testcheck/unit/test_zigzag.py
 
 import numpy as np
 import pandas as pd
 from numba import njit
 from typing import Literal
 
-#====================================================================
+#==================================================================== 2 (==> OK & Final)
 # Vectorized by Numpy
 #====================================================================
 def _zigzag_mql_numpy_complete(
@@ -155,10 +152,9 @@ def _zigzag_mql_numpy_complete(
     high_actual = np.where(state_series == -1, high, 0)
     low_actual  = np.where(state_series == +1, low , 0)
 
-    # return state_series, high_actual, low_actual, confirmed_at, developing_leg
-    return state_series, high_actual, low_actual
+    return state_series, high_actual, low_actual, confirmed_at, developing_leg
 
-#====================================================================
+#==================================================================== 5 (==> OK & Final)
 # Loop-wise and njit
 #====================================================================
 def _zigzag_mql_njit_loopwise_complete(
@@ -311,12 +307,11 @@ def _zigzag_mql_njit_loopwise_complete(
         elif state[i] == 1:
             low_actual[i] = low_arr[i]
 
-    # return state, high_actual, low_actual, confirmed_at, developing_leg
-    return state, high_actual, low_actual
+    return state, high_actual, low_actual, confirmed_at, developing_leg
 
 #====================================================================
 # Wrapper function to choose between njit and non-njit based on data size
-#====================================================================
+#==================================================================== 6
 def zigzag(
     high: pd.Series,
     low: pd.Series,
@@ -325,7 +320,7 @@ def zigzag(
     backstep: int = 10,
     point: float = 0.01,
     addmeta: bool = True,
-    final_check: bool = True,   # Added: 1404/12/01
+    final_check: bool = True,
 ) -> pd.DataFrame:
     
     idx = high.index
@@ -335,12 +330,15 @@ def zigzag(
 
     # Using "bytes_used <= 1_280_000"  isntead of "len(high_np) <= 80_000"
     if bytes_used <= 1_280_000:
-        state, high_actual, low_actual = _zigzag_mql_numpy_complete(
-                high_np, low_np, depth, deviation, backstep, point)
-
+        state, high_actual, low_actual, confirmed_at, developing_leg= \
+            _zigzag_mql_numpy_complete(
+                high_np, low_np, depth, deviation, backstep, point
+            )
     else:
-        state, high_actual, low_actual = _zigzag_mql_njit_loopwise_complete(
-                high_np, low_np, depth, deviation, backstep, point)
+        state, high_actual, low_actual, confirmed_at, developing_leg = \
+            _zigzag_mql_njit_loopwise_complete(
+                high_np, low_np, depth, deviation, backstep, point
+            )
 
     # --- state correction ----------------------------------------------------
     # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
@@ -354,8 +352,8 @@ def zigzag(
             "state": state.astype(np.int8),        # at HIGHs: state = +1, at LOWs: state = -1
             "high" : high_actual.astype(float),
             "low"  : low_actual.astype(float),
-            # "confirmed_at": confirmed_at.astype(np.int32),
-            # "developing_leg": developing_leg.astype(np.int8),
+            "confirmed_at": confirmed_at.astype(np.int32),
+            "developing_leg": developing_leg.astype(np.int8),
         }
     )
     # --- build zigzag legs metadata ------------------------------------------
@@ -386,43 +384,15 @@ def zigzag(
                     "price_diff": price_ed - price_st, 
                     "start_pos": int(start_pos),                  # pos = position
                     "end_pos": int(end_pos),                      # pos = position
-                    # "start_confirmed_at": int(confirmed_at[start_pos]),          # pos
-                    # "end_confirmed_at": int(confirmed_at[end_pos]),              # pos
-                    # "start_developing_leg": int(developing_leg[start_pos]),      # pos
-                    # "end_developing_leg": int(developing_leg[end_pos]),          # pos
+                    "start_confirmed_at": int(confirmed_at[start_pos]),   # pos
+                    "end_confirmed_at": int(confirmed_at[end_pos]),       # pos
+                    "start_developing_leg": int(developing_leg[start_pos]),      # pos
+                    "end_developing_leg": int(developing_leg[end_pos]),          # pos
                 })
 
         last_idx = idx_val
         last_state = state_val
     
-    # --- final check at wrapper ---------------------------------------------- added 1404/12/01
-    if legs and final_check:
-        merged_legs = []
-        temp_leg = legs[0]
-
-        for leg in legs[1:]:
-            # اگر اختلاف قیمت (لگ موقت) هم‌علامت است با (لگ قبلی)، ادغام صورت بگیرد
-            if np.sign(leg["price_diff"]) == np.sign(temp_leg["price_diff"]):
-                
-                # --- اصلاح خروجی گرفته شده از تابع زیگزاگ ---
-                e = temp_leg["end_pos"]
-                zz_df.loc[zz_df.index[e], "state"] = 0
-                zz_df.loc[zz_df.index[e], "high"] = 0
-                zz_df.loc[zz_df.index[e], "low"] = 0
-
-                # --- بسط لگ فعلی: end_ts، end_extr، end_pos، price_diff ---
-                temp_leg["end_ts"] = leg["end_ts"]
-                temp_leg["end_extr"] = leg["end_extr"]
-                temp_leg["end_pos"] = leg["end_pos"]
-                temp_leg["price_diff"] = temp_leg["end_extr"] - temp_leg["start_extr"]
-                temp_leg["direction"] = np.sign(temp_leg["price_diff"])  # این سطر شاید لازم نباشد
-            else:
-                merged_legs.append(temp_leg)
-                temp_leg = leg
-
-        merged_legs.append(temp_leg)  # آخرین لگ
-        legs = merged_legs
-
     # --- attach metadata -----------------------------------------------------
     if not addmeta:
         return zz_df
@@ -490,7 +460,6 @@ def zigzag_mtf_adapter(
         low=htf["low"],
         depth=depth, deviation=deviation, backstep=backstep, point=point,
         addmeta=True,
-        final_check=True,
     )
     legs_htf = zz_htf.attrs.get("legs", [])
     if len(legs_htf) == 0:
@@ -503,9 +472,8 @@ def zigzag_mtf_adapter(
 
     # --- For debuging --------------------------------------------------------
     # (تابع ریسِت ایندکس سبب ایجاد تغییرات دائمی روی دیتافریم نمی شود)
-    #
-    zz_htf.reset_index().to_csv("1__zz_htf.csv", index_label="no.")
-    pd.DataFrame(legs_htf).to_csv("2__legs_htf.csv", index_label="no.")
+    # zz_htf.reset_index().to_csv("1__zz_htf.csv", index_label="no.")
+    # pd.DataFrame(legs_htf).to_csv("2__legs_htf.csv", index_label="no.")
     
     # --- Prepare LTF container ----------------------------------------------- ok4
     # build an empty series with known time index, for "final main result"
@@ -535,14 +503,14 @@ def zigzag_mtf_adapter(
         zz_ltf.name = f"{zz_ltf.name}_status"
         for leg in legs_htf:
 
-            start_ts = pd.to_datetime(leg["start_ts"], utc=True) + timeshift
-            end_ts   = pd.to_datetime(leg["end_ts"],   utc=True) + timeshift
+            htf_start_ts = pd.to_datetime(leg["start_ts"], utc=True) + timeshift
+            htf_end_ts   = pd.to_datetime(leg["end_ts"],   utc=True) + timeshift
 
             direction = int(leg["direction"])
 
             # --- causal mapping (بدون شیفت آینده) ---
-            ltf_start_pos = ltf_index.searchsorted(start_ts, side="right") - 1
-            ltf_end_pos   = ltf_index.searchsorted(end_ts,   side="right") - 1
+            ltf_start_pos = ltf_index.searchsorted(htf_start_ts, side="right") - 1
+            ltf_end_pos   = ltf_index.searchsorted(htf_end_ts,   side="right") - 1
 
             # --- clamp to valid bounds ---
             if ltf_start_pos < 0:
@@ -559,25 +527,20 @@ def zigzag_mtf_adapter(
 
             # --- for (legs) ---
             _start_ts = ltf_index[ltf_start_pos] + tf_ltf
-            _end_ts   = ltf_index[ltf_end_pos  ] + tf_ltf
+            _end_ts = ltf_index[ltf_end_pos] + tf_ltf
             _start_pos = ltf_index.searchsorted(_start_ts, side="right") - 1
-            _end_pos   = ltf_index.searchsorted(_end_ts  , side="right") - 1
+            _end_pos = ltf_index.searchsorted(_end_ts, side="right") - 1
             # --- correcting probability errors ---
             _start_ts = ltf_index[_start_pos]
-            _end_ts   = ltf_index[_end_pos  ]
+            _end_ts = ltf_index[_end_pos]
 
             # --- store mapped leg metadata ---
             ltf_legs.append({
-                "ltf_start_ts": _start_ts,
-                "ltf_end_ts": _end_ts,
-                "direction": direction,
-                
-                "ltf_start_extr": leg["start_extr"],
-                "ltf_end_extr":   leg["end_extr"],
-                # "ltf_price_diff": leg["price_diff"], 
-                
                 "ltf_start_pos": int(_start_pos),
                 "ltf_end_pos": int(_end_pos),
+                "direction": direction,
+                "ltf_start_ts": _start_ts,
+                "ltf_end_ts": _end_ts,
             })
     
     # --- forward_fill mode ---------------------------------------------------
@@ -585,14 +548,14 @@ def zigzag_mtf_adapter(
         zz_ltf.name = f"{zz_ltf.name}_direction"
         for leg in legs_htf:
 
-            start_ts = pd.to_datetime(leg["start_ts"], utc=True) + timeshift
-            end_ts   = pd.to_datetime(leg["end_ts"],   utc=True) + timeshift
+            htf_start_ts = pd.to_datetime(leg["start_ts"], utc=True) + timeshift
+            htf_end_ts   = pd.to_datetime(leg["end_ts"],   utc=True) + timeshift
 
             direction = int(leg["direction"])
 
             # --- causal mapping (بدون شیفت آینده) ---
-            ltf_start_pos = ltf_index.searchsorted(start_ts, side="right") - 1
-            ltf_end_pos   = ltf_index.searchsorted(end_ts,   side="right") - 1
+            ltf_start_pos = ltf_index.searchsorted(htf_start_ts, side="right") - 1
+            ltf_end_pos   = ltf_index.searchsorted(htf_end_ts,   side="right") - 1
 
             # --- clamp to valid bounds ---
             if ltf_start_pos < 0:
@@ -604,12 +567,12 @@ def zigzag_mtf_adapter(
 
             # --- for (forward_fill mode) & (legs) ---
             _start_ts = ltf_index[ltf_start_pos] + tf_ltf
-            _end_ts   = ltf_index[ltf_end_pos  ] + tf_ltf
+            _end_ts = ltf_index[ltf_end_pos] + tf_ltf
             _start_pos = ltf_index.searchsorted(_start_ts, side="right") - 1
-            _end_pos   = ltf_index.searchsorted(_end_ts  , side="right") - 1
+            _end_pos = ltf_index.searchsorted(_end_ts, side="right") - 1
             # --- correcting probability errors ---
             _start_ts = ltf_index[_start_pos]
-            _end_ts   = ltf_index[_end_pos  ]
+            _end_ts = ltf_index[_end_pos]
 
             # --- apply forward_fill mode ---
             if mode == "forward_fill":
@@ -617,16 +580,11 @@ def zigzag_mtf_adapter(
 
             # --- store mapped leg metadata ---
             ltf_legs.append({
-                "ltf_start_ts": _start_ts,
-                "ltf_end_ts": _end_ts,
-                "direction": direction,
-                
-                "ltf_start_extr": leg["start_extr"],
-                "ltf_end_extr":   leg["end_extr"],
-                # "ltf_price_diff": leg["price_diff"], 
-                
                 "ltf_start_pos": int(_start_pos),
                 "ltf_end_pos": int(_end_pos),
+                "direction": direction,
+                "ltf_start_ts": _start_ts,
+                "ltf_end_ts": _end_ts,
             })
 
         # --- Extend last leg if requested ---
@@ -638,4 +596,3 @@ def zigzag_mtf_adapter(
     zz_ltf.attrs["legs"] = ltf_legs
 
     return zz_ltf
-

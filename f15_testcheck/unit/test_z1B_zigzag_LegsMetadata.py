@@ -3,7 +3,7 @@
 
 import pandas as pd
 from pathlib import Path
-from f03_features.indicators.zigzag2 import zigzag
+from f03_features.indicators.zigzag import zigzag
 
 # ------------------------------------------------------------
 # Loading Data
@@ -20,7 +20,9 @@ zzg = zigzag(
     high=df["high"], low=df["low"],
     depth=12, deviation=5.0, backstep=10, point=0.01, addmeta=True,
 )
-zzg.to_csv(f"z1_zigzag_Result.csv")
+zzg.reset_index().to_csv(f"z1_zigzag_Result.csv", index_label="no.")
+
+df[["high", "low"]].reset_index().to_csv("z1_zigzag_orig_HL.csv", index_label="no.")
 
 # ------------------------------------------------------------
 # Extract legs metadata
