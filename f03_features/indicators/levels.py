@@ -7,12 +7,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-
 from numba import njit
 from datetime import datetime
 from typing import List, Sequence, Dict, Optional, Tuple, Any
-from .core import atr
-from .zigzag2 import zigzag_mtf_adapter
+
+from .utils import compute_atr
+from .zigzag import zigzag_mtf_adapter
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger.addHandler(logging.NullHandler())
 from f10_utils.config_loader import ConfigLoader
 cfg = ConfigLoader().get_all()
 
-""" --------------------------------------------------------------------------- OK Func1
+""" =========================================================================== OK Func1
 speed=OK
 Pivot های کلاسیک
 """
@@ -42,22 +42,31 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
         r3.astype("float32"), \
         s3.astype("float32")
 
-""" --------------------------------------------------------------------------- OK Func2
+""" =========================================================================== OK Func2
 سطوح حمایت و مقاومت ثابت را از روی لِگ‌های زیگزاگ می‌سازد و آن‌ها را روی تمام کندل‌های هر لگ پخش می‌کند.
 
 اگر لگ صعودی باشد → مقدار کف ابتدای لگ = Support
 اگر لگ نزولی باشد → مقدار سقف ابتدای لگ = Resistance
 
 این مقدار از ابتدای لگ تا انتهای همان لگ، برای همهٔ کندل‌ها ثابت می‌ماند.
+در این توابع شیفت زمانی برابر با صفر درنظر گرفته شده است.
+در این توابع فقط از ضمیمه لگها استفاده میشود.
+   ============================================================================
 """
-def sr_from_zigzag_legs_orig(
+""" نسخه اصلی بدون شیفت زمانی: ------------------------------------------------
+در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
+بلکه از دیتافریم اصلی داده ها اساخراج میشود
+"""
+def sr_from_zigzag_legs_orig_1(
     df: pd.DataFrame,
     *,
-    tf: str,
+    tf: str,    # tf_higher
     depth: int,
     deviation: float,
     backstep: int,
     extend_last_leg: bool = False,
+    # True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
+    # نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
 ) -> pd.DataFrame:
 
     zz = zigzag_mtf_adapter(
@@ -67,19 +76,21 @@ def sr_from_zigzag_legs_orig(
         depth=depth,
         deviation=deviation,
         backstep=backstep,
+        use_timeshift=False,
     )
 
     legs = zz.attrs.get("legs", [])
     idx = df.index
     n = len(df)
 
+    # --- Building containers ---
     sup = pd.Series(np.nan, index=idx, dtype=np.float32)
     res = pd.Series(np.nan, index=idx, dtype=np.float32)
-
+    print(df["low"].iloc[86:92])
     for leg in legs:
-        s = leg["start_ltf_pos"]
-        e = leg["end_ltf_pos"]
-        ts = leg["start_ts"]
+        s = leg["ltf_start_pos"]
+        e = leg["ltf_end_pos"]
+        ts = leg["ltf_start_ts"]
 
         if leg["direction"] > 0:
             sup.iloc[s:e] = np.float32(df.at[ts, "low"])
@@ -89,7 +100,7 @@ def sr_from_zigzag_legs_orig(
     # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
     if legs and extend_last_leg:
         last = legs[-1]
-        s = last["end_ltf_pos"]    # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        s = last["ltf_end_pos"]    # اولین کندل بعد از آخرین کندل واقعی لگ آخر
         e = n                      # انتهای دیتافریم
 
         if last["direction"] < 0:
@@ -103,10 +114,14 @@ def sr_from_zigzag_legs_orig(
         dtype=np.float32,
     )
 
-def sr_from_zigzag_legs_njit(
+""" نسخه انجیت بدون شیفت زمانی: -----------------------------------------------
+در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
+بلکه از دیتافریم اصلی داده ها اساخراج میشود
+"""
+def sr_from_zigzag_legs_njit_1(
     df: pd.DataFrame,
     *,
-    tf: str,
+    tf: str,    # tf_higher
     depth: int,
     deviation: float,
     backstep: int,
@@ -116,8 +131,6 @@ def sr_from_zigzag_legs_njit(
     Numba-optimized version of sr_from_zigzag_legs.
     API و خروجی دقیقاً مشابه نسخه اصلی است.
     """
-    from numba import njit
-    from .zigzag import zigzag_mtf_adapter
 
     # --- Run zigzag_mtf_adapter ---
     zz = zigzag_mtf_adapter(
@@ -127,11 +140,13 @@ def sr_from_zigzag_legs_njit(
         depth=depth,
         deviation=deviation,
         backstep=backstep,
+        use_timeshift=False,
     )
 
     legs = zz.attrs.get("legs", [])
     n = len(df)
 
+    # --- Building containers ---
     sup_arr = np.full(n, np.nan, dtype=np.float32)
     res_arr = np.full(n, np.nan, dtype=np.float32)
 
@@ -141,9 +156,9 @@ def sr_from_zigzag_legs_njit(
 
     # Prepare leg data for Numba
     leg_array = np.array([
-        (leg["start_ltf_pos"], leg["end_ltf_pos"], leg["direction"])
+        (leg["ltf_start_pos"], leg["ltf_end_pos"], leg["direction"])
         for leg in legs
-        if leg["start_ltf_pos"] < n
+        if leg["ltf_start_pos"] < n
     ], dtype=np.int64)
 
     high_vals = df["high"].values.astype(np.float32)
@@ -172,7 +187,7 @@ def sr_from_zigzag_legs_njit(
     # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
     if legs and extend_last_leg:
         last_leg = legs[-1]
-        s_last = last_leg["end_ltf_pos"]   # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        s_last = last_leg["ltf_end_pos"]   # اولین کندل بعد از آخرین کندل واقعی لگ آخر
         e_last = n                         # انتهای دیتافریم
         direction_last = last_leg["direction"]
 
@@ -187,10 +202,169 @@ def sr_from_zigzag_legs_njit(
     return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
                         index=df.index, dtype=np.float32)
 
+""" نسخه اصلی با شیفت زمانی: --------------------------------------------------
+در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
+"""
+def sr_from_zigzag_legs_orig(
+    df: pd.DataFrame,
+    *,
+    tf: str,    # tf_higher
+    depth: int,
+    deviation: float,
+    backstep: int,
+    extend_last_leg: bool = False,
+    # True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
+    # نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
+) -> pd.DataFrame:
+
+    zz = zigzag_mtf_adapter(
+        high=df["high"],
+        low=df["low"],
+        tf_higher=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+        use_timeshift=True,
+    )
+
+    legs = zz.attrs.get("legs", [])
+    idx = df.index
+    n = len(df)
+
+    # --- Building containers ---
+    sup = pd.Series(np.nan, index=idx, dtype=np.float32)
+    res = pd.Series(np.nan, index=idx, dtype=np.float32)
+
+    for leg in legs:
+        s = leg["ltf_start_pos"]
+        e = leg["ltf_end_pos"]
+        ts = leg["ltf_start_ts"]
+
+        if leg["direction"] > 0:
+            # sup.iloc[s:e] = np.float32(df.at[ts, "low"])    # 1404/12/02
+            sup.iloc[s:e] = np.float32(leg["ltf_start_extr"])    # 1404/12/02
+        else:
+            # res.iloc[s:e] = np.float32(df.at[ts, "high"])    # 1404/12/02
+            res.iloc[s:e] = np.float32(leg["ltf_start_extr"])    # 1404/12/02
+
+    # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
+    if legs and extend_last_leg:
+        last = legs[-1]
+        s = last["ltf_end_pos"]    # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        e = n                      # انتهای دیتافریم
+
+        if last["direction"] < 0:
+            # sup.iloc[s:e] = np.float32(df["low"].iloc[s])    # 1404/12/02
+            sup.iloc[s:e] = np.float32(last["ltf_end_extr"])    # 1404/12/02
+        else:
+            # res.iloc[s:e] = np.float32(df["high"].iloc[s])    # 1404/12/02
+            res.iloc[s:e] = np.float32(last["ltf_end_extr"])    # 1404/12/02
+
+    return pd.DataFrame(
+        {"sr_support": sup, "sr_resistance": res},
+        index=idx,
+        dtype=np.float32,
+    )
+
+""" نسخه انجیت با شیفت زمانی: -------------------------------------------------
+در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
+"""
+def sr_from_zigzag_legs_njit(
+    df: pd.DataFrame,
+    *,
+    tf: str,    # tf_higher
+    depth: int,
+    deviation: float,
+    backstep: int,
+    extend_last_leg: bool = False,
+) -> pd.DataFrame:
+    """
+    Numba-optimized version of sr_from_zigzag_legs.
+    API و خروجی دقیقاً مشابه نسخه اصلی است.
+    """
+
+    # --- Run zigzag_mtf_adapter ---
+    zz = zigzag_mtf_adapter(
+        high=df["high"],
+        low=df["low"],
+        tf_higher=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+        use_timeshift=True,
+    )
+
+    legs = zz.attrs.get("legs", [])
+    n = len(df)
+
+    # --- Building containers ---
+    sup_arr = np.full(n, np.nan, dtype=np.float32)
+    res_arr = np.full(n, np.nan, dtype=np.float32)
+
+    if not legs:
+        return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
+                            index=df.index, dtype=np.float32)
+
+    # Prepare leg data for Numba (with extremum prices)
+    leg_array = np.array([
+        (
+            leg["ltf_start_pos"],
+            leg["ltf_end_pos"],
+            leg["direction"],
+            leg["ltf_start_extr"],
+        )
+        for leg in legs
+        if leg["ltf_start_pos"] < n
+    ], dtype=np.float32)
+
+    high_vals = df["high"].values.astype(np.float32)
+    low_vals = df["low"].values.astype(np.float32)
+
+    @njit
+    def fill_sr(sup_arr, res_arr, leg_array):
+        for i in range(leg_array.shape[0]):
+
+            s = int(leg_array[i, 0])
+            e = int(leg_array[i, 1])
+            direction = int(leg_array[i, 2])
+            val = leg_array[i, 3]
+
+            if e > len(sup_arr):
+                e = len(sup_arr)
+
+            if direction > 0:
+                for j in range(s, e):
+                    sup_arr[j] = val
+            else:
+                for j in range(s, e):
+                    res_arr[j] = val
+        return sup_arr, res_arr
+
+    sup_arr, res_arr = fill_sr(sup_arr, res_arr, leg_array)
+
+    # --- extend last valid leg to end of dataframe (ONLY ONCE) using last extremum ---
+    if legs and extend_last_leg:
+        last_leg = legs[-1]
+        s_last = last_leg["ltf_end_pos"]   # اولین کندل بعد از آخرین کندل واقعی لگ آخر
+        e_last = n                         # انتهای دیتافریم
+        direction_last = last_leg["direction"]
+        val_last = last_leg["ltf_end_extr"]
+
+        if s_last < n:
+            if direction_last < 0:
+                sup_arr[s_last:e_last] = val_last
+            else:
+                res_arr[s_last:e_last] = val_last
+
+    return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
+                        index=df.index, dtype=np.float32)
+
+""" نسخه رپر: -----------------------------------------------------------------
+"""
 def sr_from_zigzag_legs(
     df: pd.DataFrame,
     *,
-    tf: str,
+    tf: str,    # tf_higher
     depth: int,
     deviation: float,
     backstep: int,
@@ -221,7 +395,7 @@ def sr_from_zigzag_legs(
             extend_last_leg=extend_last_leg,
         )
 
-""" --------------------------------------------------------------------------- OK Func3
+""" =========================================================================== OK Func3
 فاصله نرمال‌شده قیمت پایانی تا سطوح حمایت و مقاومت فعال.
 نرمال‌سازی بر اساس ATR (Average True Range) انجام می‌شود.
 
@@ -251,18 +425,20 @@ def sr_distance_from_levels(
     eps: float = 1e-8,
 ) -> pd.DataFrame:
 
-    high = df["high"]
-    low = df["low"]
     close = df["close"]
-
-    # --- محاسبه ATR ---
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-    atr = tr.rolling(atr_window, min_periods=1).mean().astype(np.float32)
-
+    # --- محاسبه ATR ---------------------------- Deleted 1404/12/02
+    # high = df["high"]
+    # low = df["low"]
+    # tr = pd.concat([
+    #     high - low,
+    #     (high - close.shift(1)).abs(),
+    #     (low - close.shift(1)).abs()
+    # ], axis=1).max(axis=1)
+    # atr = tr.rolling(atr_window, min_periods=1).mean().astype(np.float32)
+    
+    # --- ATR (Single Source of Truth) ---------- Added 1404/12/02
+    atr = compute_atr(df, window=atr_window, method="classic")
+    
     # --- فاصله نرمال شده ---
     dist_sup = ((close - sr["sr_support"]) / (atr + eps)).astype(np.float32)
     dist_res = ((sr["sr_resistance"] - close) / (atr + eps)).astype(np.float32)
@@ -275,13 +451,15 @@ def sr_distance_from_levels(
         {
             "dist_to_support_norm": dist_sup,
             "dist_to_resistance_norm": dist_res,
+            # "atr": atr,     # for debug
         },
         index=df.index,
         dtype=np.float32,
     )
 
-""" --------------------------------------------------------------------------- OK Func4
+""" =========================================================================== OK Func4
 برای استفاده داخلی است
+در خروجی این توابع اندکسهای متناظری که تحت پوشش لگهای زیگزاگ هستند True میشوند
 """
 def _zigzag_leg_mask_orig(zz: pd.Series) -> pd.Series:
     legs = zz.attrs.get("legs", [])
@@ -292,8 +470,8 @@ def _zigzag_leg_mask_orig(zz: pd.Series) -> pd.Series:
     n = len(zz)
 
     for leg in legs:
-        s = leg["start_ltf_pos"]
-        e = leg["end_ltf_pos"]
+        s = leg["ltf_start_pos"]
+        e = leg["ltf_end_pos"]
         if s >= n:
             continue
         if e > n:
@@ -314,7 +492,10 @@ def _zigzag_leg_mask_njit(zz: pd.Series) -> pd.Series:
         return pd.Series(mask, index=zz.index, dtype=bool)
 
     # Prepare leg data as NumPy array for njit
-    leg_array = np.array([(leg["start_ltf_pos"], leg["end_ltf_pos"]) for leg in legs], dtype=np.int64)
+    leg_array = np.array(
+        [(leg["ltf_start_pos"], leg["ltf_end_pos"]) for leg in legs],
+        dtype=np.int64
+    )
 
     @njit
     def fill_mask(mask_arr, leg_arr):
@@ -341,30 +522,19 @@ def _zigzag_leg_mask(
     else:
         return _zigzag_leg_mask_njit(zz=zz)
 
-""" --------------------------------------------------------------------------- OK Func5
+""" =========================================================================== OK Func5
 """
 def fibo_levels_from_legs_orig(
     df: pd.DataFrame,
     zz: pd.Series,
     ratios: Optional[Sequence[float]] = None,
+    extend_last_leg: bool = False,
 ) -> pd.DataFrame:
     """
-    Compute Fibonacci levels based on completed zigzag legs (metadata).
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame with columns ["high", "low", "close"].
-    zz : pd.Series
-        Output of zigzag_mtf_adapter with attrs["legs"].
-    ratios : Sequence[float], optional
-        Fibonacci retracement ratios. Default: [0.236, 0.382, 0.5, 0.618, 0.786]
-
-    Returns
-    -------
-    pd.DataFrame
-    Columns: fibo_<ratio> with index=df.index
+    Compute Fibonacci retracement levels from zigzag leg metadata.
+    Uses leg extrema stored in zz.attrs["legs"].
     """
+
     if ratios is None:
         from f10_utils.config_loader import load_config
         cfg = load_config()
@@ -374,48 +544,135 @@ def fibo_levels_from_legs_orig(
         if ratios is None:
             ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
 
-    cols = [f"fibo_{r:.3f}" for r in ratios]
+    legs = zz.attrs.get("legs", [])
     n = len(df)
-    out = np.full((n, len(ratios)), np.nan, dtype=np.float32)
-    high_vals = df["high"].values
-    low_vals = df["low"].values
 
-    for leg in zz.attrs.get("legs", []):
-        s = leg["start_ltf_pos"]
-        e = leg["end_ltf_pos"]
-        direction = leg["direction"]
+    cols = [f"fibo_{r:.3f}" for r in ratios]
+    out = np.full(shape=(n, len(ratios)), fill_value=np.nan, dtype=np.float32)
 
-        if s >= n:
+    ratios_arr = np.asarray(ratios, dtype=np.float32)
+
+    for leg in legs:
+
+        s = leg["ltf_start_pos"]
+        e = leg["ltf_end_pos"]
+        direction = int(leg["direction"])
+
+        if s < 0 or e <= s or s >= n:
             continue
+        if e > n:
+            e = n
 
-        start_price = df.iloc[s  ]["low" ] if direction > 0 else df.iloc[s  ]["high"]
-        end_price   = df.iloc[e-1]["high"] if direction > 0 else df.iloc[e-1]["low" ]
+        start_price = float(leg["ltf_start_extr"])
+        end_price   = float(leg["ltf_end_extr"])
 
         rng = abs(end_price - start_price)
-        if rng == 0:
+        if rng == 0.0:
             continue
 
         if direction > 0:
-            # صعودی: fibo زیر سقف
-            out[s:e, :] = np.array([end_price - r*rng for r in ratios], dtype=np.float32)
+            # bullish leg → retracement below high
+            levels = end_price - ratios_arr * rng
         else:
-            # نزولی: fibo بالای کف
-            out[s:e, :] = np.array([end_price + r*rng for r in ratios], dtype=np.float32)
+            # bearish leg → retracement above low
+            levels = end_price + ratios_arr * rng
+
+        out[s:e, :] = levels.astype(np.float32)
+    
+    # --- extend last leg --------------------------------- start
+    if extend_last_leg and legs:
+
+        last_leg = legs[-1]
+
+        s = last_leg["ltf_start_pos"]
+        e = last_leg["ltf_end_pos"]
+        direction = int(last_leg["direction"])
+
+        if s >= 0 and s < n:
+
+            start_price = float(last_leg["ltf_start_extr"])
+            end_price   = float(last_leg["ltf_end_extr"])
+
+            rng = abs(end_price - start_price)
+
+            if rng != 0.0:
+
+                if direction > 0:
+                    levels = end_price - ratios_arr * rng
+                else:
+                    levels = end_price + ratios_arr * rng
+
+                e = min(e, n)
+                out[e:n, :] = levels.astype(np.float32)
+    # --- extend last leg --------------------------------- end
 
     return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
-
 
 def fibo_levels_from_legs_njit(
     df: pd.DataFrame,
     zz: pd.Series,
     ratios: Optional[Sequence[float]] = None,
+    extend_last_leg: bool = False,
 ) -> pd.DataFrame:
-    """
-    Fibonacci levels based on zigzag legs (metadata) - Numba-optimized.
 
-    Identical output to fibo_levels_from_legs, but much faster for millions of rows.
-    """
-    # --- Ratios ---
+    # --- njit core -------------------------------------------------
+    @njit(cache=True, fastmath=True)
+    def _fibo_levels_from_legs_core_fast(
+        n: int,
+        start_pos_arr: np.ndarray,
+        end_pos_arr: np.ndarray,
+        direction_arr: np.ndarray,
+        start_price_arr: np.ndarray,
+        end_price_arr: np.ndarray,
+        ratios_arr: np.ndarray,
+    ):
+        n_ratios = ratios_arr.shape[0]
+        out = np.empty((n, n_ratios), dtype=np.float32)
+
+        # fill NaN manually (numba-safe)
+        for i in range(n):
+            for j in range(n_ratios):
+                out[i, j] = np.nan
+
+        n_legs = start_pos_arr.shape[0]
+
+        for i in range(n_legs):
+
+            s = start_pos_arr[i]
+            e = end_pos_arr[i]
+
+            if s < 0 or e <= s or s >= n:
+                continue
+            if e > n:
+                e = n
+
+            direction = direction_arr[i]
+            start_price = start_price_arr[i]
+            end_price   = end_price_arr[i]
+
+            rng = end_price - start_price
+            if rng < 0:
+                rng = -rng
+            if rng == 0.0:
+                continue
+
+            # precompute levels once per leg
+            for j in range(n_ratios):
+                r = ratios_arr[j]
+                if direction > 0:
+                    level = end_price - r * rng
+                else:
+                    level = end_price + r * rng
+
+                level32 = np.float32(level)
+
+                # contiguous memory write (fast)
+                for k in range(s, e):
+                    out[k, j] = level32
+
+        return out
+    
+    # ---------------------------------------------------------------
     if ratios is None:
         from f10_utils.config_loader import load_config
         cfg = load_config()
@@ -424,60 +681,105 @@ def fibo_levels_from_legs_njit(
         ratios = fibo.get("retracement_ratios", None)
         if ratios is None:
             ratios = [0.236, 0.382, 0.5, 0.618, 0.786]
-    
-    cols = [f"fibo_{r:.3f}" for r in ratios]
-    n = len(df)
-    out = np.full((n, len(ratios)), np.nan, dtype=np.float32)
-    high_vals = df["high"].values.astype(np.float32)
-    low_vals  = df["low" ].values.astype(np.float32)
 
     legs = zz.attrs.get("legs", [])
+    n = len(df)
 
-    # --- Numba-compatible array version of leg processing ---
-    leg_data = []
-    for leg in legs:
-        s = leg["start_ltf_pos"]
-        e = leg["end_ltf_pos"]
-        direction = leg["direction"]
-        if s >= n or e <= s:
-            continue
-        start_price = low_vals[s] if direction > 0 else high_vals[s]
-        end_price   = high_vals[e-1] if direction > 0 else low_vals[e-1]
-        rng = abs(end_price - start_price)
-        if rng == 0:
-            continue
-        leg_data.append((s, e, direction, start_price, end_price, rng))
+    cols = [f"fibo_{r:.3f}" for r in ratios]
 
-    # --- Convert to NumPy arrays for njit ---
-    if not leg_data:
-        return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
+    if not legs:
+        return pd.DataFrame(
+            np.full((n, len(ratios)), np.nan, dtype=np.float32),
+            index=df.index,
+            columns=cols,
+        )
 
-    leg_array = np.array(leg_data, dtype=np.float32)
-    
-    ratios_arr = np.array(ratios, dtype=np.float32)
+    start_pos_arr   = np.asarray([leg["ltf_start_pos"]  for leg in legs], dtype=np.int32)
+    end_pos_arr     = np.asarray([leg["ltf_end_pos"]    for leg in legs], dtype=np.int32)
+    direction_arr   = np.asarray([leg["direction"]      for leg in legs], dtype=np.int8)
+    start_price_arr = np.asarray([leg["ltf_start_extr"] for leg in legs], dtype=np.float64)
+    end_price_arr   = np.asarray([leg["ltf_end_extr"]   for leg in legs], dtype=np.float64)
 
-    @njit
-    def fill_fibo(out_arr, leg_arr, ratios_arr):
-        for i in range(leg_arr.shape[0]):
-            s = int(leg_arr[i, 0])
-            e = int(leg_arr[i, 1])
-            direction = leg_arr[i, 2]
-            end_price = leg_arr[i, 4]
-            rng = leg_arr[i, 5]
-            for j in range(len(ratios_arr)):
+    ratios_arr = np.asarray(ratios, dtype=np.float32)
+
+    out = _fibo_levels_from_legs_core_fast(
+        n,
+        start_pos_arr,
+        end_pos_arr,
+        direction_arr,
+        start_price_arr,
+        end_price_arr,
+        ratios_arr,
+    )
+
+    # --- extend last leg --------------------------------- start
+    if extend_last_leg and legs:
+
+        last_leg = legs[-1]
+
+        s = last_leg["ltf_start_pos"]
+        e = last_leg["ltf_end_pos"]
+        direction = int(last_leg["direction"])
+
+        if 0 <= s < n:
+
+            start_price = float(last_leg["ltf_start_extr"])
+            end_price   = float(last_leg["ltf_end_extr"])
+
+            rng = abs(end_price - start_price)
+
+            if rng != 0.0:
+
                 if direction > 0:
-                    val = end_price - ratios_arr[j]*rng
+                    levels = end_price - ratios_arr * rng
                 else:
-                    val = end_price + ratios_arr[j]*rng
-                for k in range(s, e):
-                    out_arr[k, j] = val
-        return out_arr
+                    levels = end_price + ratios_arr * rng
 
-    out = fill_fibo(out, leg_array, ratios_arr)
+                e = min(e, n)
+
+                # extend to end of dataframe
+                out[e:n, :] = levels.astype(np.float32)
+    # --- extend last leg --------------------------------- end
+
     return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
 
+def fibo_levels_from_legs(
+    df: pd.DataFrame,
+    zz: pd.Series,
+    ratios: Optional[Sequence[float]] = None,
+    threshold_bytes: int = 12_800_000,
+    extend_last_leg: bool = False,
+) -> pd.DataFrame:
+    """
+    Wrapper for Fibonacci-from-legs.
+    Selects orig (numpy/pandas) or njit version based on memory footprint.
 
-""" --------------------------------------------------------------------------- =Func6
+    Parameters
+    ----------
+    df : pd.DataFrame
+    zz : pd.Series (with attrs["legs"])
+    ratios : optional retracement ratios
+    threshold_bytes : int
+        If estimated memory usage exceeds this value → use njit version.
+    """
+
+    # --- estimate memory footprint (high/low only, same philosophy as zigzag) ---
+    if "high" in df.columns and "low" in df.columns:
+        high_np = np.ascontiguousarray(df["high"].values, dtype=np.float64)
+        low_np  = np.ascontiguousarray(df["low"].values,  dtype=np.float64)
+        bytes_used = high_np.nbytes + low_np.nbytes
+
+    else:
+        # fallback: approximate using index length
+        bytes_used = len(df) * 16  # float64 * 2 assumption
+
+    # --- choose implementation ---
+    if bytes_used <= threshold_bytes:
+        return fibo_levels_from_legs_orig(df, zz, ratios, extend_last_leg=extend_last_leg)
+    else:
+        return fibo_levels_from_legs_njit(df, zz, ratios, extend_last_leg=extend_last_leg)
+
+""" =========================================================================== =Func6
 """
 def registry() -> Dict[str, callable]:
     
@@ -518,9 +820,8 @@ def registry() -> Dict[str, callable]:
         ).to_dict(orient="series")
 
     # --- func4 -------------------------------------------
-
     def make_fibo_from_legs(df, zz, ratios=None, **_):
-        return fibo_levels_from_legs_orig(   #########################################
+        return fibo_levels_from_legs(
             df,
             zz,
             ratios=ratios
@@ -529,8 +830,8 @@ def registry() -> Dict[str, callable]:
     return {
         "pivots": make_pivots,
         "sr": make_sr_zigzag,
+        "sr_distance": make_sr_distance,
         "fibo": make_fibo_from_legs,
-        "sr_distance": make_sr_distance
     }
 # --- New Added -----------------------------------------------------
 """
@@ -546,7 +847,7 @@ def registry() -> Dict[str, callable]:
 - همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
 """
 
-""" --------------------------------------------------------------------------- Func7
+""" =========================================================================== Func7
 ADR (Average Daily Range)
 """
 def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
@@ -578,7 +879,7 @@ def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Serie
     adr_intraday = adr_daily.reindex(df.index, method="ffill")
     return adr_intraday
 
-""" --------------------------------------------------------------------------- Func8
+""" =========================================================================== Func8
 """
 def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> pd.DataFrame:
     """
@@ -606,7 +907,7 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     out = pd.concat([day_open, dist_abs, dist_pct], axis=1)
     return out
 
-""" --------------------------------------------------------------------------- Func9
+""" =========================================================================== Func9
 S/R Overlap Score (0..1)
 """
 def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:

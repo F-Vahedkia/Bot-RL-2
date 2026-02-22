@@ -464,7 +464,8 @@ def zigzag_mtf_adapter(
     backstep: int = 10,
     point: float = 0.01,
     mode: Literal["last", "forward_fill"] = "forward_fill",
-    extend_last_leg: bool = False,
+    extend_last_leg: bool = False,  # True: فرض میکند که آخرین لگ تا انتهای دیتاها ادامه می یابد
+    use_timeshift: bool = False,
 ) -> pd.Series:
     
     # --- Validation ---------------------------------------------------------- ok1
@@ -500,12 +501,12 @@ def zigzag_mtf_adapter(
             name=f"zigzag_mtf_{tf_higher}",
             dtype=np.float32,
         )
-
+   
     # --- For debuging --------------------------------------------------------
     # (تابع ریسِت ایندکس سبب ایجاد تغییرات دائمی روی دیتافریم نمی شود)
     #
-    zz_htf.reset_index().to_csv("1__zz_htf.csv", index_label="no.")
-    pd.DataFrame(legs_htf).to_csv("2__legs_htf.csv", index_label="no.")
+    # zz_htf.reset_index().to_csv("1__zz_htf.csv", index_label="no.")
+    # pd.DataFrame(legs_htf).to_csv("2__legs_htf.csv", index_label="no.")
     
     # --- Prepare LTF container ----------------------------------------------- ok4
     # build an empty series with known time index, for "final main result"
@@ -521,14 +522,17 @@ def zigzag_mtf_adapter(
     ltf_legs =[]
 
     # --- Time shift ----------------------------------------------------------
-    # فاصله واقعی LTF
-    tf_ltf = ltf_index.to_series().diff().dropna().iloc[0]
-    
     # طول HTF
     tf_htf = pd.to_timedelta(tf_higher)
 
-    # انتقال از open به آخرین LTF داخل بازه
-    timeshift = tf_htf - tf_ltf
+    if use_timeshift:
+        # فاصله واقعی LTF
+        tf_ltf = ltf_index.to_series().diff().dropna().iloc[0]
+        # انتقال از open به آخرین LTF داخل بازه
+        timeshift = tf_htf - tf_ltf
+    else:
+        tf_ltf = pd.Timedelta(0)
+        timeshift = pd.Timedelta(0)
 
     # --- last mode -----------------------------------------------------------
     if mode == "last":  
