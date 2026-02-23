@@ -20,6 +20,7 @@ from f03_features.indicators.zigzag import zigzag_mtf_adapter
 from f10_utils.config_ops import _deep_get
 from f10_utils.config_loader import ConfigLoader  # از f01_config/config.yaml می‌خواند
 _loader = ConfigLoader()                          # به‌طور پیش‌فرض f01_config/config.yaml را لود می‌کند
+_CONFIG_CACHE = _loader.get_all()
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -216,7 +217,7 @@ def _ema_adapter(ohlc, col: str = "close", n: int = 20, **_) -> Dict[str, pd.Ser
 # def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
 def _adv_adr(df, **cfg) -> Dict[str, pd.Series]:
     # --- read config ----------------- start
-    conf_all = _loader.get_all()
+    conf_all = _CONFIG_CACHE
     params = _deep_get(conf_all, "features.adr", {}) or {}
 
     window = int(params.get("window", params.get("w", 14)))
@@ -241,7 +242,7 @@ def _adv_adr(df, **cfg) -> Dict[str, pd.Series]:
 # def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
 def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
     # --- read config ----------------- start
-    conf_all = _loader.get_all()
+    conf_all = _CONFIG_CACHE
     params = _deep_get(conf_all, "features.adr_distance_to_open", {}) or {}
 
     window = int(params.get("window", 14))
@@ -313,7 +314,7 @@ def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
 # def _adv_sr_overlap_score(df, anchor: float, step: float, n: int = 10, tol_pct: float = 0.05, **_) -> Dict[str, pd.Series]:
 def _adv_sr_overlap_score(df, **cfg) -> Dict[str, pd.Series]:
     # --- read config ----------------- start
-    conf_all = _loader.get_all()
+    conf_all = _CONFIG_CACHE
     params = _deep_get(conf_all, "features.sr_overlap_score", {}) or {}
 
     anchor  = float(params.get("anchor", params.get("a", 0.0)))
