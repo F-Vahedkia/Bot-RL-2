@@ -278,6 +278,27 @@ features:
       strong_entry_threshold: 0.7
       filter_threshold: 0.35
 
+  # ---------------------------------------------------------------------------
+  # ADVANCED VOLATILITY & SR FEATURES
+  # ---------------------------------------------------------------------------
+
+  adr:
+    enabled: true
+    window: 14              # lookback window in days
+    normalize: false        # if true, divide by close price
+
+  adr_distance_to_open:
+    enabled: true
+    window: 14              # must match adr.window normally
+    use_percent: true       # express distance as % of ADR
+
+  sr_overlap_score:
+    enabled: true
+    tolerance_pct: 0.05     # price proximity tolerance
+    step: 10                # number of historical legs to inspect
+    n: 5                    # number of SR levels considered
+    normalize: true         # scale score to [0,1]
+
 
 
 

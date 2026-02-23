@@ -10,13 +10,14 @@ project:
 
 
 extends:
-- f01_config/extend_config.yaml   # کمترین اهمیت- کمتر از همین فایل کانفیگ 
-# - f01_config/extend_config_2.yaml # اهمیتش از بالایی بیشتر است 
+- f01_config/extend_config.yaml      # کمترین اهمیت- کمتر از همین فایل کانفیگ 
+# - f01_config/extend_config_2.yaml  # اهمیتش از بالایی بیشتر است 
 bases:
-- f01_config/base_config.yaml     #اهمیت این فایل بیشتراز extendsهااست-اماازهمین فایل کانفیگ(config.yaml) و از overlaysها کمتر است 
-# - f01_config/base_config_2.yaml   # اهمیت این فایل از بالایی ها بیشتر است 
+- f01_config/base_config.yaml        #اهمیت این فایل بیشتراز extendsهااست.
+                                     # اماازهمین فایل کانفیگ(config.yaml) و از overlaysها کمتر است 
+# - f01_config/base_config_2.yaml    # اهمیت این فایل از بالایی ها بیشتر است 
 overlays:
-- f01_config/symbol_specs.yaml    # بیشترین اهمیت- بیش از حتی همین فایل کانفیگ(config.yaml) 
+- f01_config/symbol_specs.yaml       # بیشترین اهمیت- بیش از حتی همین فایل کانفیگ(config.yaml) 
 # - f01_config/symbol_specs_22.yaml
 # - f01_config/symbol_specs_33.yaml
 # ---------------------------------------------------------
@@ -67,13 +68,17 @@ connection:                                                     # Used at: mt5_c
 
 
 features:
-  time_features:            ####################
+  time_features:               #===============================================
     add_hour_of_day: true      # Used at: data_handler.py / _add_time_features()
     add_day_of_week: true      #
     add_session_flags: true    #
-    normalize_time: true       # 
+    normalize_time: true       #===============================================
 
   base_timeframe: M5           # Used at: data_handler.py / class DataHandler / __init__
+
+  representation:
+    default: "binary"
+    mapping: ""
 
   pipeline:
     use_default_set: true
@@ -83,6 +88,7 @@ features:
       fibonacci: true
       support_resistance: true
       volatility: true
+  
   shift_features_by: 1
   drop_na_head: true
   indicators:
@@ -183,54 +189,62 @@ features:
     caching:
       enabled: false
       ttl_bars: 500
+  
   support_resistance:
     enabled: true
     lookback_bars: 1500
     cluster_tolerance_pips: 15
-    sr_advanced:
-      common:
-        atr_window: 14
-        max_bars_alive: 5
-        w_size: 0.5
-        w_age: 0.3
-        w_touch: 0.2
-      fvg:
-        lookback: 2
-        min_size_pct_of_atr: 0.35
-      supply_demand:
-        base_len: 3
-        base_atr_max: 1.0
-        impulse_atr_min: 0.8
-      order_block:
-        body_atr_min: 0.4
-        wick_ratio_max: 1.0
-        bos_lookback: 8
-      breaker_flip:
-        lookback: 20
-        ob_body_atr_min: 0.35
-        ob_wick_ratio_max: 1.0
-        ob_bos_lookback: 10
-      liq_sweep:
-        lookback: 6
-        min_tail_atr: 0.4
-      sr_fusion:
-        ema_span: 5
-        age_norm: 6.0
-        enter_th: 0.35
-        exit_th: 0.25
-        cooldown_bars: 3
-        min_conf: 0.25
-        tie_eps: 0.02
-        confirm_col: null
-      overrides:
-        XAUUSD:
-          H1:
-            supply_demand:
-              base_atr_max: 1.0
-              impulse_atr_min: 0.8
-            sr_fusion:
-              enter_th: 0.35
-              exit_th: 0.25
+    zigzag:               # ===== Used by feature_registry.py / zigzag_mtf_adapter() ===== start
+      enabled: true       #
+      tf: null            #     # یعنی: پیش‌فرض = base_timeframe
+      depth: 12           #
+      deviation: 5.0      #
+      backstep: 10        # ===== Used by feature_registry.py / zigzag_mtf_adapter() ===== end
+    sr_advanced:                    # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== start
+      common:                       #
+        atr_window: 14              #
+        max_bars_alive: 5           #
+        w_size: 0.5                 #
+        w_age: 0.3                  #
+        w_touch: 0.2                #
+      fvg:                          #
+        lookback: 2                 #
+        min_size_pct_of_atr: 0.35   #
+      supply_demand:                #
+        base_len: 3                 #
+        base_atr_max: 1.0           #
+        impulse_atr_min: 0.8        #
+      order_block:                  #
+        body_atr_min: 0.4           #
+        wick_ratio_max: 1.0         #
+        bos_lookback: 8             #
+      breaker_flip:                 #
+        lookback: 20                #
+        ob_body_atr_min: 0.35       #
+        ob_wick_ratio_max: 1.0      #
+        ob_bos_lookback: 10         #
+      liq_sweep:                    #
+        lookback: 6                 #
+        min_tail_atr: 0.4           #
+      sr_fusion:                    #
+        ema_span: 5                 #
+        age_norm: 6.0               #
+        enter_th: 0.35              #
+        exit_th: 0.25               #
+        cooldown_bars: 3            #
+        min_conf: 0.25              #
+        tie_eps: 0.02               #
+        confirm_col: null           #
+      overrides:                    #
+        XAUUSD:                     #
+          H1:                       #
+            supply_demand:          #
+              base_atr_max: 1.0     #
+              impulse_atr_min: 0.8  #
+            sr_fusion:              #
+              enter_th: 0.35        #
+              exit_th: 0.25         # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== end
+  
   price_action_params:
     anti_lookahead: true
     market_structure:
@@ -285,10 +299,10 @@ env:
     - H4                    #
     - D1                    #
     - W1                    #
-    lookback_bars: 2000    # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
-    date_from: 2024-01-01  #  در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
-    date_to:   now         # مقدار date_to میتواند NOW یا now هم اختیار کند 
-    range_policy: max      # میتواند یکی از رشته مقادیر min, max را داشته باشد 
+    lookback_bars: 20       # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
+    date_from: 2010-01-01 #  در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+    date_to:   now        # مقدار date_to میتواند NOW یا now هم اختیار کند 
+    range_policy: date      # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
     batch_size: 50          #
     save_format: parquet    # csv | parquet
 

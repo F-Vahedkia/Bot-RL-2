@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # f03_features/indicators/core.py
 # Status in (Bot-RL-2): Reviewed before 1404/09/25
 """

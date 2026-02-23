@@ -212,8 +212,17 @@ def _rsi_adapter(ohlc, n: int = 14, **_) -> Dict[str, pd.Series]:
 def _ema_adapter(ohlc, col: str = "close", n: int = 20, **_) -> Dict[str, pd.Series]:
     return {f"ema_{col}_{n}": ema_core(ohlc[col], n)}
 
-# --- adr --------------------------------------------------------------------- Func.4
-def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+# --- adr --------------------------------------------------------------------- Func.4 (edited 041204) 
+# def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+def _adv_adr(df, **cfg) -> Dict[str, pd.Series]:
+    # --- read config ----------------- start
+    conf_all = _loader.get_all()
+    params = _deep_get(conf_all, "features.adr", {}) or {}
+
+    window = int(params.get("window", params.get("w", 14)))
+    tz     = params.get("tz", "UTC")
+    # --- read config ----------------- end
+
     """
     آداپتر ADR:
       - ورودی: df با high/low (و ایندکس UTC)
@@ -228,8 +237,17 @@ def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]
     key = f"adr_{int(window)}"
     return {key: s}
 
-# --- adr_distance_to_open ---------------------------------------------------- Func.5
-def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+# --- adr_distance_to_open ---------------------------------------------------- Func.5 (edited 041204)
+# def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
+def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
+    # --- read config ----------------- start
+    conf_all = _loader.get_all()
+    params = _deep_get(conf_all, "features.adr_distance_to_open", {}) or {}
+
+    window = int(params.get("window", 14))
+    tz     = params.get("tz", "UTC")
+    # --- read config ----------------- end
+
     """
     فاصله تا open روز (نرمال‌شده با ADR):
     - اگر خروجی levels ستون 'dist_pct' نداشته باشد، اینجا با dist_abs/adr محاسبه می‌کنیم.
@@ -291,8 +309,19 @@ def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dic
         f"adr_dist_pct_{w}": s_pct,
     }
 
-# --- sr_overlap_score -------------------------------------------------------- Func.6
-def _adv_sr_overlap_score(df, anchor: float, step: float, n: int = 10, tol_pct: float = 0.05, **_) -> Dict[str, pd.Series]:
+# --- sr_overlap_score -------------------------------------------------------- Func.6 (edited 041204)
+# def _adv_sr_overlap_score(df, anchor: float, step: float, n: int = 10, tol_pct: float = 0.05, **_) -> Dict[str, pd.Series]:
+def _adv_sr_overlap_score(df, **cfg) -> Dict[str, pd.Series]:
+    # --- read config ----------------- start
+    conf_all = _loader.get_all()
+    params = _deep_get(conf_all, "features.sr_overlap_score", {}) or {}
+
+    anchor  = float(params.get("anchor", params.get("a", 0.0)))
+    step    = float(params.get("step", 10))
+    n       = int(params.get("n", 5))
+    tol_pct = float(params.get("tolerance_pct", params.get("tol_pct", 0.05)))
+    # --- read config ----------------- end
+
     """
     امتیاز همپوشانی قیمت (close) با سطوح S/R «رُند» ساخته شده از round_levels(anchor, step, n).
     - برای هر بارِ close: score = sr_overlap_score(close_t, levels, tol_pct)

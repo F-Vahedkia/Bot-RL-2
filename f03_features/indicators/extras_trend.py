@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # f03_features/indicators/extras_trend.py
 # Status in (Bot-RL-2): Reviewed at 1404/09/29
 
