@@ -431,7 +431,7 @@ def zigzag(
     return zz_df
 
 #====================================================================
-# MULTI-TIMEFRAME ZIGZAG ADAPTER
+# Multi-Timeframe zigzag adapter
 """
 - Computes ZigZag on higher timeframe (HTF)
 - Projects HTF swing points onto lower timeframe (LTF)
@@ -454,7 +454,7 @@ Returns
 pd.Series
     MTF-aware ZigZag aligned to LTF index
 """
-#==========
+#====================================================================
 def zigzag_mtf_adapter(
     high: pd.Series,
     low: pd.Series,
@@ -643,3 +643,112 @@ def zigzag_mtf_adapter(
 
     return zz_ltf
 
+#====================================================================
+# Zigzag Legs
+#====================================================================
+def zigzag_legs(
+    high: pd.Series,
+    low: pd.Series,
+    tf: str,
+    depth: int = 12,
+    deviation: float = 5.0,
+    backstep: int = 10,
+    point: float = 0.01,
+    # mode: Literal["last", "forward_fill"] = "forward_fill",
+    extend_last_leg: bool = False,
+    use_timeshift: bool = False,
+) -> pd.DataFrame:
+    """
+    Returns ZigZag legs in unified LTF schema.
+
+    Output columns:
+        ltf_start_ts
+        ltf_end_ts
+        direction
+        ltf_start_extr
+        ltf_end_extr
+        ltf_start_pos
+        ltf_end_pos
+    """
+
+    required_cols = [
+        "ltf_start_ts",
+        "ltf_end_ts",
+        "direction",
+        "ltf_start_extr",
+        "ltf_end_extr",
+        "ltf_start_pos",
+        "ltf_end_pos",
+    ]
+
+    # --- validation ------------------------------------------------
+    if not isinstance(high.index, pd.DatetimeIndex) or not isinstance(low.index, pd.DatetimeIndex):
+        raise ValueError("high/low must have DatetimeIndex")
+
+    if not high.index.equals(low.index):
+        raise ValueError("high and low must share identical index")
+
+    if len(high) < 2:
+        return pd.DataFrame(columns=required_cols)
+
+    # --- timeframe detection ---------------------------------------
+    tf_df = high.index.to_series().diff().dropna().iloc[0]
+    tf_df = pd.to_timedelta(tf_df)
+    tf_td = pd.to_timedelta(tf)
+
+    # --- lower TF requested (invalid) ------------------------------
+    if tf_td < tf_df:
+        return pd.DataFrame(columns=required_cols)
+
+    # --- equal TF --------------------------------------------------
+    if tf_td == tf_df:
+        zz = zigzag(
+            high=high,
+            low=low,
+            depth=depth,
+            deviation=deviation,
+            backstep=backstep,
+            point=point,
+            addmeta=True,
+            final_check=True,
+        )
+
+        legs = zz.attrs.get("legs", [])
+        if not legs:
+            return pd.DataFrame(columns=required_cols)
+
+        mapped = []
+        for leg in legs:
+            mapped.append({
+                "ltf_start_ts": leg["start_ts"],
+                "ltf_end_ts": leg["end_ts"],
+                "direction": int(leg["direction"]),
+                "ltf_start_extr": leg["start_extr"],
+                "ltf_end_extr": leg["end_extr"],
+                "ltf_start_pos": int(leg["start_pos"]),
+                "ltf_end_pos": int(leg["end_pos"]),
+            })
+
+        return pd.DataFrame(mapped, columns=required_cols)
+
+    # --- higher TF ---
+    zz_mtf = zigzag_mtf_adapter(
+        high=high,
+        low=low,
+        tf_higher=tf,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+        point=point,
+        # mode=mode,
+        extend_last_leg=extend_last_leg,
+        use_timeshift=use_timeshift,
+    )
+
+    legs = zz_mtf.attrs.get("legs", [])
+    if not legs:
+        return pd.DataFrame(columns=required_cols)
+
+    return pd.DataFrame(legs, columns=required_cols)
+
+#====================================================================

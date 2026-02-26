@@ -148,3 +148,4 @@ def build_market_structure(df: pd.DataFrame, lookback: int = 3) -> pd.DataFrame:
     x = detect_swings(df, lookback=lookback)
     x = detect_bos_choch(x)
     return x
+

@@ -294,9 +294,10 @@ features:
 
   sr_overlap_score:
     enabled: true
-    tolerance_pct: 0.05     # price proximity tolerance
+    anchor: 0.0
     step: 10                # number of historical legs to inspect
     n: 5                    # number of SR levels considered
+    tolerance_pct: 0.05     # price proximity tolerance
     normalize: true         # scale score to [0,1]
 
 

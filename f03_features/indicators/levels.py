@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import List, Sequence, Dict, Optional, Tuple, Any
 
 from .utils import compute_atr
-from .zigzag import zigzag_mtf_adapter
+from .zigzag import zigzag_mtf_adapter, zigzag_legs
 
 import logging
 logger = logging.getLogger(__name__)
@@ -22,10 +22,12 @@ from f10_utils.config_loader import ConfigLoader
 cfg = ConfigLoader().get_all()
 
 """ =========================================================================== OK Func1
-speed=OK
-Pivot های کلاسیک
 """
 def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[pd.Series, ...]:
+    """
+    speed=OK
+    Pivot های کلاسیک
+    """
     pivot = (high.shift(1) + low.shift(1) + close.shift(1)) / 3.0
     r1 = 2*pivot - low.shift(1)
     s1 = 2*pivot - high.shift(1)
@@ -51,11 +53,6 @@ def pivots_classic(high: pd.Series, low: pd.Series, close: pd.Series) -> tuple[p
 این مقدار از ابتدای لگ تا انتهای همان لگ، برای همهٔ کندل‌ها ثابت می‌ماند.
 در این توابع شیفت زمانی برابر با صفر درنظر گرفته شده است.
 در این توابع فقط از ضمیمه لگها استفاده میشود.
-   ============================================================================
-"""
-""" نسخه اصلی بدون شیفت زمانی: ------------------------------------------------
-در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
-بلکه از دیتافریم اصلی داده ها اساخراج میشود
 """
 def sr_from_zigzag_legs_orig_1(
     df: pd.DataFrame,
@@ -65,10 +62,14 @@ def sr_from_zigzag_legs_orig_1(
     deviation: float,
     backstep: int,
     extend_last_leg: bool = False,
-    # True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
-    # نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
 ) -> pd.DataFrame:
-
+    """ نسخه اصلی بدون شیفت زمانی:
+    در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
+    بلکه از دیتافریم اصلی داده ها اساخراج میشود
+    
+    extend_last_leg = True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
+    نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
+        """
     zz = zigzag_mtf_adapter(
         high=df["high"],
         low=df["low"],
@@ -114,10 +115,7 @@ def sr_from_zigzag_legs_orig_1(
         dtype=np.float32,
     )
 
-""" نسخه انجیت بدون شیفت زمانی: -----------------------------------------------
-در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
-بلکه از دیتافریم اصلی داده ها اساخراج میشود
-"""
+# -------------------------------------------------------------------
 def sr_from_zigzag_legs_njit_1(
     df: pd.DataFrame,
     *,
@@ -128,8 +126,9 @@ def sr_from_zigzag_legs_njit_1(
     extend_last_leg: bool = False,
 ) -> pd.DataFrame:
     """
-    Numba-optimized version of sr_from_zigzag_legs.
-    API و خروجی دقیقاً مشابه نسخه اصلی است.
+    نسخه انجیت بدون شیفت زمانی:
+    در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
+    بلکه از دیتافریم اصلی داده ها اساخراج میشود
     """
 
     # --- Run zigzag_mtf_adapter ---
@@ -202,9 +201,7 @@ def sr_from_zigzag_legs_njit_1(
     return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
                         index=df.index, dtype=np.float32)
 
-""" نسخه اصلی با شیفت زمانی: --------------------------------------------------
-در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
-"""
+# -------------------------------------------------------------------
 def sr_from_zigzag_legs_orig(
     df: pd.DataFrame,
     *,
@@ -213,21 +210,38 @@ def sr_from_zigzag_legs_orig(
     deviation: float,
     backstep: int,
     extend_last_leg: bool = False,
-    # True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
-    # نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
 ) -> pd.DataFrame:
-
-    zz = zigzag_mtf_adapter(
+    """ نسخه اصلی با شیفت زمانی:
+    در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
+    extend_last_leg = True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
+    نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
+    """
+    # zz = zigzag_mtf_adapter(
+    #     high=df["high"],
+    #     low=df["low"],
+    #     tf_higher=tf,
+    #     depth=depth,
+    #     deviation=deviation,
+    #     backstep=backstep,
+    #     use_timeshift=True,
+    # )
+    # legs = zz.attrs.get("legs", [])
+    legs = zigzag_legs(
         high=df["high"],
         low=df["low"],
-        tf_higher=tf,
+        tf=tf,
         depth=depth,
         deviation=deviation,
         backstep=backstep,
+        # point=0.01,
+        # mode: Literal["last", "forward_fill"] = "forward_fill",
+        extend_last_leg=extend_last_leg,
         use_timeshift=True,
     )
 
-    legs = zz.attrs.get("legs", [])
+    if isinstance(legs, pd.DataFrame):
+        legs = legs.to_dict("records")
+
     idx = df.index
     n = len(df)
 
@@ -266,9 +280,7 @@ def sr_from_zigzag_legs_orig(
         dtype=np.float32,
     )
 
-""" نسخه انجیت با شیفت زمانی: -------------------------------------------------
-در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
-"""
+# -------------------------------------------------------------------
 def sr_from_zigzag_legs_njit(
     df: pd.DataFrame,
     *,
@@ -279,22 +291,37 @@ def sr_from_zigzag_legs_njit(
     extend_last_leg: bool = False,
 ) -> pd.DataFrame:
     """
-    Numba-optimized version of sr_from_zigzag_legs.
-    API و خروجی دقیقاً مشابه نسخه اصلی است.
+    نسخه انجیت با شیفت زمانی:
+    در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته می شود،
     """
 
     # --- Run zigzag_mtf_adapter ---
-    zz = zigzag_mtf_adapter(
+    # zz = zigzag_mtf_adapter(
+    #     high=df["high"],
+    #     low=df["low"],
+    #     tf_higher=tf,
+    #     depth=depth,
+    #     deviation=deviation,
+    #     backstep=backstep,
+    #     use_timeshift=True,
+    # )
+    # legs = zz.attrs.get("legs", [])
+    legs = zigzag_legs(
         high=df["high"],
         low=df["low"],
         tf_higher=tf,
         depth=depth,
         deviation=deviation,
         backstep=backstep,
+        # point=0.01,
+        # mode: Literal["last", "forward_fill"] = "forward_fill",
+        extend_last_leg=extend_last_leg,
         use_timeshift=True,
     )
 
-    legs = zz.attrs.get("legs", [])
+    if isinstance(legs, pd.DataFrame):
+        legs = legs.to_dict("records")
+
     n = len(df)
 
     # --- Building containers ---
@@ -359,8 +386,7 @@ def sr_from_zigzag_legs_njit(
     return pd.DataFrame({"sr_support": sup_arr, "sr_resistance": res_arr},
                         index=df.index, dtype=np.float32)
 
-""" نسخه رپر: -----------------------------------------------------------------
-"""
+# --- نسخه رپر ------------------------------------------------------
 def sr_from_zigzag_legs(
     df: pd.DataFrame,
     *,
@@ -396,26 +422,6 @@ def sr_from_zigzag_legs(
         )
 
 """ =========================================================================== OK Func3
-فاصله نرمال‌شده قیمت پایانی تا سطوح حمایت و مقاومت فعال.
-نرمال‌سازی بر اساس ATR (Average True Range) انجام می‌شود.
-
-پارامترها:
------------
-df : pd.DataFrame
-    دیتافریم شامل ستون‌های ['high', 'low', 'close'] و ایندکس زمانی
-sr : pd.DataFrame
-    دیتافریم خروجی sr_from_zigzag_legs شامل ستون‌های
-    ['sr_support', 'sr_resistance']
-atr_window : int
-    طول پنجره برای محاسبه ATR
-eps : float
-    مقدار کوچک برای جلوگیری از تقسیم بر صفر
-
-خروجی:
--------
-pd.DataFrame با ستون‌های:
-- dist_to_support_norm
-- dist_to_resistance_norm
 """
 def sr_distance_from_levels(
     df: pd.DataFrame,
@@ -424,17 +430,30 @@ def sr_distance_from_levels(
     atr_window: int = 14,
     eps: float = 1e-8,
 ) -> pd.DataFrame:
+    """
+    فاصله نرمال‌شده قیمت پایانی تا سطوح حمایت و مقاومت فعال.
+    نرمال‌سازی بر اساس ATR (Average True Range) انجام می‌شود.
+
+    پارامترها:
+    -----------
+    df : pd.DataFrame
+        دیتافریم شامل ستون‌های ['high', 'low', 'close'] و ایندکس زمانی
+    sr : pd.DataFrame
+        دیتافریم خروجی sr_from_zigzag_legs شامل ستون‌های
+        ['sr_support', 'sr_resistance']
+    atr_window : int
+        طول پنجره برای محاسبه ATR
+    eps : float
+        مقدار کوچک برای جلوگیری از تقسیم بر صفر
+
+    خروجی:
+    -------
+    pd.DataFrame با ستون‌های:
+    - dist_to_support_norm
+    - dist_to_resistance_norm
+    """
 
     close = df["close"]
-    # --- محاسبه ATR ---------------------------- Deleted 1404/12/02
-    # high = df["high"]
-    # low = df["low"]
-    # tr = pd.concat([
-    #     high - low,
-    #     (high - close.shift(1)).abs(),
-    #     (low - close.shift(1)).abs()
-    # ], axis=1).max(axis=1)
-    # atr = tr.rolling(atr_window, min_periods=1).mean().astype(np.float32)
     
     # --- ATR (Single Source of Truth) ---------- Added 1404/12/02
     atr = compute_atr(df, window=atr_window, method="classic")
@@ -459,9 +478,13 @@ def sr_distance_from_levels(
 
 """ =========================================================================== OK Func4
 برای استفاده داخلی است
-در خروجی این توابع اندکسهای متناظری که تحت پوشش لگهای زیگزاگ هستند True میشوند
+در خروجی این توابع، اندکسهای متناظری که تحت پوشش لگهای زیگزاگ هستند True میشوند
 """
+# -------------------------------------------------------------------
 def _zigzag_leg_mask_orig(zz: pd.Series) -> pd.Series:
+    """
+    Returns boolean mask True for all indices covered by zigzag legs.
+    """
     legs = zz.attrs.get("legs", [])
     if not legs:
         return pd.Series(False, index=zz.index, dtype=bool)
@@ -479,6 +502,7 @@ def _zigzag_leg_mask_orig(zz: pd.Series) -> pd.Series:
         mask.iloc[s:e] = True
     return mask.astype(bool)
 
+# -------------------------------------------------------------------
 def _zigzag_leg_mask_njit(zz: pd.Series) -> pd.Series:
     """
     Numba-optimized version of zigzag_leg_mask.
@@ -513,6 +537,7 @@ def _zigzag_leg_mask_njit(zz: pd.Series) -> pd.Series:
     mask = fill_mask(mask, leg_array)
     return pd.Series(mask, index=zz.index, dtype=bool)
 
+# --- نسخه رپر ------------------------------------------------------
 def _zigzag_leg_mask(
     zz: pd.Series,
     _njit_threshold: int = 1_400_000,
@@ -608,6 +633,7 @@ def fibo_levels_from_legs_orig(
 
     return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
 
+# -------------------------------------------------------------------
 def fibo_levels_from_legs_njit(
     df: pd.DataFrame,
     zz: pd.Series,
@@ -743,6 +769,7 @@ def fibo_levels_from_legs_njit(
 
     return pd.DataFrame(out, index=df.index, columns=cols, dtype=np.float32)
 
+# --- نسخه رپر ------------------------------------------------------
 def fibo_levels_from_legs(
     df: pd.DataFrame,
     zz: pd.Series,
@@ -833,26 +860,27 @@ def registry() -> Dict[str, callable]:
         "sr_distance": make_sr_distance,
         "fibo": make_fibo_from_legs,
     }
-# --- New Added -----------------------------------------------------
-"""
-افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
-- round_levels(...): تولید سطوح رُند حول یک لنگر
-تابع round_levels عیناً از این فایل به فایل utils منتقل شد
-- compute_adr(...): محاسبهٔ ADR روزانه و نگاشت به تایم‌استمپ‌های درون‌روزی
-- adr_distance_to_open(...): فاصلهٔ نرمال‌شدهٔ قیمت تا «بازِ روز» با ADR
-- sr_overlap_score(...): امتیاز همپوشانی یک قیمت با سطوح S/R (۰..۱)
 
-نکته‌ها:
-- ورودی‌ها ایندکس زمانی UTC و مرتب فرض شده‌اند.
-- همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
+
+""" === New Added =============================================================
+    افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
+    - round_levels(...): تولید سطوح رُند حول یک لنگر
+    تابع round_levels عیناً از این فایل به فایل utils منتقل شد
+    - compute_adr(...): محاسبهٔ ADR روزانه و نگاشت به تایم‌استمپ‌های درون‌روزی
+    - adr_distance_to_open(...): فاصلهٔ نرمال‌شدهٔ قیمت تا «بازِ روز» با ADR
+    - sr_overlap_score(...): امتیاز همپوشانی یک قیمت با سطوح S/R (۰..۱)
+
+    نکته‌ها:
+    - ورودی‌ها ایندکس زمانی UTC و مرتب فرض شده‌اند.
+    - همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
 """
 
-""" =========================================================================== Func7
-ADR (Average Daily Range)
+""" =========================================================================== OK Func7
 """
 def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
     """
-    ADR کلاسیک: میانگینِ (High-Low) روزانه روی پنجرهٔ rolling.
+    ADR (Average Daily Range)
+    Classic ADR: میانگینِ (High-Low) روزانه روی پنجرهٔ rolling.
     - ابتدا OHLC روزانه را می‌سازد (بر اساس resample('1D'))
     - سپس میانگین rolling از دامنهٔ روزانه را می‌گیرد
     - در پایان سری ADR روزانه را به تایم‌استمپ‌های درون‌روزی ffill می‌کند
@@ -868,18 +896,17 @@ def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Serie
     daily = daily.tz_convert(tz) if (daily.index.tz is not None) else daily.tz_localize(tz)
     daily_ohl = pd.DataFrame({
         "hi": daily["high"].resample("1D", label="left", closed="left").max(),
-        "lo": daily["low"].resample("1D", label="left", closed="left").min(),
+        "lo": daily["low" ].resample("1D", label="left", closed="left").min(),
     }).dropna()
-
     daily_range = (daily_ohl["hi"] - daily_ohl["lo"]).rename("daily_range")
-    adr_daily = daily_range.rolling(window=window, min_periods=max(2, window // 2)).mean()
+    adr_daily = daily_range.shift(1).rolling(window=window, min_periods=max(2, window // 2)).mean()
     adr_daily.name = f"ADR_{window}"
 
     # نگاشت ADR روزانه به ایندکس درون‌روزی با ffill
     adr_intraday = adr_daily.reindex(df.index, method="ffill")
     return adr_intraday
 
-""" =========================================================================== Func8
+""" =========================================================================== OK Func8
 """
 def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> pd.DataFrame:
     """
@@ -895,7 +922,7 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     px = df["close"].copy()
     px = px.tz_convert(tz) if (px.index.tz is not None) else px.tz_localize(tz)
 
-    # بازِ روز = اولین close هر روز
+    # بازِ روز = قیمت بسته شدن اولین کندل در بازه همان روز در تایم فریم اصلی (پایین تر)
     day_open_daily = px.resample("1D", label="left", closed="left").first().rename("day_open")
     day_open = day_open_daily.reindex(px.index, method="ffill")
 
@@ -907,11 +934,11 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     out = pd.concat([day_open, dist_abs, dist_pct], axis=1)
     return out
 
-""" =========================================================================== Func9
-S/R Overlap Score (0..1)
+""" =========================================================================== OK Func9
 """
-def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
+def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
     """
+    S/R Overlap Score (0..1)
     امتیاز همپوشانی قیمت با سطوح S/R:
       - اگر نزدیک‌ترین سطح در فاصلهٔ tol_pct (نسبت به قیمت) باشد → امتیاز ۰..۱ (هرچه نزدیک‌تر، امتیاز بالاتر)
       - اگر چند سطح داخل tol باشند، یک پاداش کوچک اضافه می‌شود (clip به ۱)
@@ -921,28 +948,117 @@ def sr_overlap_score(price: float, sr_levels: Sequence[float], tol_pct: float = 
       sr_levels: لیست سطوح S/R
       tol_pct: آستانهٔ نسبی (مثلاً 0.05 یعنی 5%)
 
-    خروجی: نمرهٔ ۰..۱
+    خروجی: نمرهٔ 0..1
     """
     if not sr_levels:
         return 0.0
 
+    # print(f" ---> price= {price}")               ##### for debug
+    # print(f" ---> sr_levels= {sr_levels}")       ##### for debug
+    # print(f" ---> tol_pct= {tol_pct}")           ##### for debug
+
     tol_abs = abs(price) * tol_pct
+    # print(f" ---> tol_abs= {tol_abs}")           ##### for debug
     diffs = np.array([price - lv for lv in sr_levels], dtype=float)
     abs_diffs = np.abs(diffs)
+    # print(f" ---> abs_diffs= {abs_diffs}")       ##### for debug
 
     j = int(np.argmin(abs_diffs))
     min_dist = float(abs_diffs[j])
+    # print(f" ---> min_dist= {min_dist}")         ##### for debug
 
     if min_dist > tol_abs or tol_abs == 0.0:
         return 0.0
 
     # امتیاز پایه: نزدیکی خطی تا ۱
     base = 1.0 - (min_dist / tol_abs)
-
+    # print(f" ---> base= {base}")                 ##### for debug
     # پاداش کوچک بابت تعداد سطوح در محدودهٔ tol
     k = int(np.sum(abs_diffs <= tol_abs))
+    # print(f" ---> k= {k}")                       ##### for debug
     bonus = 0.1 * max(0, k - 1)
+    # print(f" ---> bonus= {bonus}")               ##### for debug
 
     score = min(1.0, max(0.0, base + bonus))
+    # print(f" ---> score= {score}")               ##### for debug
+
     return float(score)
 
+# ----------------------------------------------------------------------------- OK Fun10
+def sr_overlap_score(
+    price: float,
+    sr_levels: Sequence[float],
+    tol_pct: float = 0.05,
+    sr_weights: Optional[Sequence[float]] = None,
+) -> float:
+    """
+    امتیاز همپوشانی قیمت با سطوح S/R (نسخه پیشرفته)
+    
+    ویژگی‌ها:
+      - نزدیک‌ترین سطح: تابع غیرخطی (sigmoid) برای حساسیت بیشتر
+      - همه سطوح داخل tolerance: وزن‌دهی فاصله‌ای
+      - امکان وزن‌دهی متفاوت برای سطوح S و R
+
+    پارامترها:
+      price: قیمت فعلی
+      sr_levels: لیست سطوح S/R
+      tol_pct: آستانه نسبی (مثلاً 0.05 یعنی ±5%)
+      sr_weights: لیست وزن برای هر سطح در sr_levels (اختیاری)
+
+    خروجی:
+      score بین 0 و 1
+    """ 
+    # --- Normalize inputs (robust against list / tuple / ndarray) ---
+    sr_levels = np.asarray(sr_levels, dtype=float)
+
+    if sr_levels.size == 0:
+        return 0.0
+    if not np.isfinite(price):
+        return 0.0
+
+    # آستانه مطلق
+    tol_abs = abs(price) * float(tol_pct)
+    if tol_abs <= 0.0:
+        return 0.0
+
+    # فاصله‌ها از قیمت
+    abs_diffs = np.abs(price - sr_levels)
+
+    # اگر وزن‌دهی جدا S/R ارائه نشده باشد، همه وزن برابر با یک فرض میشوند
+    if sr_weights is None:
+        sr_weights = np.ones(sr_levels.size, dtype=float)
+    else:
+        sr_weights = np.asarray(sr_weights, dtype=float)
+        if sr_weights.size != sr_levels.size:
+            raise ValueError("sr_weights must match sr_levels length")
+        
+    # نزدیک‌ترین سطح
+    j = int(np.argmin(abs_diffs))
+    min_dist = float(abs_diffs[j])
+    weight_closest = sr_weights[j]
+
+    # اگر نزدیک‌ترین سطح خارج tol_abs بود → score = 0
+    if min_dist > tol_abs:
+        return 0.0
+
+    # --- امتیاز غیرخطی برای نزدیک‌ترین سطح ---
+    # برای حساسیت بیشتر به نزدیکی، از سیگموئید ساده استفاده می‌کنیم
+    
+    x = 1 - (min_dist / tol_abs)              # 1: یعنی قیمت روی سطح مورد نظر قرار دارد
+                                              # 0: یعنی آن قیمت با سطح مورد نظر، به اندازه تلرانس تعیین شده فاصله دارد
+    
+    base = 1 / (1 + np.exp(-12 * (x - 0.5)))  # sigmoid بین ~0 و ~1
+    base *= weight_closest                    # اعمال وزن سطح
+
+    mask = abs_diffs <= tol_abs               # Build True/False array as a filter
+    bonus = np.zeros_like(abs_diffs)          # Build array same type & same shape as "abs_diffs"
+
+    bonus[mask] = (1.0 - (abs_diffs[mask] / tol_abs)) * sr_weights[mask]  # Calculate only for "mask == True"
+    bonus[j] = 0.0                            # remove closest (already counted)
+
+    score = base + np.sum(bonus)
+    
+    return float(min(1.0, max(0.0, score)))
+
+#######################################################################
+#######################################################################

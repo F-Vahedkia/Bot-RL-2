@@ -38,6 +38,7 @@ def _infer_symbol_tf(cfg_all, default_sym=None, default_tf=None):
     tf  = next(( _deep_get(cfg_all, k) for k in tf_keys  if _deep_get(cfg_all, k) is not None), default_tf)
     return sym, tf
 
+
 def _merge_sr_kwargs(name: str, cfg: dict, df: pd.DataFrame) -> dict:
     cfg_all = _loader.get_all()
     # 1) مشترک (فقط کلیدهای عمومی)
@@ -205,101 +206,108 @@ def _fibo_features_full_adapter(*, symbol, tf_dfs, base_tf, atr_len: int = 14, *
     }
     return out
 
+
 # --- rsi --------------------------------------------------------------------- Func.2
 def _rsi_adapter(ohlc, n: int = 14, **_) -> Dict[str, pd.Series]:
     return {f"rsi_{n}": rsi_core(ohlc["close"], n)}
+
 
 # --- ema --------------------------------------------------------------------- Func.3
 def _ema_adapter(ohlc, col: str = "close", n: int = 20, **_) -> Dict[str, pd.Series]:
     return {f"ema_{col}_{n}": ema_core(ohlc[col], n)}
 
+
 # --- adr --------------------------------------------------------------------- Func.4 (edited 041204) 
-# def _adv_adr(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
 def _adv_adr(df, **cfg) -> Dict[str, pd.Series]:
     # --- read config ----------------- start
-    conf_all = _CONFIG_CACHE
-    params = _deep_get(conf_all, "features.adr", {}) or {}
+    params = _deep_get(_CONFIG_CACHE, "features.adr", {}) or {}
 
-    window = int(params.get("window", params.get("w", 14)))
-    tz     = params.get("tz", "UTC")
+    enabled   = bool(params.get("enabled", False))
+    window    = int(params.get("window", params.get("w", 14)))
+    tz        = params.get("tz", "UTC")
+    normalize = bool(params.get("normalize", False))
     # --- read config ----------------- end
 
-    """
-    آداپتر ADR:
-      - ورودی: df با high/low (و ایندکس UTC)
-      - خروجی: {'adr_<window>': Series}
-    contract: Dict[str, Series] هم‌تراز با df.index
-    """
-    s = _compute_adr(df, window=int(window), tz=tz)
-    # اطمینان از Series و dtype
+    key = f"adr_{window}"
+
+    # اگر غیرفعال است
+    if not enabled:
+        return {key: pd.Series(0.0, index=df.index, dtype="float32")}
+
+    # محاسبه ADR
+    s = _compute_adr(df, window=window, tz=tz)
     if not isinstance(s, pd.Series):
         s = pd.Series(s, index=df.index)
+
+    # اعمال normalize در صورت فعال بودن
+    if normalize:
+        close = df["close"].astype(float).replace(0, np.nan)
+        s = s.astype(float) / close
+
     s = s.astype("float32")
-    key = f"adr_{int(window)}"
+
     return {key: s}
 
+
 # --- adr_distance_to_open ---------------------------------------------------- Func.5 (edited 041204)
-# def _adv_adr_distance_to_open(df, window: int = 14, tz: str = "UTC", **_) -> Dict[str, pd.Series]:
 def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
-    # --- read config ----------------- start
-    conf_all = _CONFIG_CACHE
-    params = _deep_get(conf_all, "features.adr_distance_to_open", {}) or {}
-
-    window = int(params.get("window", 14))
-    tz     = params.get("tz", "UTC")
-    # --- read config ----------------- end
-
     """
-    فاصله تا open روز (نرمال‌شده با ADR):
-    - اگر خروجی levels ستون 'dist_pct' نداشته باشد، اینجا با dist_abs/adr محاسبه می‌کنیم.
-    - نام ستون‌های ورودی را با چند alias چک می‌کنیم.
-    خروجی: { 'adr_day_open_<w>', 'adr_dist_abs_<w>', 'adr_dist_pct_<w>' }
-    """
-    w = int(window)
-    adr = _compute_adr(df, window=w, tz=tz)
-    # اطمینان از Series
-    if not isinstance(adr, pd.Series):
-        adr = pd.Series(adr, index=df.index)
+    Wrapper برای adapter اصلی `_adr_distance_to_open` با اعمال تنظیمات کانفیگ.
 
-    out = _adr_distance_to_open(df, adr=adr, tz=tz)
-    # همگن‌سازی: DataFrame و نام ستون‌ها
+    کلیدهای کانفیگ استفاده شده:
+        enabled     : فعال/غیرفعال کردن feature
+        window      : طول پنجره ADR
+        use_percent : آیا فاصله نرمال‌شده بر اساس ADR محاسبه شود یا خیر
+
+    خروجی:
+        {
+            'adr_day_open_<w>': Series open روز
+            'adr_dist_abs_<w>': Series فاصله مطلق close تا open
+            'adr_dist_pct_<w>': Series فاصله درصدی (در صورت فعال بودن use_percent)
+        }
+    """
+
+    # --- خواندن تنظیمات از کانفیگ
+    params = (_deep_get(_CONFIG_CACHE, "features.adr_distance_to_open", {}) or {})
+    enabled     = bool(params.get("enabled", False))
+    window      = int(params.get("window", 14))
+    tz          = params.get("tz", "UTC")
+    use_percent = bool(params.get("use_percent", True))
+
+    w = window
+
+    # --- اگر feature غیرفعال است، ستون صفر برگردان
+    if not enabled:
+        zero = pd.Series(0.0, index=df.index, dtype="float32")
+        return {
+            f"adr_day_open_{w}": zero.copy(),
+            f"adr_dist_abs_{w}": zero.copy(),
+            f"adr_dist_pct_{w}": zero.copy(),
+        }
+
+    # --- فراخوانی adapter اصلی
+    out = _adr_distance_to_open(df, window=w, tz=tz)
+
+    # اگر Series بازگردد، تبدیل به DataFrame می‌کنیم
     if isinstance(out, pd.Series):
         out = out.to_frame("dist_abs")
 
-    # aliasها
-    aliases = {
-        "day_open": ["day_open", "open_day", "open_d", "open"],
-        "dist_abs": ["dist_abs", "distance_abs", "dist"],
-        "dist_pct": ["dist_pct_of_adr", "dist_pct", "distance_pct_of_adr", "distance_pct"],
-    }
+    # --- استخراج ستون‌ها
+    s_open = out.get("day_open", df["open"].astype(float)).reindex(df.index)
+    s_abs  = out.get("dist_abs", (df["close"].astype(float) - s_open).abs()).reindex(df.index)
 
-    def pick(name_group: list[str]) -> Optional[pd.Series]:
-        for nm in name_group:
-            if nm in out.columns:
-                return out[nm]
-        return None
+    # --- محاسبه درصد نرمال‌شده فقط در صورت use_percent=True
+    if use_percent:
+        s_pct = out.get("dist_pct")
+        if s_pct is None:
+            # fallback: dist_abs / adr
+            adr = _compute_adr(df, window=w, tz=tz)
+            s_pct = (s_abs / adr.replace(0, np.nan)).fillna(0.0)
+        s_pct = s_pct.reindex(df.index)
+    else:
+        s_pct = pd.Series(0.0, index=df.index)
 
-    s_open = pick(aliases["day_open"])
-    s_abs  = pick(aliases["dist_abs"])
-    s_pct  = pick(aliases["dist_pct"])
-
-    # اگر بعضی ستون‌ها نبودند، خودمان بسازیم:
-    if s_open is None:
-        # day_open را از df بازسازی می‌کنیم: نزدیک‌ترین open روز به سمت عقب
-        # (فرض بر این‌که df دقیقه‌ای یا هم‌ترازِ broadcast است)
-        # اگر در levels قبلاً درست تولید شده، این شاخه اجرا نمی‌شود.
-        s_open = df["open"].copy()
-
-    if s_abs is None:
-        # |close - day_open|
-        s_abs = (df["close"].astype(float) - s_open.astype(float)).abs()
-
-    if s_pct is None:
-        # dist_abs / adr  (وقتی adr>0)
-        safe_adr = adr.replace(0, np.nan)
-        s_pct = (s_abs.astype(float) / safe_adr.astype(float))
-
-    # dtype و نام‌گذاری
+    # --- تبدیل dtype به float32
     s_open = s_open.astype("float32")
     s_abs  = s_abs.astype("float32")
     s_pct  = s_pct.astype("float32")
@@ -310,34 +318,54 @@ def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
         f"adr_dist_pct_{w}": s_pct,
     }
 
+
 # --- sr_overlap_score -------------------------------------------------------- Func.6 (edited 041204)
-# def _adv_sr_overlap_score(df, anchor: float, step: float, n: int = 10, tol_pct: float = 0.05, **_) -> Dict[str, pd.Series]:
 def _adv_sr_overlap_score(df, **cfg) -> Dict[str, pd.Series]:
-    # --- read config ----------------- start
-    conf_all = _CONFIG_CACHE
-    params = _deep_get(conf_all, "features.sr_overlap_score", {}) or {}
-
-    anchor  = float(params.get("anchor", params.get("a", 0.0)))
-    step    = float(params.get("step", 10))
-    n       = int(params.get("n", 5))
-    tol_pct = float(params.get("tolerance_pct", params.get("tol_pct", 0.05)))
-    # --- read config ----------------- end
-
     """
-    امتیاز همپوشانی قیمت (close) با سطوح S/R «رُند» ساخته شده از round_levels(anchor, step, n).
-    - برای هر بارِ close: score = sr_overlap_score(close_t, levels, tol_pct)
-    - خروجی: {'sr_overlap_score_<step>_<n>_<tolbp>bp': Series}
-      * tolbp = tol_pct * 10000 به واحد basis point برای نام امن
+    محاسبه امتیاز همپوشانی close با سطوح S/R رُند
+    خروجی:
+        {'sr_overlap_score_<step>_<n>_<tolbp>bp': Series}
+    
+    رفتار:
+    - اگر feature غیرفعال باشد → سری صفر برمی‌گردد
+    - normalize=True → امتیاز به [0,1] scale می‌شود
     """
-    levels = _round_levels(anchor=anchor, step=step, n=int(n))
-    # محاسبهٔ سری امتیاز
+
+    # --- خواندن تنظیمات از کانفیگ
+    params = (_deep_get(_CONFIG_CACHE, "features.sr_overlap_score", {}) or {})
+    enabled   = bool(params.get("enabled", False))
+    anchor    = float(params.get("anchor", params.get("a", 0.0)))
+    step      = float(params.get("step", 10))
+    n         = int(params.get("n", 5))
+    tol_pct   = float(params.get("tolerance_pct", params.get("tol_pct", 0.05)))
+    normalize = bool(params.get("normalize", True))
+
+    # اگر غیرفعال است → صفر برگردان
+    if not enabled:
+        zero = pd.Series(0.0, index=df.index, dtype="float32")
+        key = f"sr_overlap_score_{str(step).replace('.','_')}_{int(n)}_{int(round(tol_pct*10000))}bp"
+        return {key: zero}
+
+    # --- تولید سطوح رُند
+    levels = _round_levels(anchor=anchor, step=step, n=n)
+
+    # --- محاسبه سری امتیاز
     close = df["close"].astype(float)
-    vals = [float(_sr_overlap_score(float(px), levels, tol_pct=float(tol_pct))) for px in close]
-    s = pd.Series(vals, index=df.index, name="sr_overlap_score").astype("float32")
-    # نام ایمن (بدون %/ممیز)
-    tolbp = int(round(float(tol_pct) * 10000))
+    vals = [float(_sr_overlap_score(px, levels, tol_pct=tol_pct)) for px in close]
+    s = pd.Series(vals, index=df.index, dtype="float32")
+
+    # --- اعمال normalize
+    if normalize:
+        max_val = s.max()
+        if max_val > 0:
+            s = s / max_val
+
+    # --- کلید امن
+    tolbp = int(round(tol_pct * 10000))
     key = f"sr_overlap_score_{str(step).replace('.','_')}_{int(n)}_{tolbp}bp"
+
     return {key: s}
+
 
 # --- round_levels (nearest distance) ----------------------------------------- Func.7
 def _adv_round_levels(df, anchor: float, step: float, n: int = 10, **_) -> Dict[str, pd.Series]:
