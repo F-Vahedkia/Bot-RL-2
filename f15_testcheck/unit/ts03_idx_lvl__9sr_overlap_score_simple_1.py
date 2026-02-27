@@ -49,8 +49,7 @@ print("Score stats:")
 print(df["sr_overlap_score"].describe())
 
 print("----------------------------------------")
-print("Added 2 test result files to main project root:")
+print("Added 2 test result files to f16_test_results:")
 print("✅   ts03_idx_lvl__9sr_overlap_score_simple_1_data.csv")
 print("✅   ts03_idx_lvl__9sr_overlap_score_simple_1.csv")
 print("----------------------------------------")
-

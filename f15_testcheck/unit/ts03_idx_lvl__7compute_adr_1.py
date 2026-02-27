@@ -20,6 +20,6 @@ result = compute_adr(df, window=6, tz="UTC")
 
 result.to_csv(f"{_PATH}ts03_idx_lvl__7compute_adr_1.csv")
 print("----------------------------------------")
-print("Added 1 test result files to main project root:")
+print("Added 1 test result files to f16_test_results:")
 print("     ts03_idx_lvl__7compute_adr_1.csv")
 print("----------------------------------------")

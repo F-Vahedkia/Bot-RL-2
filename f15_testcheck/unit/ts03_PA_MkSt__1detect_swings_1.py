@@ -82,7 +82,7 @@ print(f"fault_counter = {fault_counter}")
 pd.concat([swings, zzg], axis=1).to_csv(f"{_PATH}ts03_PA_MkSt__1detect_swings_1.csv")
 
 print("--------------------------------------------------")
-print("Added 2 test result files to main project root:")
+print("Added 2 test result files to f16_test_results:")
 print("✅   ts03_PA_MkSt__1detect_swings_1_data.csv")
 print("✅   ts03_PA_MkSt__1detect_swings_1.csv")
 print("--------------------------------------------------")

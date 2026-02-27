@@ -50,6 +50,6 @@ if __name__ == "__main__":
     main()
 
     print("----------------------------------------")
-    print("Added 1 test result files to main project root:")
+    print("Added 1 test result files to f16_test_results:")
     print("     ts03_idx_lvl__3sr_distance_from_levels_1.csv")
     print("----------------------------------------")

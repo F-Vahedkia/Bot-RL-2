@@ -76,7 +76,7 @@ zzg_df.reset_index().to_csv(f"{_PATH}ts03_idx_zzg__1zigzag_1A.csv", index_label=
 pd.DataFrame(zzg_df.attrs["legs"]).to_csv(f"{_PATH}ts03_idx_zzg__1zigzag_1A_legs.csv")
 
 print("--------------------------------------------------")
-print("Added 4 test result files to main project root:")
+print("Added 4 test result files to f16_test_results:")
 print("     ts03_idx_zzg__1zigzag_1A_no_njit.csv")
 print("     ts03_idx_zzg__1zigzag_1A_by_njit.csv")
 print("     ts03_idx_zzg__1zigzag_1A.csv")

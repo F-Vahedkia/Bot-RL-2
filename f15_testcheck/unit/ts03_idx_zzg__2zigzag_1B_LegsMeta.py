@@ -37,7 +37,7 @@ legs_df = pd.DataFrame(legs)
 legs_df.to_csv(f"{_PATH}ts03_idx_zzg__2zigzag_1B_LegsMeta.csv")
 
 print("--------------------------------------------------")
-print("Added 3 test result files to main project root:")
+print("Added 3 test result files to f16_test_results:")
 print("     ts03_idx_zzg__2zigzag_1B_LegsMeta_Result.csv")
 print("     ts03_idx_zzg__2zigzag_1B_LegsMeta_orig_HL.csv")
 print("     ts03_idx_zzg__2zigzag_1B_LegsMeta.csv")

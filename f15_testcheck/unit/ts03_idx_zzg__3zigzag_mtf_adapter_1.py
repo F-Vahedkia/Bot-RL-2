@@ -42,7 +42,7 @@ legs = pd.DataFrame(zz_ffill.attrs["legs"])
 legs.to_csv(f"{_PATH}ts03_idx_zzg__3zigzag_mtf_adapter_1_legs_ffill.csv", index_label="no.")
 
 print("--------------------------------------------------")
-print("Added 4 test result files to main project root:")
+print("Added 4 test result files to f16_test_results:")
 print("     ts03_idx_zzg__3zigzag_mtf_adapter_1_zz_last")
 print("     ts03_idx_zzg__3zigzag_mtf_adapter_1_legs_last.csv")
 print("     ts03_idx_zzg__3zigzag_mtf_adapter_1_zz_ffill.csv")

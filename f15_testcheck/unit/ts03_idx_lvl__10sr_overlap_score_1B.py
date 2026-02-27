@@ -119,12 +119,8 @@ plt.show()
 print("✅ Clustered SR test completed.")
 print(df["sr_overlap_clustered"].describe())
 
-
-
-
 print("----------------------------------------")
-print("Added 2 test result files to main project root:")
+print("Added 2 test result files to f16_test_results:")
 print("✅   ts03_idx_lvl__10sr_overlap_score_1B_data.csv")
 print("✅   ts03_idx_lvl__10sr_overlap_score_1B.csv")
-
 print("----------------------------------------")

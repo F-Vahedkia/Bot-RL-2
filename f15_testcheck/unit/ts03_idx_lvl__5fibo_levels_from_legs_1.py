@@ -70,6 +70,6 @@ compare_df = pd.concat([
 
 compare_df.to_csv(f"{_PATH}ts03_idx_lvl__5fibo_levels_from_legs_1.csv")
 print("----------------------------------------")
-print("Added 1 test result files to main project root:")
+print("Added 1 test result files to f16_test_results:")
 print("     ts03_idx_lvl__5fibo_levels_from_legs_1.csv")
 print("----------------------------------------")

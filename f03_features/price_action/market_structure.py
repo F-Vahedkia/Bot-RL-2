@@ -70,92 +70,9 @@ def detect_swings(
     return result
 
 
-# =============================================================================
+# ============================================================================= Test at 04/12/08
 # Market Structure (HH / HL / LH / LL)
 # ============================================================================= Func2
-def build_market_structure_old1(
-    df: pd.DataFrame,
-    depth: int = 12,
-    deviation: float = 5.0,
-    backstep: int = 10,
-    point: float = 0.01
-) -> pd.DataFrame:
-    """
-    Build market structure (HH, HL, LH, LL) using zigzag-based swings.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input OHLC dataframe.
-    **zigzag_kwargs :
-        Parameters forwarded directly to zigzag().
-
-    Returns
-    -------
-    pd.DataFrame
-        Columns:
-            - swing_high (bool)
-            - swing_low  (bool)
-            - swing_price (float)
-            - HH (bool)
-            - HL (bool)
-            - LH (bool)
-            - LL (bool)
-    """
-
-    swings = detect_swings(
-        df,
-        depth=depth,
-        deviation=deviation,
-        backstep=backstep,
-        point=point,        
-    )
-
-    result = swings.copy()
-
-    # Initialize structure columns
-    result["HH"] = False
-    result["HL"] = False
-    result["LH"] = False
-    result["LL"] = False
-
-    # Extract only pivot rows
-    pivots = result[
-        result["swing_high"] | result["swing_low"]
-    ].copy()
-
-    if len(pivots) < 2:
-        return result
-
-    prev_price = None
-    prev_type = None  # "high" or "low"
-
-    for idx, row in pivots.iterrows():
-
-        current_price = row["swing_price"]
-        current_type = "high" if row["swing_high"] else "low"
-
-        if prev_price is not None:
-
-            # High after High → HH / LH
-            if current_type == "high" and prev_type == "high":
-                if current_price > prev_price:
-                    result.at[idx, "HH"] = True
-                elif current_price < prev_price:
-                    result.at[idx, "LH"] = True
-
-            # Low after Low → HL / LL
-            elif current_type == "low" and prev_type == "low":
-                if current_price > prev_price:
-                    result.at[idx, "HL"] = True
-                elif current_price < prev_price:
-                    result.at[idx, "LL"] = True
-
-        prev_price = current_price
-        prev_type = current_type
-
-    return result
-
 def build_market_structure(
     df: pd.DataFrame,
     depth: int = 12,

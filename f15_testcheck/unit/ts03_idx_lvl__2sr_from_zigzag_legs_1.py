@@ -111,7 +111,7 @@ for (name_a, df_a), (name_b, df_b) in itertools.combinations(results.items(), 2)
 print("\nAll implementations are fully consistent.")
 
 print("----------------------------------------")
-print("Added 3 test result files to main project root:")
+print("Added 3 test result files to f16_test_results:")
 print("     ts03_idx_lvl__2sr_from_zigzag_legs_1_sr_orig.csv")
 print("     ts03_idx_lvl__2sr_from_zigzag_legs_1_sr_njit.csv")
 print("     ts03_idx_lvl__2sr_from_zigzag_legs_1_sr_wrapper.csv")
