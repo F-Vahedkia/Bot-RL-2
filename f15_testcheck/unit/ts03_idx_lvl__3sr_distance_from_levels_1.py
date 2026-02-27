@@ -1,5 +1,5 @@
-# f15_testcheck/unit/test_levels2_sr_distance_from_levels.py
-# Run: python -m f15_testcheck.unit.test_levels2_sr_distance_from_levels
+# f15_testcheck/unit/ts03_idx_lvl__3sr_distance_from_levels_1.py
+# Run: python -m f15_testcheck.unit.ts03_idx_lvl__3sr_distance_from_levels_1
 # Date modified: 1404/11/20
 
 import pandas as pd
@@ -11,6 +11,8 @@ from f03_features.indicators.levels import (
     sr_distance_from_levels,
 )
 
+_PATH = "f16_test_results/"
+#------------------------------------------------------------------------------
 def main():
 
     #--- ساختن داده های واقعی ---
@@ -22,7 +24,7 @@ def main():
     # --- build SR levels ---
     sr = sr_from_zigzag_legs(
         df,
-        tf="15min",
+        tf="5min",
         depth=12,
         deviation=5.0,
         backstep=10,
@@ -41,10 +43,13 @@ def main():
 
     # --- save result ---
     out = pd.concat([df["close"], sr, dist], axis=1)
-    out.to_csv("test_levels2_sr_distance_from_levels.csv")
+    out.to_csv(f"{_PATH}ts03_idx_lvl__3sr_distance_from_levels_1.csv")
 
-    print("test_levels2_sr_distance_from_levels.csv generated successfully")
-
-
+#------------------------------------------------------------------------------
 if __name__ == "__main__":
     main()
+
+    print("----------------------------------------")
+    print("Added 1 test result files to main project root:")
+    print("     ts03_idx_lvl__3sr_distance_from_levels_1.csv")
+    print("----------------------------------------")

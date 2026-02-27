@@ -1,5 +1,5 @@
-# f15_testcheck/unit/test_z1A_zigzag_completed.py
-# Run: python -m f15_testcheck.unit.test_z1A_zigzag
+# f15_testcheck/unit/ts03_idx_zzg__1zigzag_1A.py
+# Run: python -m f15_testcheck.unit.ts03_idx_zzg__1zigzag_1A
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ from f03_features.indicators.zigzag import (
     _zigzag_mql_njit_loopwise_complete,
     zigzag,
 )
-
+_PATH = "f16_test_results/"
 # ============================================================
 # Load data
 # ============================================================
@@ -63,7 +63,7 @@ for key in zigzag_funcs.keys():
             "low_actual": l_act,
         }
     )
-    df_new.reset_index().to_csv(f"z1_zigzag_{key}.csv", index_label="no.")
+    df_new.reset_index().to_csv(f"{_PATH}ts03_idx_zzg__1zigzag_1A_{key}.csv", index_label="no.")
 
 # ============================================================
 # Call _zigzag_mql_numpy()
@@ -72,7 +72,13 @@ t1 = datetime.now()
 zzg_df = zigzag(df["high"], df["low"], depth=12, deviation=5.0, backstep=10, point=0.01)
 t2 = datetime.now()
 print(f"Time taken to run zigzag for {len(df)} candles: {round((t2 - t1).total_seconds(), 3)} seconds")
-zzg_df.reset_index().to_csv("z1_zigzag_Main.csv", index_label="no.")
-pd.DataFrame(zzg_df.attrs["legs"]).to_csv("z1_zigzag_legs.csv")
+zzg_df.reset_index().to_csv(f"{_PATH}ts03_idx_zzg__1zigzag_1A.csv", index_label="no.")
+pd.DataFrame(zzg_df.attrs["legs"]).to_csv(f"{_PATH}ts03_idx_zzg__1zigzag_1A_legs.csv")
 
-
+print("--------------------------------------------------")
+print("Added 4 test result files to main project root:")
+print("     ts03_idx_zzg__1zigzag_1A_no_njit.csv")
+print("     ts03_idx_zzg__1zigzag_1A_by_njit.csv")
+print("     ts03_idx_zzg__1zigzag_1A.csv")
+print("     ts03_idx_zzg__1zigzag_1A_legs.csv")
+print("--------------------------------------------------")

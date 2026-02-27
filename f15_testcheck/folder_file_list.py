@@ -122,6 +122,9 @@ if __name__ == "__main__":
 '''
 
 #============================================================================
+# f15_testcheck/folder_file_list.py
+# Run: python -m f15_testcheck.folder_file_list
+
 import os
 from pathspec import PathSpec
 from pathspec.patterns import GitWildMatchPattern

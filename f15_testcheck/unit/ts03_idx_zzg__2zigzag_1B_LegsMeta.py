@@ -1,10 +1,11 @@
-# f15_testcheck/unit/test_z1B_zigzag_LegsMetadata.py
-# Run: python -m f15_testcheck.unit.test_z1B_zigzag_LegsMetadata
+# f15_testcheck/unit/ts03_idx_zzg__2zigzag_1B_LegsMeta.py
+# Run: python -m f15_testcheck.unit.ts03_idx_zzg__2zigzag_1B_LegsMeta
 
 import pandas as pd
 from pathlib import Path
 from f03_features.indicators.zigzag import zigzag
 
+_PATH = "f16_test_results/"
 # ------------------------------------------------------------
 # Loading Data
 # ------------------------------------------------------------
@@ -20,9 +21,9 @@ zzg = zigzag(
     high=df["high"], low=df["low"],
     depth=12, deviation=5.0, backstep=10, point=0.01, addmeta=True,
 )
-zzg.reset_index().to_csv(f"z1_zigzag_Result.csv", index_label="no.")
+zzg.reset_index().to_csv(f"{_PATH}ts03_idx_zzg__2zigzag_1B_LegsMeta_Result.csv", index_label="no.")
 
-df[["high", "low"]].reset_index().to_csv("z1_zigzag_orig_HL.csv", index_label="no.")
+df[["high","low"]].reset_index().to_csv(f"{_PATH}ts03_idx_zzg__2zigzag_1B_LegsMeta_orig_HL.csv", index_label="no.")
 
 # ------------------------------------------------------------
 # Extract legs metadata
@@ -33,6 +34,11 @@ legs_df = pd.DataFrame(legs)
 # ------------------------------------------------------------
 # Save to CSV
 # ------------------------------------------------------------
-legs_df.to_csv("z1_zigzag_legs_metadata.csv")
-print(f"ZigZag legs metadata exported successfully to: zigzag_legs_metadata.csv")
+legs_df.to_csv(f"{_PATH}ts03_idx_zzg__2zigzag_1B_LegsMeta.csv")
 
+print("--------------------------------------------------")
+print("Added 3 test result files to main project root:")
+print("     ts03_idx_zzg__2zigzag_1B_LegsMeta_Result.csv")
+print("     ts03_idx_zzg__2zigzag_1B_LegsMeta_orig_HL.csv")
+print("     ts03_idx_zzg__2zigzag_1B_LegsMeta.csv")
+print("--------------------------------------------------")

@@ -50,15 +50,21 @@
 │   │   └── zigzag.py
 │   ├── **price_action/**
 │   │   ├── __init__.py
-│   │   ├── breakouts.py
+│   │   ├── breakouts_1.py
+│   │   ├── breakouts_numba_2.py
+│   │   ├── breakouts_numba_3.py
 │   │   ├── config_wiring.py
-│   │   ├── confluence.py
+│   │   ├── confluence_1.py
+│   │   ├── confluence_2.py
+│   │   ├── confluence_3.py
+│   │   ├── confluence_4.py
+│   │   ├── confluence_numba_5.py
+│   │   ├── confluence_numba_6.py
 │   │   ├── imbalance.py
 │   │   ├── market_structure.py
 │   │   ├── microchannels.py
 │   │   ├── mtf_context.py
 │   │   ├── regime.py
-│   │   ├── registry.py
 │   │   ├── registry_adapter.py
 │   │   └── zones.py
 │   ├── __init__.py
@@ -122,75 +128,99 @@
 │   ├── self_optimizer.py
 │   └── tune_patterns_rates.py
 ├── **f14_services/**
-└── **f15_testcheck/**
-    ├── **broker/**
-    │   └── check_mt5_credentials.py
-    ├── **data/**
-    │   └── check_quick_download.py
-    ├── **diagnostics/**
-    │   ├── probe_ado_keys.py
-    │   ├── probe_engine_adv.py
-    │   ├── probe_registry.py
-    │   └── test_trace_adv_triplet.py
-    ├── **fibo/**
-    │   ├── check_fibo_audit.py
-    │   ├── check_fibo_cfg_smoke.py
-    │   ├── check_fibo_cluster_run.py
-    │   └── check_wiring_fib_cluster.py
-    ├── **integration/**
-    │   ├── __init__.py
-    │   ├── run_phaseD_build_store.py
-    │   ├── run_spec_phaseC.py
-    │   ├── run_spec_phaseC_12x8.py
-    │   ├── run_spec_phaseC_adv_probe.py
-    │   ├── run_spec_phaseC_mtf.py
-    │   ├── test_data_artifacts_and_split_summary.py
-    │   ├── test_executor_cli_modes_smoke.py
-    │   ├── test_executor_news_canary_wiring.py
-    │   ├── test_executor_trading_hours_behavior.py
-    │   ├── test_executor_trading_hours_wiring.py
-    │   ├── test_feature_engine_full.py
-    │   └── test_feature_engine_full_1.py
-    ├── **news/**
-    │   ├── check_env_newsgate.py
-    │   ├── check_news_gate.py
-    │   ├── news_build_cache.py
-    │   └── news_refresh_daily.py
-    ├── **optimization/**
-    │   ├── test_executor_dry_smoke.py
-    │   └── test_hparam_bridge.py
-    ├── **price_action/**
-    │   ├── __init__.py
-    │   ├── check_fvg.py
-    │   ├── check_patterns_smoke_real.py
-    │   ├── test_breakouts.py
-    │   ├── test_config_wiring.py
-    │   ├── test_confluence.py
-    │   ├── test_confluence_extras.py
-    │   ├── test_imbalance.py
-    │   ├── test_market_structure.py
-    │   ├── test_microchannels.py
-    │   ├── test_mtf_context.py
-    │   ├── test_regime.py
-    │   ├── test_registry.py
-    │   ├── test_registry_adapter.py
-    │   └── test_zones.py
-    ├── **smoke/**
-    │   ├── check_dry_run_config.py
-    │   ├── check_long_action.py
-    │   ├── check_zero_action.py
-    │   └── run_phaseE_quickcheck.py
-    ├── **unit/**
-    │   ├── __init__.py
-    │   ├── check_registry.py
-    │   ├── check_registry_all.py
-    │   ├── test_adv_indicators.py
-    │   ├── test_env_warmup_and_obs.py
-    │   ├── test_indicators.py
-    │   ├── test_normalization_skip_pre_normalized.py
-    │   └── test_parser.py
-    ├── __init__.py
-    ├── conftest.py
-    ├── fetch_mt5_registry.py
-    ├── fetch_registry_output.csv
-    └── folder_file_list.py
+├── **f15_testcheck/**
+│   ├── **broker/**
+│   │   └── check_mt5_credentials.py
+│   ├── **data/**
+│   │   └── check_quick_download.py
+│   ├── **diagnostics/**
+│   │   ├── probe_ado_keys.py
+│   │   ├── probe_engine_adv.py
+│   │   ├── probe_registry.py
+│   │   └── test_trace_adv_triplet.py
+│   ├── **fibo/**
+│   │   ├── check_fibo_audit.py
+│   │   ├── check_fibo_cfg_smoke.py
+│   │   ├── check_fibo_cluster_run.py
+│   │   └── check_wiring_fib_cluster.py
+│   ├── **integration/**
+│   │   ├── __init__.py
+│   │   ├── run_phaseD_build_store.py
+│   │   ├── run_spec_phaseC.py
+│   │   ├── run_spec_phaseC_12x8.py
+│   │   ├── run_spec_phaseC_adv_probe.py
+│   │   ├── run_spec_phaseC_mtf.py
+│   │   ├── test_data_artifacts_and_split_summary.py
+│   │   ├── test_executor_cli_modes_smoke.py
+│   │   ├── test_executor_news_canary_wiring.py
+│   │   ├── test_executor_trading_hours_behavior.py
+│   │   ├── test_executor_trading_hours_wiring.py
+│   │   ├── test_feature_engine_full.py
+│   │   └── test_feature_engine_full_1.py
+│   ├── **news/**
+│   │   ├── check_env_newsgate.py
+│   │   ├── check_news_gate.py
+│   │   ├── news_build_cache.py
+│   │   └── news_refresh_daily.py
+│   ├── **optimization/**
+│   │   ├── test_executor_dry_smoke.py
+│   │   └── test_hparam_bridge.py
+│   ├── **price_action/**
+│   │   ├── __init__.py
+│   │   ├── check_fvg.py
+│   │   ├── check_patterns_smoke_real.py
+│   │   ├── test_breakouts.py
+│   │   ├── test_config_wiring.py
+│   │   ├── test_confluence.py
+│   │   ├── test_confluence_2.py
+│   │   ├── test_imbalance.py
+│   │   ├── test_market_structure.py
+│   │   ├── test_microchannels.py
+│   │   ├── test_mtf_context.py
+│   │   ├── test_regime.py
+│   │   ├── test_registry.py
+│   │   ├── test_registry_adapter.py
+│   │   └── test_zones.py
+│   ├── **smoke/**
+│   │   ├── check_dry_run_config.py
+│   │   ├── check_long_action.py
+│   │   ├── check_zero_action.py
+│   │   └── run_phaseE_quickcheck.py
+│   ├── **unit/**
+│   │   ├── __init__.py
+│   │   ├── check_registry.py
+│   │   ├── check_registry_all.py
+│   │   ├── test_adv_indicators.py
+│   │   ├── test_env_warmup_and_obs.py
+│   │   ├── test_indicators.py
+│   │   ├── test_levels1_sr_from_zigzag_legs.py
+│   │   ├── test_levels2_sr_distance_from_levels.py
+│   │   ├── test_levels3_zigzag_leg_mask.py
+│   │   ├── test_levels4_fibo_levels_from_legs.py
+│   │   ├── test_normalization_skip_pre_normalized.py
+│   │   ├── test_parser.py
+│   │   ├── test_z1A_zigzag.py
+│   │   ├── test_z1B_zigzag_LegsMetadata.py
+│   │   └── test_z2_zigzag_mtf_adapter.py
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── fetch_mt5_registry.py
+│   ├── fetch_registry_output.csv
+│   ├── folder_file_list.py
+│   └── output.md
+├── 1__zz_htf.csv
+├── 2__legs_htf.csv
+├── 9__legs_ffill.csv
+├── 9__legs_last.csv
+├── 9__zz_ffill.csv
+├── 9__zz_last.csv
+├── from_book.py
+├── learn_gym_kntoosi.py
+├── sr_njit.csv
+├── sr_orig.csv
+├── sr_wrapper.csv
+├── test_levels2_sr_distance_from_levels.csv
+├── z1_zigzag_Result.csv
+├── z1_zigzag_legs_metadata.csv
+├── z1_zigzag_orig_HL.csv
+└── zigzag_leg_masks_test.csv

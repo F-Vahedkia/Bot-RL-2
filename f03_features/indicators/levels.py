@@ -309,7 +309,7 @@ def sr_from_zigzag_legs_njit(
     legs = zigzag_legs(
         high=df["high"],
         low=df["low"],
-        tf_higher=tf,
+        tf=tf,
         depth=depth,
         deviation=deviation,
         backstep=backstep,
@@ -1060,5 +1060,3 @@ def sr_overlap_score(
     
     return float(min(1.0, max(0.0, score)))
 
-#######################################################################
-#######################################################################

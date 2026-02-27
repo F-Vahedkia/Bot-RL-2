@@ -1,4 +1,6 @@
-# test_parser.py
+# f15_testcheck/unit/test_parser.py
+# Run: python -m f15_testcheck.unit.test_parser
+
 import pprint
 from f03_features.indicators.parser import (
     _split_top_level_commas,
