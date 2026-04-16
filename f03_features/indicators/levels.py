@@ -1,4 +1,5 @@
 # f03_features/indicators/levels.py
+# Status in (Bot-RL-2): Reviewed at 1404/12/07
 
 #==============================================================================
 # Imports & Logger
@@ -1060,3 +1061,34 @@ def sr_overlap_score(
     
     return float(min(1.0, max(0.0, score)))
 
+
+
+# =====================================================================================
+# تست پوشش کد (برای توسعه‌دهندگان) 
+# =====================================================================================
+""" Func Names                           Used in Functions: ...
+                                1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18
+1  pivots_classic              --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+
+2  sr_from_zigzag_legs_orig_1  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
+3  sr_from_zigzag_legs_njit_1  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
+4  sr_from_zigzag_legs_orig    --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --
+5  sr_from_zigzag_legs_njit    --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --
+6  sr_from_zigzag_legs         --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+
+7  sr_distance_from_levels     --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+
+8  _zigzag_leg_mask_orig       --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --
+9  _zigzag_leg_mask_njit       --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --
+10 _zigzag_leg_mask            --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+
+11 fibo_levels_from_legs_orig  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
+12 fibo_levels_from_legs_njit  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
+13 fibo_levels_from_legs       --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+
+14 registry                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
+15 compute_adr                 --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
+16 adr_distance_to_open        --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
+17 sr_overlap_score_simple     --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
+18 sr_overlap_score            --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
+"""

@@ -95,6 +95,6 @@ print(f"fault_counter = {fault_counter}")
 
 structure.to_csv(f"{_PATH}ts03_PA_MkSt__2build_market_structure_1.csv")
 print("--------------------------------------------------")
-print("Added 1 test result files to main project root:")
+print("Added 1 test result files to f16_test_results:")
 print("✅   ts03_PA_MkSt__2build_market_structure_1.csv")
 print("--------------------------------------------------")

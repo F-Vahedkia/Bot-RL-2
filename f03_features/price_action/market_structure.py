@@ -10,7 +10,11 @@ Market Structure Features (Price Action)
 
 import pandas as pd
 import numpy as np
-from f03_features.indicators.zigzag import zigzag
+from typing import Literal
+
+from f03_features.indicators.zigzag import zigzag, zigzag_mtf_adapter
+from f03_features.indicators.utils import compute_atr
+from f03_features.indicators.levels import compute_adr
 
 # ============================================================================= Test at 04/12/08
 # Swing Detection
@@ -136,72 +140,55 @@ def build_market_structure(
 
     return result
 
-# =============================================================================
+
+# ============================================================================= Test at 04/12/08
 # BOS / CHOCH Detection
 # ============================================================================= Func3
 def detect_bos_choch(
-    df: pd.DataFrame
+    structure: pd.DataFrame,
+    price_df: pd.DataFrame,
+    eps: float = 1e-6
 ) -> pd.DataFrame:
-    """
-    Detect:
-        - Break of Structure (BOS)
-        - Change of Character (CHOCH)
 
-    Requires:
-        HH, HL, LH, LL columns
-    """
-
-    out = df.copy()
+    out = structure.copy()
 
     out["bos_up"] = 0
     out["bos_down"] = 0
     out["choch_up"] = 0
     out["choch_down"] = 0
 
-    last_structure = None
+    last_swing_high = None
+    last_swing_low = None
+    regime = 0
 
     for idx, row in out.iterrows():
 
-        current_structure = None
+        close_price = price_df.loc[idx, "close"]
 
-        if row.get("HH", False):
-            current_structure = "HH"
-        elif row.get("HL", False):
-            current_structure = "HL"
-        elif row.get("LH", False):
-            current_structure = "LH"
-        elif row.get("LL", False):
-            current_structure = "LL"
+        if row.get("swing_high", False) and not pd.isna(row.get("swing_price")):
+            last_swing_high = row["swing_price"]
 
-        if current_structure is None:
-            continue
+        if row.get("swing_low", False) and not pd.isna(row.get("swing_price")):
+            last_swing_low = row["swing_price"]
 
-        if last_structure is None:
-            last_structure = current_structure
-            continue
+        if last_swing_high is not None and close_price >= last_swing_high * (1 + eps):
+            if regime == 1:
+                out.at[idx, "bos_up"] = 1
+            else:
+                out.at[idx, "choch_up"] = 1
+            regime = 1
 
-        # Bullish continuation
-        if current_structure == "HH" and last_structure in ("HL", "HH"):
-            out.at[idx, "bos_up"] = 1
-
-        # Bearish continuation
-        elif current_structure == "LL" and last_structure in ("LH", "LL"):
-            out.at[idx, "bos_down"] = 1
-
-        # Bullish reversal
-        elif current_structure == "HH" and last_structure in ("LH", "LL"):
-            out.at[idx, "choch_up"] = 1
-
-        # Bearish reversal
-        elif current_structure == "LL" and last_structure in ("HL", "HH"):
-            out.at[idx, "choch_down"] = 1
-
-        last_structure = current_structure
+        elif last_swing_low is not None and close_price <= last_swing_low * (1 - eps):
+            if regime == -1:
+                out.at[idx, "bos_down"] = 1
+            else:
+                out.at[idx, "choch_down"] = 1
+            regime = -1
 
     return out
 
 
-# =============================================================================
+# ============================================================================= Test at 04/12/08
 # Unified Pipeline (Optional Convenience)
 # ============================================================================= Func4
 def market_structure_pipeline(
@@ -223,17 +210,18 @@ def market_structure_pipeline(
         backstep=backstep,
         point=point,
     )
-    final = detect_bos_choch(structure)
+    final = detect_bos_choch(structure, df)
 
     return final
 
 
-# =============================================================================
+# ============================================================================= Test at 04/12/08
 # Regime State Machine (Bull / Bear)
 # ============================================================================= Func5
 def build_regime_state(
     df: pd.DataFrame
 ) -> pd.DataFrame:
+    
     """
     Build persistent market regime state machine.
 
@@ -251,21 +239,107 @@ def build_regime_state(
     """
 
     out = df.copy()
-
     regime = 0
     regimes = []
 
     for _, row in out.iterrows():
-
         if row.get("bos_up", 0) == 1 or row.get("choch_up", 0) == 1:
             regime = 1
-
         elif row.get("bos_down", 0) == 1 or row.get("choch_down", 0) == 1:
             regime = -1
-
         regimes.append(regime)
-
     out["regime"] = regimes
 
     return out
+
+
+# ============================================================================= Test at 04/12/08
+# Advanced Regime Builder - Global Class
+# ============================================================================= Func6
+def build_regime_state_pro(
+    df: pd.DataFrame,
+    atr_window: int = 14,
+    adr_window: int = 14,
+    tf_higher: str = "5min",
+    smoothing: Literal["atr", "adr", None] = "atr",
+    atr_method: Literal["classic", "wilder", "ema"] = "wilder",
+) -> pd.DataFrame:
+    """
+    Advanced Market Regime Builder (Bull / Bear / Neutral)
+    ----------------------------------------
+    - Uses market_structure_pipeline for swing, HH/HL/LH/LL, BOS/CHoCH
+    - Smooths regime triggers using ATR, ADR, or Multi-Timeframe ZigZag
+    - Outputs 'regime' column:
+        0  = neutral (before first trigger)
+        1  = bullish
+       -1  = bearish
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain columns: high, low, close
+    atr_window : int
+        Window for ATR smoothing
+    adr_window : int
+        Window for ADR smoothing
+    tf_higher : str
+        Higher timeframe for ZigZag smoothing
+    smoothing : str
+        Method for smoothing triggers: 'atr', 'adr', None
+    atr_method : str
+        Method for compute_atr: 'classic', 'wilder', 'ema'
+
+    Returns
+    -------
+    pd.DataFrame
+        Adds 'regime' column
+    """
+
+    if not {"high", "low", "close"}.issubset(df.columns):
+        raise ValueError("DF must contain high, low, close")
+
+    # --- Step 1: Run pipeline to get structure + BOS/CHoCH ---
+    structure = market_structure_pipeline(df)
+
+    # --- Step 2: Prepare smoothing series if needed ---
+    if smoothing == "atr":
+        smooth_factor = compute_atr(df, window=atr_window, method=atr_method)
+    elif smoothing == "adr":
+        smooth_factor = compute_adr(df, window=adr_window)
+    elif smoothing is None:
+        smooth_factor = pd.Series(1.0, index=df.index, dtype="float32")
+    else:
+        raise ValueError(f"Unknown smoothing: {smoothing!r}")
+
+    # Prevent division by zero
+    smooth_factor = smooth_factor.replace(0, 1e-8)
+
+    # --- Step 3: Generate raw trigger series ---
+    bull_trigger = ((structure["bos_up"] + structure["choch_up"]) / smooth_factor).fillna(0)
+    bear_trigger = ((structure["bos_down"] + structure["choch_down"]) / smooth_factor).fillna(0)
+
+    # --- Optional: Multi-Timeframe ZigZag smoothing ---
+    zz_bull = zigzag_mtf_adapter(df["high"], df["low"], tf_higher, mode="forward_fill")
+    zz_bear = -1 * zigzag_mtf_adapter(df["high"], df["low"], tf_higher, mode="forward_fill")
+
+    # Combine triggers with MTF ZigZag
+    bull_trigger += (zz_bull > 0).astype(float)
+    bear_trigger += (zz_bear < 0).astype(float)
+
+    # --- Step 4: Build regime series ---
+    regime = pd.Series(0, index=df.index, dtype="int8")
+    current = 0
+    for idx in df.index:
+        if bull_trigger.loc[idx] > 0:
+            current = 1
+        elif bear_trigger.loc[idx] > 0:
+            current = -1
+        regime.loc[idx] = current
+
+    # --- Step 5: Attach to dataframe and return ---
+    out = df.copy()
+    out["regime_state_pro"] = regime
+
+    return out
+
 

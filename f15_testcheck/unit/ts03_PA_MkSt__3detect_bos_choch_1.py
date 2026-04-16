@@ -2,8 +2,6 @@
 # Run: python -m f15_testcheck.unit.ts03_PA_MkSt__3detect_bos_choch_1
 
 import pandas as pd
-# import numpy as np
-
 from f03_features.price_action.market_structure import (
     build_market_structure,
     detect_bos_choch,
@@ -22,7 +20,7 @@ if not {"high", "low", "close"}.issubset(df.columns):
     raise ValueError("Data must contain high, low, close")
 
 # ---------------------------------------------------
-# Build structure first (required input)
+# Build structure first
 # ---------------------------------------------------
 structure = build_market_structure(
     df,
@@ -32,13 +30,15 @@ structure = build_market_structure(
     point=0.01,
 )
 
-bos = detect_bos_choch(structure)
+# ---------------------------------------------------
+# Detect BOS / CHOCH
+# ---------------------------------------------------
+bos = detect_bos_choch(structure, df)
 
 # ---------------------------------------------------
-# Validation
+# Validation for price-break version
 # ---------------------------------------------------
 fault_counter = 0
-
 required_cols = ["bos_up", "bos_down", "choch_up", "choch_down"]
 for col in required_cols:
     if col not in bos.columns:
@@ -58,51 +58,76 @@ opposite_conflict = (
 )
 fault_counter += opposite_conflict.sum()
 
-# 3) Logical consistency replay check
-last_structure = None
+# 3) Logical replay: check price-break regime consistency
+last_regime = 0  # 1 bullish, -1 bearish
+last_swing_high = None
+last_swing_low = None
 
 for idx, row in bos.iterrows():
+    # Update last swing levels
+    if row.get("swing_high", False):
+        last_swing_high = row.get("swing_price")
+    if row.get("swing_low", False):
+        last_swing_low = row.get("swing_price")
 
-    current_structure = None
-
-    if row.get("HH", False):
-        current_structure = "HH"
-    elif row.get("HL", False):
-        current_structure = "HL"
-    elif row.get("LH", False):
-        current_structure = "LH"
-    elif row.get("LL", False):
-        current_structure = "LL"
-
-    if current_structure is None:
-        continue
-
-    if last_structure is None:
-        last_structure = current_structure
-        continue
-
-    if current_structure == "HH" and last_structure in ("HL", "HH"):
-        if row["bos_up"] != 1:
+    # Check bullish signals
+    if row["bos_up"] == 1 or row["choch_up"] == 1:
+        if last_regime == 1 and row["choch_up"] == 1:
             fault_counter += 1
+        last_regime = 1
 
-    elif current_structure == "LL" and last_structure in ("LH", "LL"):
-        if row["bos_down"] != 1:
+    # Check bearish signals
+    if row["bos_down"] == 1 or row["choch_down"] == 1:
+        if last_regime == -1 and row["choch_down"] == 1:
             fault_counter += 1
-
-    elif current_structure == "HH" and last_structure in ("LH", "LL"):
-        if row["choch_up"] != 1:
-            fault_counter += 1
-
-    elif current_structure == "LL" and last_structure in ("HL", "HH"):
-        if row["choch_down"] != 1:
-            fault_counter += 1
-
-    last_structure = current_structure
+        last_regime = -1
 
 print(f"fault_counter = {fault_counter}")
 
+
+# ---------------------------------------------------
+# Second Part of Test File
+# ---------------------------------------------------
+df_bos = bos.copy()
+
+# Pivot masks
+high_mask = df_bos["swing_high"]
+low_mask = df_bos["swing_low"]
+
+# ستون‌های BOS/CHOCH
+cols = ["bos_up", "bos_down", "choch_up", "choch_down"]
+
+# نتایج
+results = {}
+
+for col in cols:
+    count_total = df_bos[col].sum()
+    
+    # بررسی اینکه قبل از هر 1 حداقل یک swing قبلی وجود داشته باشد
+    count_with_swing = 0
+    last_high = False
+    last_low = False
+    
+    for _, row in df_bos.iterrows():
+        if row["swing_high"]:
+            last_high = True
+        if row["swing_low"]:
+            last_low = True
+        
+        if row[col] == 1:
+            if col in ["bos_up", "choch_up"] and last_high:
+                count_with_swing += 1
+            elif col in ["bos_down", "choch_down"] and last_low:
+                count_with_swing += 1
+    
+    results[col] = (count_total, count_with_swing)
+
+# نمایش نتیجه
+for col, (total, valid) in results.items():
+    print(f"{col}: total={total}, valid_with_swing={valid}")
+
 bos.to_csv(f"{_PATH}ts03_PA_MkSt__3detect_bos_choch_1.csv")
 print("--------------------------------------------------")
-print("Added 1 test result files to main project root:")
+print("Added 1 test result files to f16_test_results:")
 print("✅   ts03_PA_MkSt__3detect_bos_choch_1.csv")
 print("--------------------------------------------------")

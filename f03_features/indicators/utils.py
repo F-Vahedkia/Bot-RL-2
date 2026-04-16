@@ -13,12 +13,14 @@
 # Imports & Logger
 # ============================================================================= (review:040924)
 from __future__ import annotations
-from typing import Sequence, Optional, Dict, Tuple, List, Iterable, Any
 import re
-from dataclasses import dataclass, field
 import logging
 import numpy as np
 import pandas as pd
+from numba import njit
+from dataclasses import dataclass, field
+from typing import Sequence, Optional, Dict, Tuple, List, Iterable, Any
+from datetime import datetime
 
 # # وزن‌دهی — نام ستون‌های قابل‌قبول (اولین موجود انتخاب می‌شود)
 # DEFAULT_MA_SLOPE_CANDIDATES: List[str] = [
@@ -246,17 +248,16 @@ def zscore(s: pd.Series, window: int, min_periods: int | None = None) -> pd.Seri
 """ --------------------------------------------------------------------------- OK Func10 (New 040921)
 True Range (برای ATR و ...)
 """
-def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:    
+def true_range_old(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:    
     """
     World-class True Range (TR)
     مطابق استاندارد Wilder's ATR
     بدون هیچ مقدار ساختگی / سازگار 100% با TA-Lib
     """
 
-    # تبدیل ورودی‌ها به float32 (فوق سریع + یکدست)
-    h = high.astype("float32")
-    l = low.astype("float32")
-    c = close.astype("float32")
+    h = high.astype("float64")
+    l = low.astype("float64")
+    c = close.astype("float64")
 
     # prevClose
     prev = c.shift(1)
@@ -273,10 +274,10 @@ def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
     if len(out) > 0:
         out.iloc[0] = tr1.iloc[0]
 
-    return out.astype("float32")
+    return out.rename("true_range")
 
 
-""" --------------------------------------------------------------------------- OK Func11
+""" --------------------------------------------------------------------------- OK Func11 (New 050124)
 Additions for swing/metrics
 Wilder/EMA/Classic ATR. Returns a pandas Series aligned with df.index.
 - این تابع ATR را بر اساس True Range محاسبه می‌کند.
@@ -286,35 +287,145 @@ Wilder/EMA/Classic ATR. Returns a pandas Series aligned with df.index.
   * "ema"    : هموارسازی نمایی رایج با α = 2/(window+1)
 - خروجی: Series هم‌تراز با df.index
 """
-def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "classic") -> pd.Series:
-    # General ATR for feature calculations, supports multiple methods
-    # نگهبان‌های ورودی
+@njit(cache=True)
+def _true_range_numba(high, low, close):
+    length = high.size
+    tr = np.empty(length)
+    tr[0] = high[0] - low[0]  # first bar: standard TR definition
+
+    for i in range(1, length):
+        h_l = high[i] - low[i]
+        h_pc = abs(high[i] - close[i - 1])
+        l_pc = abs(low[i] - close[i - 1])
+        tr[i] = max(h_l, h_pc, l_pc)
+    return tr
+
+def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    idx = close.index
+    high = high.to_numpy(np.float64)
+    low = low.to_numpy(np.float64)
+    close = close.to_numpy(np.float64)
+    out = _true_range_numba(high, low, close)
+    return pd.Series(out, index=idx, dtype="float64", name="true_range")
+
+@njit(cache=True)
+def _rma_wilder(tr, window):
+    n = tr.size
+    out = np.empty(n, dtype=np.float64)
+    alpha = 1.0 / window
+
+    # warmup: SMA initial
+    s = 0.0
+    for i in range(window):
+        s += tr[i]
+    r = s / window
+    out[window - 1] = r
+
+    # recursive Wilder RMA
+    for i in range(window, n):
+        r = (tr[i] * alpha) + (r * (1.0 - alpha))
+        out[i] = r
+
+    # leading values before window-1 = NaN
+    for i in range(window - 1):
+        out[i] = np.nan
+    return out
+
+@njit(cache=True)
+def _sma_classic(tr, window):
+    n = len(tr)
+    out = np.empty(n, dtype=np.float64)
+    s = 0.0
+
+    for i in range(window - 1):
+        out[i] = np.nan
+        s += tr[i]
+
+    s += tr[window - 1]
+    out[window - 1] = s / window
+
+    # sliding window SMA
+    for i in range(window, n):
+        s += tr[i]
+        s -= tr[i - window]
+        out[i] = s / window
+
+    return out
+
+@njit(cache=True)
+def _ema(tr, window):
+    n = len(tr)
+    out = np.empty(n, dtype=np.float64)
+    alpha = 2.0 / (window + 1)
+
+    # warmup: SMA initial
+    s = 0.0
+    for i in range(window):
+        s += tr[i]
+    e = s / window
+    out[window - 1] = e
+
+    # recursive EMA
+    for i in range(window, n):
+        e = (tr[i] * alpha) + (e * (1 - alpha))
+        out[i] = e
+
+    # leading NaN
+    for i in range(window - 1):
+        out[i] = np.nan
+    return out
+
+def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "wilder") -> pd.Series:
+    """
+    Production-grade ATR function (hybrid interface).
+
+    Parameters
+    ----------
+    df : ['high', 'low', 'close'] pandas Dataframe
+    window : int, ATR window
+    method : str, one of ['wilder', 'classic', 'ema']
+
+    Returns
+    -------
+    ATR : pd.Series float64
+    """
+    # --- نگهبان‌های ورودی ---
+    # t1 = datetime.now() ######################========############
     if window < 1:
         raise ValueError("window must be >= 1")
     if not {"high", "low", "close"}.issubset(set(df.columns)):
         raise ValueError("DF must contain columns: high, low, close")
+    # t2 = datetime.now() ######################========############
 
-    # نرمال‌سازی روش
-    m = (method or "classic").strip().lower()
+    high  = df["high"] .to_numpy(dtype=np.float64)
+    low   = df["low"]  .to_numpy(dtype=np.float64)
+    close = df["close"].to_numpy(dtype=np.float64)
+    # t3 = datetime.now() ######################========############
 
-    # True Range
-    tr = true_range(high=df["high"], low=df["low"], close=df["close"])
 
-    # محاسبهٔ ATR بر اساس روش
+    # --- True Range ---
+    tr = _true_range_numba(high, low, close)
+    # t4 = datetime.now() ######################========############
+
+    # --- نرمال‌سازی روش ---
+    m = (method or "wilder").strip().lower()
+    # t5 = datetime.now() ######################========############
+
     if m == "wilder":
-        atr = tr.ewm(alpha=1 / window, adjust=False, min_periods=window).mean()
+        out = _rma_wilder(tr, window)
+    elif m == "classic":
+        out = _sma_classic(tr, window)
     elif m == "ema":
-        atr = tr.ewm(alpha=2 / (window + 1), adjust=False, min_periods=window).mean()
-    elif m== "classic":
-        #atr = tr.rolling(window=window, min_periods=max(2, window // 2)).mean()
-        atr = tr.rolling(window=window, min_periods=window).mean()
+        out = _ema(tr, window)
     else:
-        raise ValueError(f"Unknown ATR method: {method!r}. Use 'classic', 'wilder', or 'ema'.")
-    
-    # بهینه‌سازی حافظه و نام‌گذاری یک‌دست
-    atr = atr.astype("float32")
-    atr.name = f"ATR_{m}_{window}"
-    return atr
+        raise ValueError(f"Invalid ATR mode: {method}. Use wilder/classic/ema.")
+    # t6 = datetime.now() ######################========############
+    # print(f"compute_atr: Time t1 to t2: {round((t2 - t1).total_seconds(), 4)} seconds")
+    # print(f"compute_atr: Time t2 to t3: {round((t3 - t2).total_seconds(), 4)} seconds")
+    # print(f"compute_atr: Time t3 to t4: {round((t4 - t3).total_seconds(), 4)} seconds")
+    # print(f"compute_atr: Time t4 to t5: {round((t5 - t4).total_seconds(), 4)} seconds")
+    # print(f"compute_atr: Time t5 to t6: {round((t6 - t5).total_seconds(), 4)} seconds")
+    return pd.Series(out.astype(np.float64), index=df.index, name="atr_hybrid")
 
 
 """ --------------------------------------------------------------------------- OK Func12

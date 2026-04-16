@@ -1,5 +1,5 @@
 # f03_features/indicators/core.py
-# Status in (Bot-RL-2): Final Review 1405/01/21
+# Status in (Bot-RL-2): Reviewed before 1404/09/25
 """
 اندیکاتورهای پایه - Anti look-ahead
 شامل اندیکاتورهای:
@@ -19,25 +19,30 @@ from numba import njit
 import logging
 
 # ------------------ Importing Internal Modules ---------------------
-from .utils import true_range, compute_atr
+from .utils import true_range
 
 # -------------------- Logger for this module -----------------------
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
-# فرضهای لازم برای توابع هسته:
-#  - نوع ورودی این توابع یک یا چند سری پانداس است
-#  - نوع float64 در ابتدای این توابع، enforce میشود
-#  - خروجی این توابع:
-#  - خروجی این توابع یک یا چند سری است
-#  - در خروجی این توابع نوع 32 یا 64 تعیین نمیشود
-#  - در خروجی این توابع برای سری یا دیتافریم نام گذاری نمیشود
-#  - خروجی رجیستری:
-#  - در خروجی API های توابع در رجیستری، هم float32 و هم نام سری ها تعین میشود
-#  - هرکدام از توابع رجیستری، یک دیکشنری از سری/سریها را برمیگرداند
+
 # ============================================================================= 1,2,3
 # Part-1: Averages
 # ============================================================================= OK
-def sma(s: pd.Series, n: int) -> pd.Series:      # was faster by numpy
+def sma_orig_slow(s: pd.Series, n: int) -> pd.Series:
+    """
+    Simple Moving Average (SMA)
+    - بدون look-ahead
+    - warm-up صحیح
+    - مناسب برای دیتای بزرگ
+    - First n-1 rows are NaN
+    """
+    if s is None or len(s) < n:
+        return pd.Series(dtype="float32")
+    s_float = s.astype("float32")
+    result = s_float.rolling(window=n, min_periods=n).mean()
+    return result.astype("float32").rename(f"sma_{n}")
+
+def sma(s: pd.Series, n: int) -> pd.Series:      # is faster by numpy
     """
     Simple Moving Average (SMA)
     - بدون look‑ahead
@@ -45,19 +50,16 @@ def sma(s: pd.Series, n: int) -> pd.Series:      # was faster by numpy
     - پیاده‌سازی بسیار سریع مناسب دیتای میلیون کندلی
     """
     if s is None or len(s) < n:
-        logger.warning("sma() from core.py returns empty series.")
-        return pd.Series(dtype="float64", name=f"sma_{n}")
-
-    # ---------- Core computation ----------
-    values = s.to_numpy(dtype="float64")
+        return pd.Series(dtype="float64")
+    values = s.astype("float64").values
     length = len(values)
     csum = np.cumsum(values)
-    out = np.full(length, np.nan, dtype="float64")
+    out = np.full(length, np.nan, dtype="float32")
     out[n-1:] = (csum[n-1:] - np.concatenate(([0.0], csum[:-n]))) / n
     return pd.Series(out, index=s.index).rename(f"sma_{n}")
 
 # ---------------------------------------------------------
-def ema(s: pd.Series, n: int) -> pd.Series:      # was fast
+def ema(s: pd.Series, n: int) -> pd.Series:      # is faster
     """
     Exponential Moving Average (EMA)
     - بدون look-ahead
@@ -65,33 +67,53 @@ def ema(s: pd.Series, n: int) -> pd.Series:      # was fast
     - پیاده‌سازی سریع pandas
     - First n-1 rows are NaN
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if s is None:
-        logger.warning("ema(): input is None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"ema_{n}")
-
-    # Case 2: insufficient length → return aligned empty series
-    if len(s) < n:
-        logger.warning("ema(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=s.index, dtype="float64", name=f"ema_{n}")
-
-    # ---------- Core computation ----------
-    s_float = s.astype("float64")
+    if s is None or len(s) < n:
+        return pd.Series(dtype="float32")
+    s_float = s.astype("float32")
     result = s_float.ewm(span=n, adjust=False, min_periods=n).mean()
     result[:n-1] = np.nan  # ensure proper warm-up
-    return result.rename(f"ema_{n}")
+    return result.astype("float32").rename(f"ema_{n}")
 
-def ema_new(s: pd.Series, n: int) -> pd.Series:  # این نسخه هنوز تست نشده است
-    # Exponential Moving Average (EMA)
+def ema_numpy_slow(s: pd.Series, n: int) -> pd.Series:
+    """
+    Exponential Moving Average (EMA)
+    - بدون look‑ahead
+    - warm-up استاندارد
+    - پیاده‌سازی سریع با numpy
+    """
     if s is None or len(s) < n:
-        logger.warning("ema_new() from core.py returns empty series.")
-        return pd.Series(dtype="float64", name=f"ema_{n}")
+        return pd.Series(dtype="float32")
+    values = s.astype("float32").values
+    length = len(values)
+    alpha = 2.0 / (n + 1.0)
+    out = np.full(length, np.nan, dtype="float32")
+    if length >= n:
+        sma_init = values[:n].mean(dtype="float64")
+        out[n-1] = sma_init
 
-    s = s.astype("float64", copy=False)
-    return s.ewm(span=n, adjust=False, min_periods=n).mean().rename(f"ema_{n}")
+        prev = sma_init
+        for i in range(n, length):
+            prev = alpha * values[i] + (1 - alpha) * prev
+            out[i] = prev
+
+    return pd.Series(out, index=s.index, dtype="float32").rename(f"ema_{n}")
 
 # ---------------------------------------------------------
+def wma_slow(s: pd.Series, n: int) -> pd.Series:
+    """
+    Weighted Moving Average (WMA)
+    - بدون look-ahead
+    - پیاده‌سازی برداری سریع (بدون rolling.apply)
+    - مناسب برای دیتای میلیون کندلی
+    - First n-1 rows are NaN
+    """
+    if s is None or len(s) < n:
+        return pd.Series(dtype="float32")
+    s_float = s.astype("float32")
+    w = np.arange(1, n + 1, dtype="float32")
+    result = s_float.rolling(window=n, min_periods=n).apply(lambda x: np.dot(x, w)/w.sum(), raw=True)
+    return result.astype("float32").rename(f"wma_{n}")
+
 def wma(s: pd.Series, n: int) -> pd.Series:      # is faster
     """
     Weighted Moving Average (WMA)
@@ -99,30 +121,21 @@ def wma(s: pd.Series, n: int) -> pd.Series:      # is faster
     - پیاده‌سازی برداری بسیار سریع (بدون rolling.apply)
     - مناسب دیتای بسیار بزرگ
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if s is None:
-        logger.warning("wma(): input is None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"wma_{n}")
+    if s is None or len(s) < n:
+        return pd.Series(dtype="float32")
 
-    # Case 2: insufficient length → return aligned empty series
-    if len(s) < n:
-        logger.warning("wma(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=s.index, dtype="float64", name=f"wma_{n}")
-    
-    # ---------- Core computation ----------
-    values = np.nan_to_num(s.to_numpy(dtype="float64"), nan=0.0)
+    values = s.astype("float32").values
     length = len(values)
 
-    weights = np.arange(1, n + 1, dtype="float64")
+    weights = np.arange(1, n + 1, dtype="float32")[::-1]
     weights /= weights.sum()
 
     conv = np.convolve(values, weights, mode="valid")
 
-    result = np.full(length, np.nan, dtype="float64")
+    result = np.full(length, np.nan, dtype="float32")
     result[n-1:] = conv
 
-    return pd.Series(result, index=s.index).rename(f"wma_{n}")
+    return pd.Series(result, index=s.index, dtype="float32").rename(f"wma_{n}")
 
 # ============================================================================= 4,5
 # Part-2: Ocilators
@@ -141,20 +154,10 @@ def rsi(
     Returns pd.Series with NaN for warm-up period.
     """
 
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if close is None:
-        logger.warning("rsi(): input is None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"rsi_{length}")
+    if close is None or len(close) < 2:
+        return pd.Series(dtype="float32", name="RSI")
 
-
-    # Case 2: insufficient length → return aligned empty series
-    if len(close) < length + 1:
-        logger.warning("rsi(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"rsi_{length}")
-
-    # ---------- Core computation ----------
-    c = pd.Series(close).astype("float64")
+    c = pd.Series(close).astype(float)
     delta = c.diff()
 
     # gains and losses
@@ -163,12 +166,12 @@ def rsi(
 
     if method.lower() == "wilders":
         # Wilder's smoothing (alpha = 1/length)
-        gain = gain.ewm(alpha=1/length, adjust=False, min_periods=length).mean()
-        loss = loss.ewm(alpha=1/length, adjust=False, min_periods=length).mean()
+        gain = gain.ewm(alpha=1/length, adjust=False).mean()
+        loss = loss.ewm(alpha=1/length, adjust=False).mean()
     else:
         # EMA-like smoothing
-        gain = gain.ewm(span=length, adjust=False, min_periods=length).mean()
-        loss = loss.ewm(span=length, adjust=False, min_periods=length).mean()
+        gain = gain.ewm(span=length, adjust=False).mean()
+        loss = loss.ewm(span=length, adjust=False).mean()
 
     # RS
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -178,37 +181,27 @@ def rsi(
     # skeep initial NaN for warm-up (first 'length' values)
     rsi_values[:length] = np.nan
 
-    return rsi_values.rename(f"rsi_{length}")
+    return rsi_values.astype("float32").rename(f"rsi_{length}")
 
 
 # ---------------------------------------------------------
 def roc(close: pd.Series, n: int = 10) -> pd.Series:
     """
     Rate of Change (percentage) over n periods.
-    - Returns percent change * 100 as float64.
+    - Returns percent change * 100 as float32.
     - First n rows are NaN (warm-up).
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if close is None:
-        logger.warning("roc(): one input are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"roc_{n}")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(close) < n + 1:
-        logger.warning("roc(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"roc_{n}")
-    
-    # ---------- Core computation ----------
-    s = pd.Series(close).astype("float64", copy=False)
+    if close is None or len(close) < n + 1:
+        return pd.Series(dtype="float32", name=f"roc_{n}")
+    s = pd.Series(close).astype("float64", copy=False)  # use float64 for numerics, convert later
     out = s.pct_change(periods=n, fill_method=None) * 100.0
     out[:n] = np.nan
-    return out.rename(f"roc_{n}")
+    return out.astype("float32").rename(f"roc_{n}")
 
 # ============================================================================= 6
 # Part-3: ATR/TR
-# ============================================================================= OK (New Changes:050124)
-def atr_old(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
+# ============================================================================= OK
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
     # Use this function for system decisions only
     """
     Average True Range (ATR) using EWM smoothing with alpha = 1/n (Wilder-like).
@@ -216,31 +209,15 @@ def atr_old(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> p
     - ATR uses ewm(alpha=1/n, adjust=False, min_periods=n).
     - First n rows are NaN to ensure proper warm-up.
     """
-    
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None:
-        logger.warning("atr(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"atr_{n}")
-
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n:
-        logger.warning("atr(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"atr_{n}")
-
-    # ---------- Core computation ----------
     # rely on true_range(high, low, close) existing in module scope
     tr = true_range(high, low, close).astype("float64")
     # EWM with alpha=1/n, require min_periods=n
     if len(tr) < n:
         logger.warning("atr() from core.py returns empty series.")
-        return pd.Series(dtype="float64", name=f"atr_{n}")
+        return pd.Series(dtype="float32", name=f"atr_{n}")
     atr_series = tr.ewm(alpha=1.0 / n, adjust=False, min_periods=n).mean()
     atr_series[:n] = np.nan  # warm-up
-    return atr_series.rename(f"atr_{n}")
-
-def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
-    return compute_atr(pd.concat([high, low, close], axis=1), window=n, method="wilder")
+    return atr_series.astype("float32").rename(f"atr_{n}")
 
 # ============================================================================= 7
 # Part-4: MACD
@@ -251,45 +228,27 @@ def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
     Compute MACD line, Signal line, and Histogram with proper warm-up handling.
     Returns pd.Series with NaN for initial warm-up rows.
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if close is None:
-        logger.warning("macd(): one inputs are None. Returning empty series.")
-        return (
-            pd.Series(dtype="float64", name=f"macd_{fast}_{slow}_{signal}"), 
-            pd.Series(dtype="float64", name=f"macd_signal_{fast}_{slow}_{signal}"), 
-            pd.Series(dtype="float64", name=f"macd_hist_{fast}_{slow}_{signal}")
-        )
-    # Case 2: insufficient length → return aligned empty series
-    if len(close) < slow + 1:
-        logger.warning("macd(): input series too short. Returning empty aligned series.")
-        return (
-            pd.Series(index=close.index, dtype="float64", name=f"macd_{fast}_{slow}_{signal}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"macd_signal_{fast}_{slow}_{signal}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"macd_hist_{fast}_{slow}_{signal}")
-        )
 
-    # ---------- Core computation ----------
     # EMA fast and slow with min_periods for correct warm-up
-    ema_fast = close.ewm(span=fast, adjust=False, min_periods=fast).mean().astype("float64")
-    ema_slow = close.ewm(span=slow, adjust=False, min_periods=slow).mean().astype("float64")
+    ema_fast = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
+    ema_slow = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
 
     # MACD line
-    macd_line = (ema_fast - ema_slow)
+    macd_line = (ema_fast - ema_slow).astype("float32")
     macd_line[:slow] = np.nan  # ensure first 'slow' rows are NaN
 
     # Signal line: EMA on MACD line
-    signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean()
-    signal_line[:slow + signal - 1] = np.nan  # first value appears after (slow + signal -1)
+    signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean().astype("float32")
+    signal_line[:slow + signal - 1] = np.nan  # first value appears after slow + signal -1
 
     # Histogram: MACD - Signal
-    hist = (macd_line - signal_line)
-    hist[:slow + signal - 1] = np.nan  # align "histogram" with "signal_line"
+    hist = (macd_line - signal_line).astype("float32")
+    hist[:slow + signal - 1] = np.nan  # align histogram with signal
 
     # Rename series
-    macd_line   = macd_line  .rename(       f"macd_{fast}_{slow}_{signal}")
+    macd_line = macd_line.rename(f"macd_{fast}_{slow}_{signal}")
     signal_line = signal_line.rename(f"macd_signal_{fast}_{slow}_{signal}")
-    hist        = hist       .rename(  f"macd_hist_{fast}_{slow}_{signal}")
+    hist = hist.rename(f"macd_hist_{fast}_{slow}_{signal}")
 
     return macd_line, signal_line, hist
 
@@ -298,44 +257,27 @@ def macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
 # ============================================================================= OK
 def bollinger(close: pd.Series, n: int = 20, k: float = 2.0
 ) -> Tuple[pd.Series, pd.Series, pd.Series]:
+
     """
     Bollinger Bands (mid, upper, lower).
     - mid: SMA(n) (first n-1 rows NaN)
     - upper/lower: mid ± k * rolling_std(n) (same warm-up as mid)
-    - returns (mid, upper, lower) as float64 Series with names.
+    - returns (mid, upper, lower) as float32 Series with names.
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if close is None:
-        logger.warning("bollinger(): one input are None. Returning empty series.")
-        return (
-            pd.Series(dtype="float64", name=f"bb_up_{n}_{k}"), 
-            pd.Series(dtype="float64", name=f"bb_mid_{n}_{k}"), 
-            pd.Series(dtype="float64", name=f"bb_lo_{n}_{k}")
-        )
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(close) < n:
-        logger.warning("bollinger(): input series too short. Returning empty aligned series.")
-        return (
-            pd.Series(index=close.index, dtype="float64", name=f"bb_up_{n}_{k}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"bb_mid_{n}_{k}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"bb_lo_{n}_{k}")
-        )
-    
-    # ---------- Core computation ----------
+    if close is None or len(close) < n:
+        return pd.Series(dtype="float32"), pd.Series(dtype="float32"), pd.Series(dtype="float32")
+
     mid = sma(close, n).astype("float64")  # uses sma() which ensures warm-up
     # use population std (ddof=0) for stability; require same min_periods as mid
-    sd = close.astype("float64").rolling(window=n, min_periods=n).std(ddof=0)
+    sd = close.rolling(window=n, min_periods=n).std(ddof=0)
     # ensure identical warm-up alignment
     sd[:n-1] = np.nan
-    upper = (mid + k * sd)
-    lower = (mid - k * sd)
-
+    upper = (mid + k * sd).astype("float32")
+    lower = (mid - k * sd).astype("float32")
+    mid = mid.astype("float32").rename(f"bb_mid_{n}_{k}")
     upper = upper.rename(f"bb_up_{n}_{k}")
-    mid = mid.rename(f"bb_mid_{n}_{k}")
     lower = lower.rename(f"bb_lo_{n}_{k}")
-    return upper, mid, lower
+    return mid, upper, lower
 
 # ---------------------------------------------------------
 def keltner(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 20, m: float = 2.0
@@ -346,37 +288,20 @@ def keltner(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 20, m: f
     - Returns (mid, upper, lower) as float32 Series with names.
     - m: atr_mult
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None:
-        logger.warning("keltner(): one or more inputs are None. Returning empty series.")
-        return (
-            pd.Series(dtype="float64", name=f"kelt_up_{n}_{m}"),
-            pd.Series(dtype="float64", name=f"kelt_mid_{n}_{m}"),
-            pd.Series(dtype="float64", name=f"kelt_lo_{n}_{m}"),
-        )
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n:
-        logger.warning("keltner(): input series too short. Returning empty aligned series.")
-        return (
-            pd.Series(index=close.index, dtype="float64", name=f"kelt_up_{n}_{m}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"kelt_mid_{n}_{m}"), 
-            pd.Series(index=close.index, dtype="float64", name=f"kelt_lo_{n}_{m}")
-        )
+    if close is None or len(close) < n:
+        return pd.Series(dtype="float32"), pd.Series(dtype="float32"), pd.Series(dtype="float32")
 
-    # ---------- Core computation ----------
     mid = ema(close, n).astype("float64")   # ema ensures warm-up
     atr_val = atr(high, low, close, n).astype("float64")
-    mid[:n - 1]     = np.nan   # warm-up
-    atr_val[:n - 1] = np.nan   # warm-up
-    upper = (mid + m * atr_val)
-    lower = (mid - m * atr_val)
-
+    warm = max(n, n)  # explicit, but kept for clarity
+    mid[:warm] = np.nan
+    atr_val[:warm] = np.nan
+    upper = (mid + m * atr_val).astype("float32")
+    lower = (mid - m * atr_val).astype("float32")
+    mid = mid.astype("float32").rename(f"kelt_mid_{n}_{m}")
     upper = upper.rename(f"kelt_up_{n}_{m}")
-    mid   =   mid.rename(f"kelt_mid_{n}_{m}")
     lower = lower.rename(f"kelt_lo_{n}_{m}")
-    return upper, mid, lower
+    return mid, upper, lower
 
 # ============================================================================= 10
 # Part-6: Stochastic
@@ -389,26 +314,15 @@ def stochastic(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14, d
     - %D = SMA(%K, d)
     - First n rows of %K are NaN (warm-up)
     - First n + d - 1 rows of %D are NaN (warm-up)
-    - Both returned as float64 Series with proper naming.
+    - Both returned as float32 Series with proper naming.
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None:
-        logger.warning("stochastic(): one or more inputs are None. Returning empty series.")
+    length = len(close)
+    if length < n:
         return (
-            pd.Series(dtype="float64", name=f"stoch_k_{n}_{d}"),
-            pd.Series(dtype="float64", name=f"stoch_d_{n}_{d}")
-        )
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n:
-        logger.warning("stochastic(): input series too short. Returning empty aligned series.")
-        return (
-            pd.Series(index=close.index, dtype="float64", name=f"stoch_k_{n}_{d}"),
-            pd.Series(index=close.index, dtype="float64", name=f"stoch_d_{n}_{d}")
+            pd.Series(dtype="float32", name=f"stoch_k_{n}_{d}"),
+            pd.Series(dtype="float32", name=f"stoch_d_{n}_{d}")
         )
 
-    # ---------- Core computation ----------
     high_f = high.astype("float64")
     low_f = low.astype("float64")
     close_f = close.astype("float64")
@@ -420,14 +334,13 @@ def stochastic(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14, d
     # %K calculation
     # Prevent divide-by-zero using replace
     k = 100.0 * (close_f - lowest) / (highest - lowest).replace(0, np.nan)
-    k[:n - 1] = np.nan                     # correct warm-up
-    k = k.rename(f"stoch_k_{n}_{d}")
+    k[:n] = np.nan                      # correct warm-up
+    k = k.astype("float32").rename(f"stoch_k_{n}_{d}")
 
     # %D calculation (SMA over K)
-    # dline = k.rolling(window=d, min_periods=d).mean()
-    dline = sma(k, d)
-    dline[:n -1 + d - 1] = np.nan          # correct warm-up for %D
-    dline = dline.rename(f"stoch_d_{n}_{d}")
+    dline = k.rolling(window=d, min_periods=d).mean()
+    dline[:n + d - 1] = np.nan          # correct warm-up for %D
+    dline = dline.astype("float32").rename(f"stoch_d_{n}_{d}")
 
     return k, dline
 
@@ -435,39 +348,15 @@ def stochastic(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14, d
 # Part-7: CCI/MFI/OBV/Williams%R
 # ============================================================================= OK
 def cci(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 20) -> pd.Series:
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None:
-        logger.warning("cci(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"cci_{n}")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n:
-        logger.warning("cci(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"cci_{n}")
-
-    # ---------- Core computation ----------
     tp = ((high + low + close) / 3.0).astype("float64")
-    ma = sma(tp, n)
+    ma = sma(tp, n).astype("float64")
     md = (tp - ma).abs().rolling(window=n, min_periods=n).mean()
     c = (tp - ma) / (0.015 * md.replace(0, np.nan))
     c[: n - 1] = np.nan
-    return c.rename(f"cci_{n}")
+    return c.astype("float32").rename(f"cci_{n}")
 
 # ---------------------------------------------------------
 def mfi(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, n: int = 14) -> pd.Series:
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None or volume is None:
-        logger.warning("mfi(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"mfi_{n}")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n or len(volume) < n:
-        logger.warning("mfi(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"mfi_{n}")
-    
-    # ---------- Core computation ----------
     tp = ((high + low + close) / 3.0).astype("float64")
     vol = volume.fillna(0.0).astype("float64")
     mf = tp * vol
@@ -476,7 +365,7 @@ def mfi(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, n:
     ratio = pos / neg.replace(0, np.nan)
     out = 100.0 - (100.0 / (1.0 + ratio))
     out[:n] = np.nan
-    return out.rename(f"mfi_{n}")
+    return out.astype("float32").rename(f"mfi_{n}")
 
 # ---------------------------------------------------------
 def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
@@ -486,18 +375,6 @@ def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     - Uses cumsum of volume * direction
     - Fully deterministic, float32 output
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if close is None or volume is None:
-        logger.warning("obv(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"obv")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(close) < 2 or len(volume) < 2:
-        logger.warning("obv(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"obv")
-    
-    # ---------- Core computation ----------
     close_f = close.astype("float64")
     vol_f = volume.fillna(0.0).astype("float64")
 
@@ -509,7 +386,7 @@ def obv(close: pd.Series, volume: pd.Series) -> pd.Series:
     obv_raw = (direction * vol_f).cumsum()
     obv_raw.iloc[0] = np.nan  # proper warm-up: first row NaN
 
-    return pd.Series(obv_raw, index=close.index, dtype="float64", name=f"obv")
+    return obv_raw.astype("float32").rename("obv")
 
 # ---------------------------------------------------------
 def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
@@ -519,18 +396,6 @@ def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -
     - Uses (highest_n - close) / (highest_n - lowest_n)
     - Returns float32, deterministic
     """
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None or close is None:
-        logger.warning("williams_r(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name=f"wr_{n}")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < n or len(low) < n or len(close) < n:
-        logger.warning("williams_r(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=close.index, dtype="float64", name=f"wr_{n}")
-    
-    # ---------- Core computation ----------
     high_f = high.astype("float64")
     low_f = low.astype("float64")
     close_f = close.astype("float64")
@@ -539,9 +404,9 @@ def williams_r(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -
     lowest = low_f.rolling(window=n, min_periods=n).min()
 
     wr = -100.0 * (highest - close_f) / (highest - lowest).replace(0, np.nan)
-    wr[ : n - 1] = np.nan  # proper warm-up
+    wr[:n] = np.nan  # proper warm-up
 
-    return wr.rename(f"wr_{n}")
+    return wr.astype("float32").rename(f"wr_{n}")
 
 # ============================================================================= 15,16
 # Part-8: PSAR & heikin_ashi
@@ -562,6 +427,10 @@ def parabolic_sar_orig(
     h = high.astype("float64").values
     l = low.astype("float64").values
     n = len(h)
+
+    if n < 3:
+        return pd.Series([np.nan] * n, index=high.index, dtype="float32")
+
     out = np.full(n, np.nan, dtype="float64")
 
     # --- determine initial trend (Wilder rule)
@@ -584,8 +453,10 @@ def parabolic_sar_orig(
 
     # --- main loop from candle #2
     for i in range(2, n):
+
         # compute next SAR
         sar = sar + af * (ep - sar)
+
         # clamp SAR into allowed region (to avoid penetration)
         if uptrend:
             sar = min(sar, l[i-1], l[i-2])
@@ -619,11 +490,13 @@ def parabolic_sar_orig(
                 if l[i] < ep:
                     ep = l[i]
                     af = min(af + af_step, af_max)
+
         out[i] = sar
-    return out
+
+    return pd.Series(out.astype("float32"), index=high.index, name="sar")
 
 @njit
-def _parabolic_sar_njit_core(h, l, af_start, af_step, af_max):
+def _psar_core(h, l, af_start, af_step, af_max):
 
     n = h.size
     out = np.empty(n, dtype=np.float64)
@@ -646,7 +519,9 @@ def _parabolic_sar_njit_core(h, l, af_start, af_step, af_max):
     af = af_start
 
     for i in range(2, n):
+
         sar = sar + af * (ep - sar)
+
         if uptrend:
             if sar > l[i-1]:
                 sar = l[i-1]
@@ -659,30 +534,37 @@ def _parabolic_sar_njit_core(h, l, af_start, af_step, af_max):
                 sar = h[i-2]
 
         if uptrend:
+
             if l[i] < sar:
                 uptrend = False
                 sar = ep
                 ep = l[i]
                 af = af_start
+
             else:
                 if h[i] > ep:
                     ep = h[i]
                     af = af + af_step
                     if af > af_max:
                         af = af_max
+
         else:
+
             if h[i] > sar:
                 uptrend = True
                 sar = ep
                 ep = h[i]
                 af = af_start
+
             else:
                 if l[i] < ep:
                     ep = l[i]
                     af = af + af_step
                     if af > af_max:
                         af = af_max
+
         out[i] = sar
+
     return out
 
 def parabolic_sar_njit(
@@ -695,8 +577,10 @@ def parabolic_sar_njit(
 
     h = high.to_numpy(dtype=np.float64, copy=False)
     l = low.to_numpy(dtype=np.float64, copy=False)
-    out = _parabolic_sar_njit_core(h, l, af_start, af_step, af_max)
-    return out
+
+    sar = _psar_core(h, l, af_start, af_step, af_max)
+
+    return pd.Series(sar.astype("float32"), index=high.index, name="sar")
 
 # WRAPPER:
 def parabolic_sar(
@@ -706,30 +590,24 @@ def parabolic_sar(
     af_step: float = 0.02,
     af_max: float = 0.2
 ) -> pd.Series:
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
-    if high is None or low is None:
-        logger.warning("sar(): one or more inputs are None. Returning empty series.")
-        return pd.Series(dtype="float64", name="sar")
-    
-    # Case 2: insufficient length → return aligned empty series
-    if len(high) < 3 or len(low) < 3:   # SAR نیاز به حداقل ۳ کندل دارد
-        logger.warning("sar(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=high.index, dtype="float64", name="sar")
-    
-    # ---------- Core computation ----------    
     n = high.size
     if n < 1_000_000:
-        sar = parabolic_sar_orig(high, low, af_start, af_step, af_max)
-    else:
-        sar = parabolic_sar_njit(high, low, af_start, af_step, af_max)
-    return pd.Series(sar, index=high.index, dtype="float64", name="sar") 
+        return parabolic_sar_orig(high, low, af_start, af_step, af_max)
+
+    return parabolic_sar_njit(high, low, af_start, af_step, af_max)
 
 # ---------------------------------------------------------
 def heikin_ashi_numpy(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     
     n = len(close)
+    if n == 0:
+        return (
+            pd.Series(dtype="float32", name="ha_open"),
+            pd.Series(dtype="float32", name="ha_high"),
+            pd.Series(dtype="float32", name="ha_low"),
+            pd.Series(dtype="float32", name="ha_close"),
+        )
 
     # convert to numpy (fast, zero-copy)
     o = open_.to_numpy(dtype=np.float64, copy=False)
@@ -750,18 +628,23 @@ def heikin_ashi_numpy(open_: pd.Series, high: pd.Series, low: pd.Series, close: 
     ha_high = np.maximum.reduce([h, ha_open, ha_close])
     ha_low  = np.minimum.reduce([l, ha_open, ha_close])
 
-    return ha_open, ha_high, ha_low, ha_close
+    # convert to Series float32
+    idx = open_.index
+    return (
+        pd.Series(ha_open.astype("float32"), index=idx, name="ha_open"),
+        pd.Series(ha_high.astype("float32"), index=idx, name="ha_high"),
+        pd.Series(ha_low.astype("float32"), index=idx, name="ha_low"),
+        pd.Series(ha_close.astype("float32"), index=idx, name="ha_close"),
+    )
 
 @njit(cache=True)
-def _heikin_ashi_njit_core(o, h, l, c):
+def _heikin_ashi_core(o, h, l, c):
     n = len(o)
     ha_open = np.empty(n, dtype=np.float64)
     ha_close = (o + h + l + c) * 0.25
     ha_open[0] = (o[0] + c[0]) * 0.5
-    
     for i in range(1, n):
         ha_open[i] = 0.5 * (ha_open[i-1] + ha_close[i-1])
-    
     # numba‑safe operations
     ha_high = np.maximum(h, np.maximum(ha_open, ha_close))
     ha_low  = np.minimum(l, np.minimum(ha_open, ha_close))
@@ -772,42 +655,39 @@ def _heikin_ashi_njit_core(o, h, l, c):
 
 def heikin_ashi_njit(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
-   
+    
+    if len(close) == 0:
+        return (
+            pd.Series(dtype="float32", name="ha_open"),
+            pd.Series(dtype="float32", name="ha_high"),
+            pd.Series(dtype="float32", name="ha_low"),
+            pd.Series(dtype="float32", name="ha_close"),
+        )
+    
     o = open_.to_numpy(np.float64, copy=False)
     h = high.to_numpy(np.float64, copy=False)
     l = low.to_numpy(np.float64, copy=False)
     c = close.to_numpy(np.float64, copy=False)
 
-    ha_open, ha_high, ha_low, ha_close = _heikin_ashi_njit_core(o, h, l, c)
-    return ha_open, ha_high, ha_low, ha_close
+    ha_open, ha_high, ha_low, ha_close = _heikin_ashi_core(o, h, l, c)
+
+    idx = open_.index
+    return (
+        pd.Series(ha_open.astype("float32"), index=idx, name="ha_open"),
+        pd.Series(ha_high.astype("float32"), index=idx, name="ha_high"),
+        pd.Series(ha_low.astype("float32"), index=idx, name="ha_low"),
+        pd.Series(ha_close.astype("float32"), index=idx, name="ha_close"),
+    )
 
 # WRAPPER:
 def heikin_ashi(open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series
 ) -> Tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
     
-    # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series    
-    if open_ is None or high is None or low is None or close is None or len(close) == 0:
-        logger.warning("heikin_ashi(): one or more inputs are None. Returning empty series.")
-        return (
-            pd.Series(dtype="float64", name="ha_open"),
-            pd.Series(dtype="float64", name="ha_high"),
-            pd.Series(dtype="float64", name="ha_low"),
-            pd.Series(dtype="float64", name="ha_close"),
-        )    
-    # ---------- Core computation ----------    
-    n = close.size
+    n = high.size
     if n < 2_000_000:
-        ha_o, ha_h, ha_l, ha_c = heikin_ashi_numpy(open_, high, low, close)
-    else:
-        ha_o, ha_h, ha_l, ha_c = heikin_ashi_njit(open_, high, low, close)
+        return heikin_ashi_numpy(open_, high, low, close)
 
-    return (
-        pd.Series(ha_o, dtype="float64", name="ha_open"),
-        pd.Series(ha_h, dtype="float64", name="ha_high"),
-        pd.Series(ha_l, dtype="float64", name="ha_low"),
-        pd.Series(ha_c, dtype="float64", name="ha_close"),
-    )
+    return heikin_ashi_njit(open_, high, low, close)
 
 # ============================================================================= 
 # Part-9: Registry
@@ -856,12 +736,12 @@ def registry() -> IndicatorMap:
                 f"macd_signal_{fast}_{slow}_{signal}": sig,
                 f"macd_hist_{fast}_{slow}_{signal}": hist})
     def make_bbands(df: pd.DataFrame, col: str = "close", period: int = 20, k: float = 2.0, **_):
-        up, mid, lo = bollinger(df[col], period, k)
+        mid, up, lo = bollinger(df[col], period, k)
         return cast32({f"bb_mid_{period}_{k}": mid,
                 f"bb_up_{period}_{k}": up,
                 f"bb_lo_{period}_{k}": lo})
     def make_keltner(df: pd.DataFrame, period: int = 20, m: float = 2.0, **_):
-        up, mid, lo = keltner(df["high"], df["low"], df["close"], period, m)
+        mid, up, lo = keltner(df["high"], df["low"], df["close"], period, m)
         return cast32({f"kelt_mid_{period}_{m}": mid,
                 f"kelt_up_{period}_{m}": up,
                 f"kelt_lo_{period}_{m}": lo})

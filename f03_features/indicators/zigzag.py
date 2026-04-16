@@ -3,7 +3,7 @@
 # Check: By use of f15_testcheck/unit/test_z1A_zigzag.py
 # Check: By use of f15_testcheck/unit/test_z1B_zigzag_LegsMetadata.py
 # Check: By use of f15_testcheck/unit/test_z2_zigzag_mtf_adapter.py
-# Completed at (1404/12/02)
+# Status in (Bot-RL-2): Reviewed at 1404/12/--
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ from typing import Literal
 
 #====================================================================
 # Vectorized by Numpy
-#====================================================================
+#==================================================================== Func1
 def _zigzag_mql_numpy_complete(
     high: np.ndarray,
     low: np.ndarray,
@@ -160,7 +160,7 @@ def _zigzag_mql_numpy_complete(
 
 #====================================================================
 # Loop-wise and njit
-#====================================================================
+#==================================================================== Func2
 def _zigzag_mql_njit_loopwise_complete(
     high: np.ndarray,
     low: np.ndarray,
@@ -316,7 +316,7 @@ def _zigzag_mql_njit_loopwise_complete(
 
 #====================================================================
 # Wrapper function to choose between njit and non-njit based on data size
-#====================================================================
+#==================================================================== Func3
 def zigzag(
     high: pd.Series,
     low: pd.Series,
@@ -454,7 +454,7 @@ Returns
 pd.Series
     MTF-aware ZigZag aligned to LTF index
 """
-#====================================================================
+#==================================================================== Func4
 def zigzag_mtf_adapter(
     high: pd.Series,
     low: pd.Series,
@@ -645,7 +645,7 @@ def zigzag_mtf_adapter(
 
 #====================================================================
 # Zigzag Legs
-#====================================================================
+#==================================================================== Func5
 def zigzag_legs(
     high: pd.Series,
     low: pd.Series,
@@ -751,4 +751,15 @@ def zigzag_legs(
 
     return pd.DataFrame(legs, columns=required_cols)
 
-#====================================================================
+
+# =====================================================================================
+# تست پوشش کد (برای توسعه‌دهندگان) 
+# =====================================================================================
+""" Func Names                           Used in Functions: ...
+                                        1   2   3   4   5   6   7   8   9  10
+1  _zigzag_mql_numpy_complete          --  --  ok  --  --  --  --  --  --  --  --
+2  _zigzag_mql_njit_loopwise_complete  --  --  ok  --  --  --  --  --  --  --  --
+3  zigzag                              --  --  --  --  --  --  --  --  --  --  -- For External Use
+4  zigzag_mtf_adapter                  --  --  --  --  --  --  --  --  --  --  -- For External Use
+5  zigzag_legs                         --  --  --  --  --  --  --  --  --  --  -- For External Use
+"""

@@ -203,7 +203,7 @@ features:
     sr_advanced:                    # ===== Used by feature_registry.py / _merge_sr_kwargs() ===== start
       common:                       #
         atr_window: 14              #
-        max_bars_alive: 5           #
+        max_bars_alive: 5  #3 to 10 #  # it's better be (4 or 5)
         w_size: 0.5                 #
         w_age: 0.3                  #
         w_touch: 0.2                #
@@ -426,6 +426,7 @@ risk:
   risk_per_trade: 0.01
   max_daily_loss_pct: 0.02
   max_total_drawdown_pct: 0.2
+  
   position_sizing:
     method: fixed_fractional
     min_lot: 0.01
@@ -434,6 +435,7 @@ risk:
     use_atr_for_sl: true
     sl_atr_mult: 5.5
     tp_atr_mult: 10.0
+    
     breakeven:
       enabled: true
       at_r_multiple: 1.0
@@ -442,6 +444,7 @@ risk:
       type: chandelier
       atr_period: 22
       atr_mult: 3.0
+  
   position_limits:
     max_open_positions: 1
     max_positions_per_symbol: 1

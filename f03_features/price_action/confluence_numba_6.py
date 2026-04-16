@@ -1,6 +1,12 @@
 # f03_features/price_action/confluence_numba_6.py
 # FINAL v98
 
+"""
+**Confluence** در فارسی یعنی:
+**همگرایی سیگنال‌ها** یا **تلاقی چند عامل تحلیلی**.
+در ترید یعنی جایی که **چند نشانهٔ تحلیلی مختلف همزمان یک ناحیه را تأیید می‌کنند**.
+"""
+
 import numpy as np
 import pandas as pd
 from numba import njit, prange

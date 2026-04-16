@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f03_features/indicators/parser.py
-# Status in (Bot-RL-2): Completed
+# Status in (Bot-RL-2): Reviewed before 1405/01/11
 
 r"""Parser برای Spec:  <name>(args)@TF  →  (name, args[], tf)
 افزودنی‌های پارس Spec (Bot-RL-2)
@@ -144,7 +144,7 @@ def _parse_args_kwargs(argstr: Optional[str]) -> Tuple[List[Any], Dict[str, Any]
 #   ma_slope(window=20, method='ema')@M5
 #   rsi_zone(period=14)@H1
 
-# ========================= Bot-RL-2 :: Phase C :: Arg-Mapping Helper (ANCHOR: ARG_MAPPING_HELPER) =========================
+# === Arg-Mapping Helper (ANCHOR: ARG_MAPPING_HELPER) =========================
 def _align_args_with_signature(ind_name: str, args_in: List[Any], kwargs_in: Dict[str, Any]) -> tuple[list, dict]:
     """
     نگاشت آرگومان‌های موقعیتی Spec به نام پارامترها بر اساس امضای اندیکاتور.
@@ -206,7 +206,8 @@ def _align_args_with_signature(ind_name: str, args_in: List[Any], kwargs_in: Dic
     except Exception:
         # هر اشکالی در تحلیل امضا → بدون تغییر
         return list(args_in), dict(kwargs_in)
-# ========================= End of ARG_MAPPING_HELPER ================================================================================
+
+# === End of ARG_MAPPING_HELPER ===============================================
 
 
 def parse_spec(spec: str) -> ParsedSpec:
@@ -230,3 +231,16 @@ def parse_spec(spec: str) -> ParsedSpec:
     ps = ParsedSpec(name=name, args=args, kwargs=kwargs, timeframe=tf_norm, raw=spec)
     logger.debug("parse_spec: %s -> %s", spec, ps)
     return ps
+
+# =====================================================================================
+# تست پوشش کد (برای توسعه‌دهندگان) 
+# =====================================================================================
+""" Func Names                           Used in Functions: ...
+                                1   2   3   4   5   6
+1  ParsedSpec                  --  --  --  --  --  ok
+2  _split_top_level_commas     --  --  ok  ok  --  --
+3  _parse_value                --  --  --  ok  --  --
+4  _parse_args_kwargs          --  --  --  --  --  ok
+5  _align_args_with_signature  --  --  --  --  --  ok
+6  parse_spec                  --  --  --  --  --  -- USED in feature_engine.py
+"""

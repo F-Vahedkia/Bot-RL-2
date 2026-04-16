@@ -16,8 +16,7 @@
 │   ├── **cache/**
 │   ├── **news/**
 │   │   ├── **raw/**
-│   │   ├── calendar.parquet
-│   │   └── ff_calendar_thisweek.csv
+│   │   └── calendar.parquet
 │   ├── **processed/**
 │   ├── **raw/**
 │   ├── **test_process/**
@@ -62,6 +61,7 @@
 │   │   ├── confluence_numba_6.py
 │   │   ├── imbalance.py
 │   │   ├── market_structure.py
+│   │   ├── market_structure_old1.py
 │   │   ├── microchannels.py
 │   │   ├── mtf_context.py
 │   │   ├── regime.py
@@ -193,34 +193,33 @@
 │   │   ├── test_adv_indicators.py
 │   │   ├── test_env_warmup_and_obs.py
 │   │   ├── test_indicators.py
-│   │   ├── test_levels1_sr_from_zigzag_legs.py
-│   │   ├── test_levels2_sr_distance_from_levels.py
-│   │   ├── test_levels3_zigzag_leg_mask.py
-│   │   ├── test_levels4_fibo_levels_from_legs.py
 │   │   ├── test_normalization_skip_pre_normalized.py
-│   │   ├── test_parser.py
-│   │   ├── test_z1A_zigzag.py
-│   │   ├── test_z1B_zigzag_LegsMetadata.py
-│   │   └── test_z2_zigzag_mtf_adapter.py
+│   │   ├── ts03_PA_MkSt__1detect_swings_1.py
+│   │   ├── ts03_PA_MkSt__2build_market_structure_1.py
+│   │   ├── ts03_PA_MkSt__3detect_bos_choch_1.py
+│   │   ├── ts03_PA_MkSt__4market_structure_pipeline_1.py
+│   │   ├── ts03_PA_MkSt__5build_regime_state_1.py
+│   │   ├── ts03_PA_MkSt__6build_regime_state_pro_1.py
+│   │   ├── ts03_PA_MkSt__full_pipeline_1.py
+│   │   ├── ts03_idx_lvl__10sr_overlap_score_1A.py
+│   │   ├── ts03_idx_lvl__10sr_overlap_score_1B.py
+│   │   ├── ts03_idx_lvl__2sr_from_zigzag_legs_1.py
+│   │   ├── ts03_idx_lvl__3sr_distance_from_levels_1.py
+│   │   ├── ts03_idx_lvl__4zigzag_leg_mask_1.py
+│   │   ├── ts03_idx_lvl__5fibo_levels_from_legs_1.py
+│   │   ├── ts03_idx_lvl__7compute_adr_1.py
+│   │   ├── ts03_idx_lvl__8adr_distance_to_open_1.py
+│   │   ├── ts03_idx_lvl__9sr_overlap_score_simple_1.py
+│   │   ├── ts03_idx_prsr__1AllFuncs_1.py
+│   │   ├── ts03_idx_zzg__1zigzag_1A.py
+│   │   ├── ts03_idx_zzg__2zigzag_1B_LegsMeta.py
+│   │   ├── ts03_idx_zzg__3zigzag_mtf_adapter_1.py
+│   │   └── ts03_idx_zzg__4zigzag_legs_1.py
 │   ├── __init__.py
 │   ├── conftest.py
 │   ├── fetch_mt5_registry.py
-│   ├── fetch_registry_output.csv
 │   ├── folder_file_list.py
 │   └── output.md
-├── 1__zz_htf.csv
-├── 2__legs_htf.csv
-├── 9__legs_ffill.csv
-├── 9__legs_last.csv
-├── 9__zz_ffill.csv
-├── 9__zz_last.csv
+├── **f16_test_results/**
 ├── from_book.py
-├── learn_gym_kntoosi.py
-├── sr_njit.csv
-├── sr_orig.csv
-├── sr_wrapper.csv
-├── test_levels2_sr_distance_from_levels.csv
-├── z1_zigzag_Result.csv
-├── z1_zigzag_legs_metadata.csv
-├── z1_zigzag_orig_HL.csv
-└── zigzag_leg_masks_test.csv
+└── learn_gym_kntoosi.py

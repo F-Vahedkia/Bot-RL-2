@@ -44,6 +44,7 @@ _PA_REGISTRY: Dict[str, Callable] = {
     "pa_mtf_context":     _mtf.build_mtf_context,
     "pa_regime":           _rg.build_regime,
     "pa_zones":            _zn.build_zones,
+    # "pa_regime_state":     _ms.build_regime_state_pro,
 }
 
 # -------------------------------------------------------------------
