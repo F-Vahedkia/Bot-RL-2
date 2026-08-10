@@ -177,7 +177,7 @@ def inside_outside_flags(open_, high, low, close,
 
     if min_range_k_atr > 0.0:
         _df  = pd.DataFrame({"high": high, "low": low, "close": close})
-        atrv = compute_atr(_df, atr_win, method="classic").replace(0, np.nan)
+        atrv = compute_atr(_df, atr_win, method="classic").replace(0, np.nan) # 0 -> NaN
         rng  = (high - low).astype("float32")
         ok   = (rng >= (min_range_k_atr * atrv)).fillna(False)
         inside  = (inside  & ok)
@@ -217,7 +217,7 @@ def tweezer_flags(high, low,
     if tol_frac is None and tol_k is not None and tol_mode == "atr_price":
         _close = (close if close is not None else low)
         _df    = pd.DataFrame({"high": high, "low": low, "close": _close})
-        atrv   = compute_atr(_df, atr_win, method="classic").replace(0, np.nan)
+        atrv   = compute_atr(_df, atr_win, method="classic").replace(0, np.nan) # 0 -> NaN
         mid_price = ((high + low) / 2.0).replace(0, np.nan)
         tol = (tol_k * (atrv / mid_price)).astype("float32")
         top    = ((high - prev_high).abs() <= (tol * prev_high.abs())).fillna(False)
@@ -257,7 +257,7 @@ def morning_evening_star_flags(open_, high, low, close,
     - الزام گپ لحاظ نشده (سازگاری با FX)
     """
     _df  = pd.DataFrame({"high": high, "low": low, "close": close})
-    atrv = compute_atr(_df, atr_win, method="classic").replace(0, np.nan)
+    atrv = compute_atr(_df, atr_win, method="classic").replace(0, np.nan) # 0 -> NaN
     body = _body(open_, close)
     b1 = body.shift(2)  # کندل 1 (قدیمی‌ترین در سه‌تایی)
     b2 = body.shift(1)  # کندل 2
@@ -310,14 +310,15 @@ def belt_hold_flags(open_, high, low, close,
 def registry() -> Dict[str, callable]:
     """
     خروجی: دیکشنری از نام Spec → سازنده (callable)
-    هر سازنده: dict[str -> Series[int8]] برمی‌گرداند.
+    هر سازنده: dict[str -> Series["float32"]] برمی‌گرداند.
     """
 
-    # ---------- پایه‌ها ----------
+    # ---------- Basics ---------- 1~3
     def make_engulf(df, **_):
         """Engulfing (bull/bear)"""
         b, s = engulfing_flags(df["open"], df["high"], df["low"], df["close"])
-        return {"pat_engulf_bull": b, "pat_engulf_bear": s}
+        return {"pat_engulf_bull": b.astype("float32"),
+                "pat_engulf_bear": s.astype("float32")}
 
     def make_doji(df,
                   atr_ratio_thresh: float = 0.1,
@@ -329,16 +330,17 @@ def registry() -> Dict[str, callable]:
         flag = doji_flag(df["open"], df["close"], atr=atrv,
                          atr_ratio_thresh=atr_ratio_thresh,
                          range_ratio_thresh=range_ratio_thresh)
-        return {f"pat_doji_{atr_ratio_thresh}_{range_ratio_thresh}": flag}
+        return {f"pat_doji_{atr_ratio_thresh}_{range_ratio_thresh}": flag.astype("float32")}
 
     def make_pin(df, ratio: float = 2.0, **kwargs):
         kwargs = _apply_scale(kwargs, rules=[("ratio", 2.50, 1.10, 10.0)])
         """Pinbar (bull/bear)"""
         b, s = pinbar_flags(df["open"], df["high"], df["low"], df["close"], ratio)
         r = _fmtf(ratio, 2)   # r: ratio
-        return {f"pat_pin_bull_{r}": b, f"pat_pin_bear_{r}": s}
+        return {f"pat_pin_bull_{r}": b.astype("float32"),
+                f"pat_pin_bear_{r}": s.astype("float32")}
     
-    # ---------- پیشرفته‌ها ----------
+    # ---------- Advanceds ---------- 4~12
     def make_hammer_star(df,
                          min_body_frac: float = 0.0,
                          wick_ratio: float = 2.0,
@@ -349,25 +351,29 @@ def registry() -> Dict[str, callable]:
         b, s = hammer_shooting_flags(df["open"], df["high"], df["low"], df["close"],
                                      min_body_frac, wick_ratio, opp_wick_k)
         w = _fmtf(wick_ratio, 2)   # w: wick_ratio
-        return {f"pat_hammer_bull_{w}": b, f"pat_shoot_bear_{w}": s}
+        return {f"pat_hammer_bull_{w}": b.astype("float32"), 
+                f"pat_shoot_bear_{w}": s.astype("float32")}
 
     def make_harami(df, **_):
         """Harami (bull/bear)"""
         b, s = harami_flags(df["open"], df["high"], df["low"], df["close"])
-        return {"pat_harami_bull": b, "pat_harami_bear": s}
+        return {"pat_harami_bull": b.astype("float32"),
+                "pat_harami_bear": s.astype("float32")}
 
     def make_inside_outside(df, min_range_k_atr: float = 0.0, atr_win: int = 14, **kwargs):
         """Inside/Outside با قید حداقل رنج نسبتی به ATR"""
         kwargs = _apply_scale(kwargs, rules=[("min_range_k_atr", 0.50, 0.05, 10.0)])
         inside, outside = inside_outside_flags(df["open"], df["high"], df["low"], df["close"],
                                                min_range_k_atr=min_range_k_atr, atr_win=atr_win)
-        return {"pat_inside": inside, "pat_outside": outside}
+        return {"pat_inside": inside.astype("float32"),
+                "pat_outside": outside.astype("float32")}
 
     def make_marubozu(df, wick_frac: float = 0.1, **_):
         """Marubozu (bull/bear)"""
         b, s = marubozu_flags(df["open"], df["high"], df["low"], df["close"], wick_frac)
         wf = _fmtf(wick_frac, 2)   # wf: wick_frac
-        return {f"pat_marubozu_bull_{wf}": b, f"pat_marubozu_bear_{wf}": s}
+        return {f"pat_marubozu_bull_{wf}": b.astype("float32"),
+                f"pat_marubozu_bear_{wf}": s.astype("float32")}
     
     def make_tweezer(df, tol_frac: float | None = 0.001,
                     tol_k: float | None = None,
@@ -386,8 +392,8 @@ def registry() -> Dict[str, callable]:
                                     close=df["close"])
         # اگر tol_k باشد با پیشوند k و اعشار کنترل‌شده؛ در غیر این صورت tol_frac با اعشار کنترل‌شده
         label = ('k' + _fmtf(tol_k, 2)) if tol_frac is None else _fmtf(tol_frac, 3)        
-        return {f"pat_tweezer_top_{label}": top,
-                f"pat_tweezer_bot_{label}": bottom}
+        return {f"pat_tweezer_top_{label}": top.astype("float32"),
+                f"pat_tweezer_bot_{label}": bottom.astype("float32")}
 
     def make_soldiers_crows(df, min_body_atr: float = 0.2, atr_win: int = 14, **kwargs):
         """Three Soldiers / Three Crows (ATR-based)"""
@@ -395,7 +401,8 @@ def registry() -> Dict[str, callable]:
         atrv = compute_atr(df, atr_win, method="classic")
         b, s = three_soldiers_crows_flags(df["open"], df["close"],
                                           atr_ref=atrv, min_body_atr=min_body_atr)
-        return {f"pat_3soldiers_{min_body_atr}": b, f"pat_3crows_{min_body_atr}": s}
+        return {f"pat_3soldiers_{min_body_atr}": b.astype("float32"),
+                f"pat_3crows_{min_body_atr}": s.astype("float32")}
 
     def make_morn_even(df, small_body_atr: float = 0.3, atr_win: int = 14, **kwargs):
         """Morning/Evening Star (ATR-based)"""
@@ -403,12 +410,14 @@ def registry() -> Dict[str, callable]:
         m, e = morning_evening_star_flags(df["open"], df["high"], df["low"], df["close"],
                                           small_body_atr=small_body_atr, atr_win=atr_win)
         sb = _fmtf(small_body_atr, 2)   # sb: small_body_atr
-        return {f"pat_morning_{sb}": m, f"pat_evening_{sb}": e}
+        return {f"pat_morning_{sb}": m.astype("float32"),
+                f"pat_evening_{sb}": e.astype("float32")}
 
     def make_piercing_dark(df, min_body_ratio: float = 0.2, **_):
         """Piercing/Dark Cloud با حداقل بدنهٔ نسبتی (پایداری بهتر)"""
         p, d = piercing_darkcloud_flags(df["open"], df["close"], min_body_ratio=min_body_ratio)
-        return {f"pat_piercing_{min_body_ratio}": p, f"pat_darkcloud_{min_body_ratio}": d}
+        return {f"pat_piercing_{min_body_ratio}": p.astype("float32"),
+                f"pat_darkcloud_{min_body_ratio}": d.astype("float32")}
 
     def make_belt(df, wick_frac: float = 0.1, **kwargs):
         # نرخ بالا ⇒ frac کمتر؛ مشتق اولیه از scale_k
@@ -416,7 +425,8 @@ def registry() -> Dict[str, callable]:
         kwargs = _apply_scale(kwargs, rules=[("wick_frac", 0.10, 0.005, 0.50)])
         b, s = belt_hold_flags(df["open"], df["high"], df["low"], df["close"], wick_frac)
         wf = _fmtf(wick_frac, 2)   # wf: wick_frac
-        return {f"pat_belt_bull_{wf}": b, f"pat_belt_bear_{wf}": s}
+        return {f"pat_belt_bull_{wf}": b.astype("float32"),
+                f"pat_belt_bear_{wf}": s.astype("float32")}
     
     # دیکشنری نهایی:
     return {
@@ -518,33 +528,33 @@ def abc_projection_adapter_from_abcd(abcd: dict):
 
 # =====================================================================================
 # تست پوشش کد (برای توسعه‌دهندگان) 
-# =====================================================================================
+# ===================================================================================== 05/02/09
 """ Func Names                           Used in Functions: ...
                                 1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21
 ------[General helpers]
-1  _apply_scale                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-2  _fmtf                       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-3  _body                       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-4  _abs_body                   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-5  _range                      --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-6  _body_wicks                 --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+1  _apply_scale                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+2  _fmtf                       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+3  _body                       --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  ok  --  --  --  --  --
+4  _abs_body                   --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
+5  _range                      --  --  --  --  --  --  --  --  --  ok  --  --  ok  --  --  --  --  ok  --  --  --
+6  _body_wicks                 --  --  --  --  --  --  --  --  ok  ok  --  --  ok  --  --  --  --  ok  --  --  --
 ------[Basic patterns]
-7  engulfing_flags             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-8  doji_flag                   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-9  pinbar_flags                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+7  engulfing_flags             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+8  doji_flag                   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+9  pinbar_flags                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
 ------[Advanced patterns]
-10 hammer_shooting_flags       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-11 harami_flags                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-12 inside_outside_flags        --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-13 marubozu_flags              --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-14 tweezer_flags               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-15 three_soldiers_crows_flags  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-16 morning_evening_star_flags  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-17 piercing_darkcloud_flags    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-18 belt_hold_flags             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+10 hammer_shooting_flags       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+11 harami_flags                --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+12 inside_outside_flags        --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+13 marubozu_flags              --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+14 tweezer_flags               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+15 three_soldiers_crows_flags  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+16 morning_evening_star_flags  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+17 piercing_darkcloud_flags    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
+18 belt_hold_flags             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --
 ------[Registry]
-19 registry                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+19 registry                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
 
-20 detect_ab_equal_cd          --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-21 abc_projection_adapter_from_abcd    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+20 detect_ab_equal_cd          --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in fibo_pipeline
+21 abc_projection_adapter_from_abcd    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in fibo_pipeline
 """

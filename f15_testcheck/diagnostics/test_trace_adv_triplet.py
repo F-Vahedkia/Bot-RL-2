@@ -20,8 +20,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 # ایمپورت‌های هسته (فقط استفاده؛ تغییری در کد اصلی داده نمی‌شود)
-from f03_features.feature_engine import run_specs_v2 as _engine_run
-import f03_features.feature_registry as _reg
+from f03_features.OLD.feature_engine import run_specs_v2 as _engine_run
+import f03_features.OLD.feature_registry as _reg
 import f03_features.indicators.extras_trend as _xtrend   # برای rsi_zone
 import f03_features.indicators.levels as _levels         # برای sr_overlap_score
 import f03_features.indicators.utils as _utils           # برای round_levels

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # f03_features/price_action/regime.py
-# Status in (Bot-RL-2H): Completed
+# Status in (Bot-RL-2H): Delete _true_range() at 05/01/31
 
 """
 Price Action — Regime Detector
@@ -25,7 +25,7 @@ Price Action — Regime Detector
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-
+from f03_features.indicators.utils import true_range
 
 # ------------------------------------------------------------
 # Utilities
@@ -35,15 +35,15 @@ def _ensure_series(s, name=None) -> pd.Series:
         return s
     return pd.Series(s, name=name)
 
-def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
-    """ATR primitive: TR = max(high-low, |high-prevClose|, |low-prevClose|)."""
-    prev_close = close.shift(1)
-    tr = pd.concat([
-        (high - low).abs(),
-        (high - prev_close).abs(),
-        (low - prev_close).abs(),
-    ], axis=1).max(axis=1)
-    return tr
+# def _true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+#     """ATR primitive: TR = max(high-low, |high-prevClose|, |low-prevClose|)."""
+#     prev_close = close.shift(1)
+#     tr = pd.concat([
+#         (high - low).abs(),
+#         (high - prev_close).abs(),
+#         (low - prev_close).abs(),
+#     ], axis=1).max(axis=1)
+#     return tr
 
 def _rolling_iqr_width(x: pd.Series, window: int, min_periods: int) -> pd.Series:
     """Approx channel/range width via IQR over a rolling window."""
@@ -104,7 +104,7 @@ def build_regime(
     if "atr" in out.columns:
         atr = out["atr"].astype("float64")
     else:
-        tr = _true_range(h, l, c)
+        tr = true_range(h, l, c)
         # جلوگیری از هشدار «Mean of empty slice» هنگام داده‌ی کم
         if len(tr) < atr_window:
             atr = pd.Series(np.nan, index=tr.index, dtype="float32")
@@ -124,7 +124,7 @@ def build_regime(
     range_intensity = _clip01(1.0 - _norm01(rel_width.fillna(rel_width.median())))
 
     # ---- Spike intensity (TR/ATR بزرگ) ----
-    tr = _true_range(h, l, c)
+    tr = true_range(h, l, c)
     ratio_tr_atr = (tr / (atr + 1e-9)).replace([np.inf, -np.inf], np.nan)
     spike_intensity = _clip01(_norm01(ratio_tr_atr))
     # تقویت نقاطی که از آستانه spike_thr_atr عبور می‌کنند
@@ -158,10 +158,10 @@ def build_regime(
     regime_label = pd.Series([map_label.get(i) if i==i else None for i in label_idx], index=out.index)
     confidence = stack.max(axis=1).fillna(0.0).astype("float32")
 
-    out["regime_range"] = range_intensity.fillna(0.0).astype("float32")
-    out["regime_spike"] = spike_intensity.fillna(0.0).astype("float32")
-    out["regime_channel"] = channel_intensity.fillna(0.0).astype("float32")
-    out["regime_label"] = regime_label.astype("object")
+    out["regime_range"     ] = range_intensity  .fillna(0.0).astype("float32")
+    out["regime_spike"     ] = spike_intensity  .fillna(0.0).astype("float32")
+    out["regime_channel"   ] = channel_intensity.fillna(0.0).astype("float32")
+    out["regime_label"     ] = regime_label                 .astype("object")
     out["regime_confidence"] = confidence
 
     return out

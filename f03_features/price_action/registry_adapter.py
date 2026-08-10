@@ -126,18 +126,16 @@ def build_all_price_action_features(
     if microchannels_kwargs: mc_kw.update(microchannels_kwargs)
 
     mtf_kw = dict(
-        df_higher=df_higher,
-        anti_lookahead=anti_lookahead,
-        base_close_col="close",
-        higher_close_col="close",
-    )
+                    df_higher=df_higher,
+                    anti_lookahead=anti_lookahead,
+                    base_close_col="close",
+                    higher_close_col="close")
     if mtf_context_kwargs: mtf_kw.update(mtf_context_kwargs)
 
     cf_kw = dict(
-        anti_lookahead=anti_lookahead,
-        strong_entry_threshold=0.7,
-        filter_threshold=0.35,
-    )
+                    anti_lookahead=anti_lookahead,
+                    strong_entry_threshold=0.7,
+                    filter_threshold=0.35)
     if confluence_kwargs: cf_kw.update(confluence_kwargs)
 
     out = df_base.copy()

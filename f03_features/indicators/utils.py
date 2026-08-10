@@ -8,7 +8,6 @@
 - نگهبان NaN/Inf و سبک کردن dtype
 - zscore، true_range
 """
-
 # =============================================================================
 # Imports & Logger
 # ============================================================================= (review:040924)
@@ -19,9 +18,10 @@ import numpy as np
 import pandas as pd
 from numba import njit
 from dataclasses import dataclass, field
+# from datetime import datetime
 from typing import Sequence, Optional, Dict, Tuple, List, Iterable, Any
-from datetime import datetime
 
+from f03_features.indicators.zigzag import zigzag_wrapper as zigzag
 # # وزن‌دهی — نام ستون‌های قابل‌قبول (اولین موجود انتخاب می‌شود)
 # DEFAULT_MA_SLOPE_CANDIDATES: List[str] = [
 #     "__ma_slope@M5", "__ma_slope@H1", "__ma_slope@H4"
@@ -45,7 +45,7 @@ class TFView:
 _TF_REGEX = re.compile(r"^(?P<tf>[A-Z0-9]+)_(?P<field>open|high|low|close|volume|spread)$", re.IGNORECASE)
 
 
-""" --------------------------------------------------------------------------- OK C2 (review:040924)
+""" --------------------------------------------------------------------------- OK C2 (review:040924) (For Test Only)
 FiboTestConfig: پیکربندی تستِ مستقل از scripts  (Test-only, not runtime defaults)
 -----------------------------------------------------------------------------
 توضیح آموزشی (فارسی):
@@ -90,7 +90,7 @@ class FiboTestConfig:
           بر اساس قیمت مرجع، سطوح رُند را به‌صورت متقارن می‌سازد تا
           به fib_cluster / fib_cluster_cfg پاس بدهیم.
         """
-        return round_levels(ref=ref_price, step=self.SR_STEP, count=self.SR_COUNT)
+        return round_levels(anchor=ref_price, step=self.SR_STEP, count=self.SR_COUNT)
 
     def to_cluster_kwargs(self) -> Dict[str, Any]:
         """
@@ -109,10 +109,10 @@ class FiboTestConfig:
         }
 
 
-""" --------------------------------------------------------------------------- OK Func3 (review:040924)
+""" --------------------------------------------------------------------------- OK Func3 (review:040924, 050214)
 هِلپر عمومی S/R: تولید سطوح رُندِ متقارن پیرامون ref
 """
-def round_levels(anchor: float, step: float, n: int = 10) -> List[float]:
+def round_levels(anchor: float, step: float, count: int = 10) -> List[float]:
     """
     تولید یک «شبکهٔ سطوح رُند» حول مقدار anchor با فاصلهٔ step.
     مثال: round_levels(1945.3, 10, n=5) → [1895, 1905, ..., 1995]
@@ -128,11 +128,11 @@ def round_levels(anchor: float, step: float, n: int = 10) -> List[float]:
         raise ValueError("step must be positive")
 
     base = np.floor(anchor / step) * step  # کف رند نزدیک
-    levels = [base + k * step for k in range(-n, n + 1)]
+    levels = [base + k * step for k in range(-count, count + 1)]
     return sorted(levels)
 
 
-""" --------------------------------------------------------------------------- OK Func4 (review:040924)
+""" --------------------------------------------------------------------------- OK Func4 (review:040924, 050214)
 استخراج نمای استانداردِ OHLC برای TF خواسته‌شده از روی ستون‌های پیشونددار.
 خروجی: DataFrame با ستون‌های ['open','high','low','close','volume','spread'] (هر کدام که موجود باشد)
 """
@@ -158,7 +158,7 @@ def get_ohlc_view(df: pd.DataFrame, tf: str) -> pd.DataFrame:
     return out
 
 
-""" --------------------------------------------------------------------------- OK Func5 (review:040924)
+""" --------------------------------------------------------------------------- OK Func5 (review:040924, 050214)
 یک هلپر عمومی برای انتخاب اولین ستون موجود از چند نامِ کاندید.
 اولین ستونی که در دیتافریم موجود است را برمی‌گرداند؛ در غیر این‌صورت None.
 """
@@ -178,11 +178,11 @@ def pick_first_existing(df: pd.DataFrame, candidates: Sequence[str]) -> Optional
 مثال:
  {
   "M30": TFView(tf="M30", cols={"open":"M30_open", "high":"M30_high", "low":"M30_low", "close": "M30_close",
-      # اگر ستون‌های دیگری مثل volume/spread هم داشتیم، اینجا اضافه می‌شدند
-                                }
+                                # اگر ستون‌های دیگری مثل volume/spread هم داشتیم، اینجا اضافه می‌شدند
+                               }
                 ),
-  "H1": TFView(tf="H1", cols={"open":"H1_open", "high":"H1_high", "low":"H1_low", "close": "H1_close",
-                                }
+  "H1":  TFView(tf="H1",  cols={"open":"H1_open", "high":"H1_high", "low":"H1_low", "close": "H1_close",
+                               }
                 )
 }
  """
@@ -245,10 +245,10 @@ def zscore(s: pd.Series, window: int, min_periods: int | None = None) -> pd.Seri
     return ((s - mean) / std.replace(0, np.nan)).astype("float32")
 
 
-""" --------------------------------------------------------------------------- OK Func10 (New 040921)
+""" --------------------------------------------------------------------------- OK Func10 (New 050208)
 True Range (برای ATR و ...)
 """
-def true_range_old(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:    
+def true_range_pandas(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:    
     """
     World-class True Range (TR)
     مطابق استاندارد Wilder's ATR
@@ -277,18 +277,8 @@ def true_range_old(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Seri
     return out.rename("true_range")
 
 
-""" --------------------------------------------------------------------------- OK Func11 (New 050124)
-Additions for swing/metrics
-Wilder/EMA/Classic ATR. Returns a pandas Series aligned with df.index.
-- این تابع ATR را بر اساس True Range محاسبه می‌کند.
-- روش‌ها:
-  * "classic": میانگین سادهٔ TR (SMA) با min_periods نیم‌پنجره (مطابق نسخهٔ خودت)
-  * "wilder" : هموارسازی وایلدر با α = 1/window
-  * "ema"    : هموارسازی نمایی رایج با α = 2/(window+1)
-- خروجی: Series هم‌تراز با df.index
-"""
 @njit(cache=True)
-def _true_range_numba(high, low, close):
+def _true_range_njit(high, low, close):
     length = high.size
     tr = np.empty(length)
     tr[0] = high[0] - low[0]  # first bar: standard TR definition
@@ -300,16 +290,144 @@ def _true_range_numba(high, low, close):
         tr[i] = max(h_l, h_pc, l_pc)
     return tr
 
+# --- WRAPPERs ---
 def true_range(high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    if len(high) < 500_000:
+        return true_range_pandas(high=high, low=low, close=close)
     idx = close.index
     high = high.to_numpy(np.float64)
     low = low.to_numpy(np.float64)
     close = close.to_numpy(np.float64)
-    out = _true_range_numba(high, low, close)
+    out = _true_range_njit(high, low, close)
     return pd.Series(out, index=idx, dtype="float64", name="true_range")
 
+""" --------------------------------------------------------------------------- OK Func11 (New 050208)
+Exponential Moving Average (EMA)  ==>  alpha = 2/(n+1)
+"""
+def _ema_numpy(s: pd.Series, n: int, min_periods: int = None) -> pd.Series:
+    """
+    Ultra-fast EMA compatible with TA-Lib / TradingView
+    - Initialization = SMA(n)
+    - No look-ahead
+    - Supports min_periods
+    - MUCH faster than pandas.ewm on multi-million rows
+    """
+    if s is None:
+        logger.warning("ema_fast(): input is None")
+        return pd.Series(dtype="float64", name=f"ema_{n}")
+
+    arr = s.to_numpy(dtype=np.float64)
+    length = len(arr)
+
+    if length == 0:
+        return pd.Series(dtype="float64", index=s.index, name=f"ema_{n}")
+
+    out = np.full(length, np.nan, dtype=np.float64)
+
+    alpha = 2.0 / (n + 1)
+
+    # ------------ Case 1: data shorter than min_periods ------------
+    if length < min_periods:
+        return pd.Series(out, index=s.index, dtype="float64", name=f"ema_{n}")
+
+    # ------------ Case 2: data >= min_periods ------------
+
+    # ---- warm-up sum for SMA initialization ----
+    if length >= n:
+        sma_init = np.sum(arr[:n]) / n
+        ema_prev = sma_init
+        start = n - 1
+        out[start] = sma_init
+    else:
+        # When length < n but >= min_periods
+        # Warm-up SMA with available data (partial window)
+        sma_init = np.sum(arr[:length]) / length
+        ema_prev = sma_init
+        start = length - 1
+        out[start] = sma_init
+
+    # ---- recursive EMA ----
+    for i in range(start + 1, length):
+        ema_prev = arr[i] * alpha + ema_prev * (1 - alpha)
+        out[i] = ema_prev
+
+    # ---- min_periods handling ----
+    # We fill valid values from (min_periods - 1) onward
+    if start > (min_periods - 1):
+        # warm-up from min_periods-1 to start-1 with SMA(min_window)
+        # like pandas (progressive warm-up)
+        for t in range(min_periods - 1, start):
+            k = t + 1
+            window_mean = np.sum(arr[:k]) / k
+            out[t] = window_mean
+
+    # done
+    return pd.Series(out, index=s.index, dtype="float64", name=f"ema_{n}")
+
 @njit(cache=True)
-def _rma_wilder(tr, window):
+def _ema_njit(tr, window, min_periods):
+    n = len(tr)
+    out = np.empty(n, dtype=np.float64)
+    alpha = 2.0 / (window + 1)
+
+    # --- fill all with NaN initially ---
+    for i in range(n):
+        out[i] = np.nan
+
+    if n < min_periods:
+        return out
+
+    # --------------------------------------------------
+    # 1) Progressive warm-up (partial SMA)
+    # --------------------------------------------------
+    s = 0.0
+    limit = window if n >= window else n
+
+    for i in range(limit):
+        s += tr[i]
+
+        if i >= min_periods - 1:
+            out[i] = s / (i + 1)
+
+    # --------------------------------------------------
+    # 2) If we have full window → switch to real EMA
+    # --------------------------------------------------
+    if n >= window:
+        e = s / window
+        out[window - 1] = e
+
+        for i in range(window, n):
+            e = (tr[i] * alpha) + (e * (1.0 - alpha))
+            out[i] = e
+
+    return out
+
+# --- Wrapper ---
+def ema(s: pd.Series, n: int, min_periods: int = None) -> pd.Series:
+
+    # --- normalize min_periods ---
+    if min_periods is None:
+        min_periods = n
+    if min_periods < 1:
+        min_periods = 1
+    if min_periods > n:
+        min_periods = n
+
+    if len(s) < 750_000:   # بصورت تجربی و با سعی و خطا بدست آمده است
+        return _ema_numpy(s=s, n=n, min_periods=min_periods)
+    else:
+        idx = s.index
+        s = s.to_numpy(np.float64)
+        out = _ema_njit(tr=s, window=n, min_periods=min_periods)
+        return pd.Series(out, index=idx, dtype="float64", name=f"ema_{n}")
+
+
+""" --------------------------------------------------------------------------- OK Func12 (New 050208)
+Compute ATR (ATR)
+"""
+
+@njit(cache=True)
+def _rma_wilder(tr, window):     # ==> alpha = 1/n
     n = tr.size
     out = np.empty(n, dtype=np.float64)
     alpha = 1.0 / window
@@ -331,15 +449,26 @@ def _rma_wilder(tr, window):
         out[i] = np.nan
     return out
 
+
 @njit(cache=True)
-def _sma_classic(tr, window):
+def _sma_classic(tr, window, min_periods=None):           # by loops
+    if min_periods is None:
+        min_periods = window
+    if min_periods < 1:
+        min_periods = 1
+    if min_periods > window:
+        min_periods = window
+
     n = len(tr)
     out = np.empty(n, dtype=np.float64)
     s = 0.0
 
     for i in range(window - 1):
-        out[i] = np.nan
         s += tr[i]
+        if i >= min_periods - 1:
+            out[i] = s / (i + 1)
+        else:
+            out[i] = np.nan
 
     s += tr[window - 1]
     out[window - 1] = s / window
@@ -352,47 +481,62 @@ def _sma_classic(tr, window):
 
     return out
 
-@njit(cache=True)
-def _ema(tr, window):
-    n = len(tr)
-    out = np.empty(n, dtype=np.float64)
-    alpha = 2.0 / (window + 1)
+def _sma_classic_vecnumpy(tr, window, min_periods=None):  # NOT USED, But: NOT DELETE
+    tr = np.asarray(tr, dtype=np.float64)
+    n = tr.size
 
-    # warmup: SMA initial
-    s = 0.0
-    for i in range(window):
-        s += tr[i]
-    e = s / window
-    out[window - 1] = e
+    if min_periods is None:
+        min_periods = window
 
-    # recursive EMA
-    for i in range(window, n):
-        e = (tr[i] * alpha) + (e * (1 - alpha))
-        out[i] = e
+    min_periods = max(1, min(min_periods, window))
 
-    # leading NaN
-    for i in range(window - 1):
-        out[i] = np.nan
+    out = np.full(n, np.nan, dtype=np.float64)
+
+    csum = np.cumsum(tr)
+
+    # progressive means (for min_periods < window)
+    idx = np.arange(min_periods - 1, min(window, n))
+    if idx.size > 0:
+        out[idx] = csum[idx] / (idx + 1)
+
+    # full window SMA
+    if n >= window:
+        out[window - 1:] = (csum[window - 1:] - np.concatenate(([0.0], csum[:-window]))) / window
+
     return out
 
-def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "wilder") -> pd.Series:
+
+# --- Main Function ---
+def compute_atr(
+        df: pd.DataFrame,
+        window: int = 14,
+        method: str = "wilder",
+        min_periods: int = None,  # if None: min_periods = window
+    ) -> pd.Series:
     """
-    Production-grade ATR function (hybrid interface).
+    Wilder/EMA/Classic ATR. Returns a pandas Series aligned with df.index (hybrid interface).
 
     Parameters
     ----------
     df : ['high', 'low', 'close'] pandas Dataframe
     window : int, ATR window
-    method : str, one of ['wilder', 'classic', 'ema']
+    method : str, one of ['classic', 'wilder', 'ema']
+        "classic": میانگین سادهٔ TR (SMA) با min_periods نیم‌پنجره (مطابق نسخهٔ خودت)
+        "wilder" : هموارسازی وایلدر با α = 1/window
+        "ema"    : هموارسازی نمایی رایج با α = 2/(window+1)
+    min_periods  : حداقل دیتاهای لازم برای شروع محاسبات در پنجره
+                   اگر تعریف نشود، برابر با طول پنجره در نظر گرفته میشود
 
     Returns
     -------
-    ATR : pd.Series float64
+    ATR : pd.Series float64, aligned with df.index
     """
     # --- نگهبان‌های ورودی ---
     # t1 = datetime.now() ######################========############
     if window < 1:
         raise ValueError("window must be >= 1")
+    if min_periods is None:
+        min_periods = window
     if not {"high", "low", "close"}.issubset(set(df.columns)):
         raise ValueError("DF must contain columns: high, low, close")
     # t2 = datetime.now() ######################========############
@@ -404,7 +548,7 @@ def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "wilder") -> p
 
 
     # --- True Range ---
-    tr = _true_range_numba(high, low, close)
+    tr = _true_range_njit(high, low, close)
     # t4 = datetime.now() ######################========############
 
     # --- نرمال‌سازی روش ---
@@ -414,9 +558,10 @@ def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "wilder") -> p
     if m == "wilder":
         out = _rma_wilder(tr, window)
     elif m == "classic":
-        out = _sma_classic(tr, window)
+        out = _sma_classic(tr, window, min_periods)
+        # out = _sma_classic_vecnumpy(tr, window, min_periods)  # NOT DELETE
     elif m == "ema":
-        out = _ema(tr, window)
+        out = ema(tr, window, min_periods)
     else:
         raise ValueError(f"Invalid ATR mode: {method}. Use wilder/classic/ema.")
     # t6 = datetime.now() ######################========############
@@ -428,9 +573,8 @@ def compute_atr(df: pd.DataFrame, window: int = 14, method: str = "wilder") -> p
     return pd.Series(out.astype(np.float64), index=df.index, name="atr_hybrid")
 
 
-""" --------------------------------------------------------------------------- OK Func12
+""" --------------------------------------------------------------------------- OK Func13
 Swing Detection (H/L)
-
 English:
     Local swing detection without SciPy:
     - A point is swing-high if it's the maximum in a ±min_distance window.
@@ -442,11 +586,6 @@ Persian:
     - فیلتر اختیاری بر اساس prominence و همچنین آستانهٔ ATR (atr_mult * ATR)
 
 # نکته: price باید ایندکس زمانی UTC و مرتب داشته باشد.
-
-تشخیص قله/کف محلی بدون SciPy:
-    - نقطه swing-high اگر در پنجرهٔ ±min_distance بیشینه باشد.
-    - نقطه swing-low  اگر در پنجرهٔ ±min_distance کمینه باشد.
-    - فیلتر اختیاری با prominence و همچنین آستانهٔ ATR (atr_mult * ATR).
 
 ورودی‌ها:
     price: Series اندیس‌گذاری‌شده بر حسب زمان (UTC)
@@ -461,7 +600,7 @@ Persian:
     kind ∈ {'H','L'}
 
 """
-def detect_swings(
+def detect_swings_old1(   # بر اساس (یک) سری است. نه بر اساس سریهای (سقف وکف)
     price: pd.Series,
     prominence: Optional[float] = None,   # معنی: برجستگی، امتیاز، برتری- حداقل برجستگی یک کندل نسبت به دو کندل مجاورش
     min_distance: int = 5,                # نصف پهنای پنجره لغزان
@@ -499,13 +638,12 @@ def detect_swings(
         if not (is_high or is_low):
             continue
 
-        prom_left  = abs(price.iloc[i] - price.iloc[i-1])  # prom_left  = abs(p - left.iloc[-1])
-        prom_right = abs(price.iloc[i] - price.iloc[i+1])  # prom_right = abs(p - right.iloc[0])        
+        prom_left  = abs(p - price.iloc[i-1])  # prom_left  = abs(p - left.iloc[-1])
+        prom_right = abs(p - price.iloc[i+1])  # prom_right = abs(p - right.iloc[0])        
 
         # فیلتر ساده پرومیننس: فاصله از نزدیک‌ترین همسایهٔ طرفین
         if (prominence is not None) and (prominence > 0):
-            prom_ok = (prom_left >= prominence) and (prom_right >= prominence)
-            if not prom_ok:
+            if ((prom_left < prominence) or (prom_right < prominence)):
                 continue
 
         # فیلتر مبتنی بر ATR (اگر دادهٔ ATR و ضریب atr_mult داده شده باشد)
@@ -543,8 +681,363 @@ def detect_swings(
     
     return swings
 
+def detect_swings_new1(   # براساس زیگزاگ است. اما با همان پارامترهای تابع قدیمی
+    high: pd.Series,
+    low: pd.Series,
+    prominence: Optional[float] = None,
+    min_distance: int = 5, 
+    atr: Optional[pd.Series] = None,
+    atr_mult: Optional[float] = None,
+    tf: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    تشخیص Swing High / Swing Low بر اساس سری‌های high و low.
+    سازگار با الگوریتم zigzag موجود در پروژه.
+    خروجی:
+        index = timestamp
+        price
+        kind = {"H","L"}
+        atr
+        tf
+    """
 
-""" --------------------------------------------------------------------------- OK Func13
+    # --------------- Validation ---------------
+    if not isinstance(high, pd.Series) or not isinstance(low, pd.Series):
+        raise TypeError("high and low must be pandas Series indexed by time")
+
+    if not high.index.equals(low.index):
+        raise ValueError("high and low must have the same index")
+
+    if not high.index.is_monotonic_increasing:
+        high = high.sort_index(kind="stable")
+        low = low.sort_index(kind="stable")
+
+    n = len(high)
+    if n < (2 * min_distance + 1):
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    # --------------- Zigzag پارامترهای ---------------
+    depth = int(min_distance)
+    backstep = depth
+    deviation = prominence or 0.0
+
+    # --------------- اجرای ZigZag اصلی پروژه ---------------
+    zz = zigzag(
+        high=high,
+        low=low,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+        final_check = True,
+    )
+
+    # --------------- استخراج نقاط Pivot ---------------
+    piv = zz[zz["state"] != 0].copy()
+    if piv.empty:
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    # state: +1 = high swing , -1 = low swing
+    piv["kind"] = np.where(piv["state"] == 1, "H", "L")
+    piv["price"] = np.where(piv["state"] == 1, piv["high_zz"], piv["low_zz"])
+
+    # --------------- ATR فیلترینگ ---------------
+    if atr is not None:
+        piv["atr"] = atr.reindex(piv.index).astype(float)
+    else:
+        piv["atr"] = np.nan
+
+    if atr is not None and atr_mult is not None and atr_mult > 0:
+        prev_price = high.reindex(piv.index).shift(1)
+        diff = (piv["price"] - prev_price).abs()
+        piv = piv[diff >= piv["atr"] * atr_mult]
+
+    # --------------- افزودن tf ---------------
+    piv["tf"] = tf
+
+    # خروجی نهایی
+    out = piv[["price", "kind", "atr", "tf"]].copy()
+    out.index = pd.to_datetime(out.index, utc=True)
+
+    return out
+
+""" -------------------------------------
+Base: استخراج پیوت های قطعی و قابل اعتماد => تنها نسخهٔ مناسب فیچر.
+"""
+def detect_swings_new20(   # براساس زیگزاگ است با پارامترهای جدید برای تابع
+    high: pd.Series,
+    low: pd.Series,
+    *,
+    depth: int,
+    deviation: float = 0.0,
+    backstep: Optional[int] = None,
+    atr: Optional[pd.Series] = None,
+    atr_mult: Optional[float] = None,
+    tf: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    این نسخه همان base / feature-ready / pivot-based swing detector است
+    که باید در ساخت فیبوناچی و تمام فیچرهای training-backtest-live استفاده شود
+    -------------------------
+    World-class swing extractor built on top of zigzag().
+
+    Inputs:
+        high, low : pd.Series (same index, monotonic)
+        depth     : zigzag depth
+        deviation : zigzag deviation
+        backstep  : zigzag backstep (default = depth)
+        atr       : optional ATR series
+        atr_mult  : ATR filter multiplier
+        tf        : timeframe label
+
+    Output DataFrame:
+        index : timestamp (UTC)
+        price : swing price (high or low)
+        kind  : "H" | "L"
+        atr   : ATR value at swing (if provided)
+        tf    : timeframe tag
+    """
+
+    # ---------- Validation ----------
+    if not isinstance(high, pd.Series) or not isinstance(low, pd.Series):
+        raise TypeError("high and low must be pandas Series")
+
+    if not high.index.equals(low.index):
+        raise ValueError("high and low must share the same index")
+
+    if depth <= 0:
+        raise ValueError("depth must be positive")
+
+    if backstep is None:
+        backstep = depth
+
+    if not high.index.is_monotonic_increasing:
+        high = high.sort_index(kind="stable")
+        low = low.sort_index(kind="stable")
+
+    if len(high) < depth * 2 + 1:
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    # ---------- ZigZag Core ----------
+    zz = zigzag(
+        high=high,
+        low=low,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+    )
+
+    piv = zz.loc[zz["state"] != 0, ["state", "high_zz", "low_zz"]].copy()
+    if piv.empty:
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    # ---------- Swing Extraction ----------
+    piv["kind"] = np.where(piv["state"] == 1, "H", "L")
+    piv["price"] = np.where(piv["state"] == 1, piv["high_zz"], piv["low_zz"])
+
+    # ---------- ATR ----------
+    if atr is not None:
+        piv["atr"] = atr.reindex(piv.index).astype(float)
+    else:
+        piv["atr"] = np.nan
+
+    if atr is not None and atr_mult and atr_mult > 0:
+        prev = piv["price"].shift(1)
+        piv = piv[(piv["price"] - prev).abs() >= piv["atr"] * atr_mult]
+
+    # ---------- Final Output ----------
+    out = piv[["price", "kind", "atr"]].copy()
+    out["tf"] = tf
+    out.index = pd.to_datetime(out.index, utc=True)
+
+    return out
+
+def detect_swings_new21(   # محاسبه ATR در همین تابع انجام میشود.
+    df: pd.DataFrame,
+    *,
+    depth: int,
+    deviation: float = 0.0,
+    backstep: Optional[int] = None,
+    # atr: Optional[pd.Series] = None,
+    atr_mult: Optional[float] = None,
+    tf: Optional[str] = None,
+) -> pd.DataFrame:
+    """
+    این نسخه همان base / feature-ready / pivot-based swing detector است
+    که باید در ساخت فیبوناچی و تمام فیچرهای training-backtest-live استفاده شود
+    -------------------------
+    World-class swing extractor built on top of zigzag().
+
+    Inputs:
+        high, low : pd.Series (same index, monotonic)
+        depth     : zigzag depth
+        deviation : zigzag deviation
+        backstep  : zigzag backstep (default = depth)
+                    atr       : optional ATR series ( => Deleted)
+        atr_mult  : ATR filter multiplier
+        tf        : timeframe label
+
+    Output DataFrame:
+        index : timestamp (UTC)
+        price : swing price (high or low)
+        kind  : "H" | "L"
+                    atr   : ATR value at swing (if provided) ( => Deleted)
+        tf    : timeframe tag
+    """
+
+    # ---------- Validation ----------
+    high = df["high"]
+    low  = df["low"]
+
+    if not isinstance(high, pd.Series) or not isinstance(low, pd.Series):
+        raise TypeError("high and low must be pandas Series")
+
+    if not high.index.equals(low.index):
+        raise ValueError("high and low must share the same index")
+
+    if depth <= 0:
+        raise ValueError("depth must be positive")
+
+    if backstep is None:
+        backstep = depth
+
+    if not high.index.is_monotonic_increasing:
+        high = high.sort_index(kind="stable")
+        low = low.sort_index(kind="stable")
+
+    if len(high) < depth * 2 + 1:
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+
+    atr_window = depth
+    method = "wilder"
+    min_periods = atr_window
+    atr = compute_atr(df=df, window=atr_window, method=method, min_periods=min_periods)
+
+    # ---------- ZigZag Core ----------
+    zz = zigzag(
+        high=high,
+        low=low,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+    )
+
+    piv = zz.loc[zz["state"] != 0, ["state", "high_zz", "low_zz"]].copy()
+    if piv.empty:
+        return pd.DataFrame(columns=["price", "kind", "atr", "tf"])
+
+    # ---------- Swing Extraction ----------
+    piv["kind"] = np.where(piv["state"] == 1, "H", "L")
+    piv["price"] = np.where(piv["state"] == 1, piv["high_zz"], piv["low_zz"])
+
+    # ---------- ATR ----------
+    if atr is not None:
+        piv["atr"] = atr.reindex(piv.index).astype(float)
+    else:
+        piv["atr"] = np.nan
+
+    if atr is not None and atr_mult and atr_mult > 0:
+        prev = piv["price"].shift(1)
+        piv = piv[(piv["price"] - prev).abs() >= piv["atr"] * atr_mult]
+
+    # ---------- Final Output ----------
+    out = piv[["price", "kind", "atr"]].copy()
+    out["tf"] = tf
+    out.index = pd.to_datetime(out.index, utc=True)
+
+    return out
+
+def detect_swings(   # tf حذف شد- همراه با تغییرات دیگر
+    df: pd.DataFrame,
+    *,
+    depth: int,
+    deviation: float = 0.0,
+    backstep: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    این نسخه همان base / feature-ready / pivot-based swing detector است
+    که باید در ساخت فیبوناچی و تمام فیچرهای training-backtest-live استفاده شود
+    -------------------------
+    World-class swing extractor built on top of zigzag().
+
+    Inputs:
+        df        : pd.DataFrame (same index, monotonic)
+        depth     : zigzag depth
+        deviation : zigzag deviation
+        backstep  : zigzag backstep (default = depth)
+
+    Output DataFrame:
+        index : timestamp (UTC)
+        price : swing price (high or low)
+        kind  : "H" | "L"
+        atr   : atr values
+    """
+
+    # ---------- Validation ----------
+    # --- df ---
+    if not df.index.is_monotonic_increasing:
+        df = df.sort_index(kind="stable")
+    
+    # --- hlc ---
+    required = {"high", "low", "close"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"df is missing required columns: {sorted(missing)}")
+    
+    # --- depth ---
+    if not isinstance(depth, int) or depth <= 0:
+        raise ValueError("depth must be a positive integer")
+
+    # --- backstep ---
+    if backstep is None:
+        backstep = depth
+    if not isinstance(backstep, int) or backstep <= 0:
+        raise ValueError("backstep must be a positive integer")
+    
+    # --- len ---
+    high = df["high"]
+    low  = df["low"]
+    if len(high) < depth * 2 + 1:
+        return pd.DataFrame(columns=["price", "kind", "atr"])
+
+    # --- atr parameters ---
+    atr_window = depth
+    method = "wilder"
+    min_periods = atr_window
+    atr = compute_atr(df=df, window=atr_window, method=method, min_periods=min_periods)
+
+    # ---------- ZigZag Core ----------
+    zz = zigzag(
+        high=high,
+        low=low,
+        depth=depth,
+        deviation=deviation,
+        backstep=backstep,
+    )
+
+    piv = zz.loc[zz["state"] != 0, ["state", "high_zz", "low_zz"]].copy()
+    if piv.empty:
+        return pd.DataFrame(columns=["price", "kind", "atr"])
+
+    # ---------- Swing Extraction ----------
+    piv["kind"] = np.where(piv["state"] == 1, "H", "L")
+    piv["price"] = np.where(piv["state"] == 1, piv["high_zz"], piv["low_zz"])
+
+    # ---------- ATR ----------
+    if atr is not None:
+        piv["atr"] = atr.reindex(piv.index).astype(float)
+    else:
+        piv["atr"] = np.nan
+
+    # ---------- Final Output ----------
+    out = piv[["price", "kind", "atr"]].copy()
+    out.index = pd.to_datetime(out.index, utc=True)
+
+    return out
+
+
+
+""" --------------------------------------------------------------------------- OK Func14
 Z-Score distance
 English: Return (x - mu) / sigma with small epsilon for stability.
 Persian: نرمال‌سازی فاصله با زی‌اسکور.
@@ -555,7 +1048,7 @@ def zscore_distance(x: float, mu: float, sigma: float, eps: float = 1e-12) -> fl
     return float((x - mu) / (s + eps))
 
 
-""" --------------------------------------------------------------------------- OK Func14
+""" --------------------------------------------------------------------------- OK Func15
 Nearest level distance
 English: Find nearest level to 'price' and return distances (signed/abs) and the level.
 Persian: نزدیک‌ترین سطح قیمتی به price را برمی‌گرداند.
@@ -577,7 +1070,7 @@ def nearest_level_distance(price: float, levels: Sequence[float]) -> Dict[str, f
     return {"nearest_level": float(clean[j]), "signed": float(diffs[j]), "abs": float(abs(diffs[j]))}
 
 
-""" --------------------------------------------------------------------------- OK Func15
+""" --------------------------------------------------------------------------- OK Func16
 ساخت سطوح فیبوی رتریسمنت برای «n لگ اخیر» از روی سوئینگ‌های بسته.
 منظور از سوئینگ بسته، سوئینگی است که بعد از آن یک سوئینگ مخالف شکل گرفته است و دیگر قابل تغییر نیست
 ورودی:
@@ -670,24 +1163,25 @@ def levels_from_recent_legs(
     return out
 
 
-# =====================================================================================
+# ===================================================================================== جدول زیر مانده
 # تست پوشش کد (برای توسعه‌دهندگان) 
 # =====================================================================================
 """ Func Names                           Used in Functions: ...
-                              1   2   3   4   5   6   7   8   9  10  11  12  13  14  15
-1  TFView                    --  --  --  --  --  ok  ok  --  --  --  --  --  --  --  --
-2  FiboTestConfig            --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-3  round_levels              --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
-4  get_ohlc_view             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-5  pick_first_existing       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-6  detect_timeframes         --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-7  slice_tf                  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-8  nan_guard                 --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-9  zscore                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-10 true_range                --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
-11 compute_atr               --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
-12 detect_swings             --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
-13 zscore_distance           --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-14 nearest_level_distance    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
-15 levels_from_recent_legs   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+                              1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16
+1  TFView                    --  --  --  --  --  ok  ok  --  --  --  --  --  --  --  --  --
+2  FiboTestConfig            --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used, Used in Test Files: check_wiring_fib_cluster.py)
+3  round_levels              --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --  --
+4  get_ohlc_view             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- Used in feature_engine.py
+5  pick_first_existing       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used)
+6  detect_timeframes         --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used)
+7  slice_tf                  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used)
+8  nan_guard                 --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- Used in feature_engine.py
+9  zscore                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used)
+10 true_range (wrapper)      --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  IMPORTANT +++
+11 ema        (wrapper)      --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  IMPORTANT +++
+12 compute_atr               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  IMPORTANT +++
+13 detect_swings             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  خیلی زیاد از این تابع استفاده شده
+14 zscore_distance           --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used)
+15 nearest_level_distance    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- Used in feature_registry.py
+16 levels_from_recent_legs   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- (Not Used, Used in Test Files: check_wiring_fib_cluster.py)
 """

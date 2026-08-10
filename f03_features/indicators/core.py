@@ -1,11 +1,11 @@
 # f03_features/indicators/core.py
 # Status in (Bot-RL-2): Final Review 1405/01/21
+#                       Reviewed at  1405/02/19
 """
 اندیکاتورهای پایه - Anti look-ahead
 شامل اندیکاتورهای:
 sma, ema, wma, rsi, roc, atr, macd, bollinger, keltner, stochastic,
 cci, mfi, obv, williams_r, parabolic_sar, heikin_ashi
-
 """
 
 # =============================================================================
@@ -19,7 +19,11 @@ from numba import njit
 import logging
 
 # ------------------ Importing Internal Modules ---------------------
-from .utils import true_range, compute_atr
+from .utils import (
+    true_range,
+    ema as ema_utils,
+    compute_atr
+)
 
 # -------------------- Logger for this module -----------------------
 logger = logging.getLogger(__name__)
@@ -37,7 +41,9 @@ logger.addHandler(logging.NullHandler())
 # ============================================================================= 1,2,3
 # Part-1: Averages
 # ============================================================================= OK
-def sma(s: pd.Series, n: int) -> pd.Series:      # was faster by numpy
+# تابع زیر فقط بخاطر سرعت بیشتری که دارد نگهداشته شده است
+# وگر چون min_periods را شامل نمیشود، باید حذف شود
+def sma_old(s: pd.Series, n: int) -> pd.Series:      # was faster by numpy
     """
     Simple Moving Average (SMA)
     - بدون look‑ahead
@@ -56,40 +62,72 @@ def sma(s: pd.Series, n: int) -> pd.Series:      # was faster by numpy
     out[n-1:] = (csum[n-1:] - np.concatenate(([0.0], csum[:-n]))) / n
     return pd.Series(out, index=s.index).rename(f"sma_{n}")
 
+def sma(s: pd.Series, n: int, min_periods: int = None) -> pd.Series:
+    """
+    Simple Moving Average (SMA)
+    - بدون look-ahead
+    - warm-up صحیح مطابق rolling(window=n, min_periods=...)
+    - سریع با numpy
+    """
+    if s is None or n <= 0:
+        return pd.Series(dtype="float64", name=f"sma_{n}")
+
+    # اگر min_periods داده نشده باشد، همان رفتار قدیمی را حفظ می‌کنیم
+    if min_periods is None:
+        min_periods = n
+
+    # min_periods باید بین 1 و n باشد
+    if min_periods <= 0:
+        min_periods = 1
+    if min_periods > n:
+        min_periods = n
+
+    values = s.to_numpy(dtype="float64")
+    length = len(values)
+    if length < min_periods:
+        logger.warning("sma() from core.py returns empty series.")
+        return pd.Series(np.full(length, np.nan, dtype="float64"), index=s.index).rename(f"sma_{n}")
+
+    # sums[i] = sum(values[:i])  (prefix sum with leading 0)
+    sums = np.concatenate(([0.0], np.cumsum(values)))
+
+    out = np.full(length, np.nan, dtype="float64")
+
+    # --- warm-up: window sizes 1..(n-1), but only from min_periods ---
+    # out[t] = mean(values[t-k+1 : t+1]) for k = min(t+1, n)
+    warm_end = min(n - 1, length - 1)
+    if warm_end >= (min_periods - 1):
+        t = np.arange(min_periods - 1, warm_end + 1)
+        k = t + 1  # window size for warm-up (since t < n)
+        out[t] = (sums[t + 1] - sums[t + 1 - k]) / k
+
+    # --- steady-state: full window n from index n-1 onward ---
+    if length >= n:
+        t2 = np.arange(n - 1, length)
+        out[t2] = (sums[t2 + 1] - sums[t2 + 1 - n]) / n
+
+    return pd.Series(out, index=s.index).rename(f"sma_{n}")
+
+
 # ---------------------------------------------------------
-def ema(s: pd.Series, n: int) -> pd.Series:      # was fast
+def ema(s: pd.Series, n: int, min_periods: int = None) -> pd.Series:
     """
     Exponential Moving Average (EMA)
     - بدون look-ahead
-    - warm-up استاندارد
-    - پیاده‌سازی سریع pandas
-    - First n-1 rows are NaN
+    - warm-up استاندارد و قابل تنظیم با min_periods
     """
+
     # ---------- Input validation ----------
-    # Case 1: any input is None → return truly empty float64 series
     if s is None:
         logger.warning("ema(): input is None. Returning empty series.")
         return pd.Series(dtype="float64", name=f"ema_{n}")
 
-    # Case 2: insufficient length → return aligned empty series
-    if len(s) < n:
-        logger.warning("ema(): input series too short. Returning empty aligned series.")
-        return pd.Series(index=s.index, dtype="float64", name=f"ema_{n}")
+    if len(s) == 0:
+        logger.warning("ema(): empty input series.")
+        return pd.Series(dtype="float64", index=s.index, name=f"ema_{n}")
 
-    # ---------- Core computation ----------
-    s_float = s.astype("float64")
-    result = s_float.ewm(span=n, adjust=False, min_periods=n).mean()
-    result[:n-1] = np.nan  # ensure proper warm-up
-    return result.rename(f"ema_{n}")
+    return ema_utils(s=s, n=n, min_periods=min_periods)
 
-def ema_new(s: pd.Series, n: int) -> pd.Series:  # این نسخه هنوز تست نشده است
-    # Exponential Moving Average (EMA)
-    if s is None or len(s) < n:
-        logger.warning("ema_new() from core.py returns empty series.")
-        return pd.Series(dtype="float64", name=f"ema_{n}")
-
-    s = s.astype("float64", copy=False)
-    return s.ewm(span=n, adjust=False, min_periods=n).mean().rename(f"ema_{n}")
 
 # ---------------------------------------------------------
 def wma(s: pd.Series, n: int) -> pd.Series:      # is faster
@@ -122,7 +160,8 @@ def wma(s: pd.Series, n: int) -> pd.Series:      # is faster
     result = np.full(length, np.nan, dtype="float64")
     result[n-1:] = conv
 
-    return pd.Series(result, index=s.index).rename(f"wma_{n}")
+    return pd.Series(result, index=s.index, name=f"wma_{n}")
+
 
 # ============================================================================= 4,5
 # Part-2: Ocilators
@@ -154,7 +193,7 @@ def rsi(
         return pd.Series(index=close.index, dtype="float64", name=f"rsi_{length}")
 
     # ---------- Core computation ----------
-    c = pd.Series(close).astype("float64")
+    c = pd.Series(close).astype("float64", copy=False)
     delta = c.diff()
 
     # gains and losses
@@ -179,7 +218,6 @@ def rsi(
     rsi_values[:length] = np.nan
 
     return rsi_values.rename(f"rsi_{length}")
-
 
 # ---------------------------------------------------------
 def roc(close: pd.Series, n: int = 10) -> pd.Series:
@@ -239,8 +277,11 @@ def atr_old(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> p
     atr_series[:n] = np.nan  # warm-up
     return atr_series.rename(f"atr_{n}")
 
-def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Series:
-    return compute_atr(pd.concat([high, low, close], axis=1), window=n, method="wilder")
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series,
+        n: int = 14, method: str = "wilder", min_periods: int = None) -> pd.Series:
+    return compute_atr(df=pd.concat([high, low, close], axis=1),
+                       window=n, method=method, min_periods=min_periods)
 
 # ============================================================================= 7
 # Part-4: MACD
@@ -935,6 +976,7 @@ def registry() -> IndicatorMap:
         "ha": make_ha,
         "tr": make_tr,  # 17: true_range
     }
+
 
 # =====================================================================================
 # تست پوشش کد (برای توسعه‌دهندگان) 

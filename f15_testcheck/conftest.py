@@ -32,5 +32,5 @@ def _redirect_processed_to_test_process(monkeypatch):
 
     # پچ روی هر دو ماژول استفاده‌کننده از paths_from_cfg
     monkeypatch.setattr(U, "paths_from_cfg", patched, raising=False)
-    import f02_data.data_handler as DH
+    import f02_data.OLD.data_handler as DH
     monkeypatch.setattr(DH, "paths_from_cfg", patched, raising=False)

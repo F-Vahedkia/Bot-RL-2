@@ -3,9 +3,10 @@
 
 import pandas as pd
 from pathlib import Path
-from f03_features.indicators.zigzag import zigzag
+from f03_features.indicators.zigzag import zigzag_wrapper as zigzag
 
 _PATH = "f16_test_results/"
+_PATH = ""
 # ------------------------------------------------------------
 # Loading Data
 # ------------------------------------------------------------
@@ -19,7 +20,7 @@ df.set_index("time", inplace=True)
 # ------------------------------------------------------------
 zzg = zigzag(
     high=df["high"], low=df["low"],
-    depth=12, deviation=5.0, backstep=10, point=0.01, addmeta=True,
+    depth=12, deviation=0.05, backstep=10, addmeta=True,
 )
 zzg.reset_index().to_csv(f"{_PATH}ts03_idx_zzg__2zigzag_1B_LegsMeta_Result.csv", index_label="no.")
 

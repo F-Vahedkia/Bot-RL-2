@@ -49,7 +49,7 @@ def normalize_equal_tf(legs_raw: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(mapped, columns=STD_COLS).reset_index(drop=True)
 
 
-def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+def normalize__df(df: pd.DataFrame) -> pd.DataFrame:
     """Force deterministic ordering and dtype consistency."""
     if df.empty:
         return pd.DataFrame(columns=STD_COLS)
@@ -96,7 +96,7 @@ res_zigzag_legs = zigzag_legs(
     use_timeshift=False,
 )
 
-actual_df = normalize_df(res_zigzag_legs)
+actual_df = normalize__df(res_zigzag_legs)
 
 pd.testing.assert_frame_equal(expected_df, actual_df)
 print("TEST 1 PASSED ✓")
@@ -120,7 +120,7 @@ zz_last = zigzag_mtf_adapter(
     use_timeshift=True,
 )
 
-expected_df = normalize_df(pd.DataFrame(
+expected_df = normalize__df(pd.DataFrame(
     zz_last.attrs.get("legs", []),
     columns=STD_COLS
 ))
@@ -138,7 +138,7 @@ res_zigzag_legs = zigzag_legs(
     use_timeshift=True,
 )
 
-actual_df = normalize_df(res_zigzag_legs)
+actual_df = normalize__df(res_zigzag_legs)
 
 pd.testing.assert_frame_equal(expected_df, actual_df)
 print("TEST 2 PASSED ✓")

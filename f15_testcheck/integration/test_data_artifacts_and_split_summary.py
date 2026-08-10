@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 
 from f10_utils.config_loader import load_config
-from f02_data.data_handler import DataHandler, BuildParams
+from f02_data.OLD.data_handler import DataHandler, BuildParams
 from f04_env.trading_env import TradingEnv, EnvConfig
 
 # ------------------------------

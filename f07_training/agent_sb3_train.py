@@ -330,7 +330,8 @@ def main() -> int:
     window = int(args.window or env_block.get("window_size", 128))
     normalize = bool(args.normalize or env_block.get("normalize", False))
 
-    # [AUTO-PUBLISH] ساخت/تزریق فیچرها به processed بر اساس cfg قبل از ساخت Env
+    # [AUTO-PUBLISH] --- start
+    # ساخت/تزریق فیچرها به processed بر اساس cfg قبل از ساخت Env
     """
     try:
         added_cols = ensure_published_from_cfg(cfg, symbol, base_tf)

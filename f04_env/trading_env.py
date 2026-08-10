@@ -18,10 +18,10 @@ import numpy as np
 import pandas as pd
 
 from f10_utils.config_loader import load_config
+from f10_utils.config_path_funcs import project_root
 from .base_env import BaseTradingEnv, StepResult
 from .rewards import RewardConfig, build_reward_fn
 from f04_env.utils import (
-    _project_root,
     read_processed,
     build_slices_from_ratios,
     time_slices, paths_from_cfg, slice_df_by_range,
@@ -171,7 +171,7 @@ class TradingEnv(BaseTradingEnv):
         """
         if not getattr(TradingEnv, "_columns_dumped", False):
             import csv; from pathlib import Path
-            d = Path(_project_root()) / "f15_testcheck/_MyFiles";
+            d = Path(project_root()) / "f15_testcheck/_MyFiles";
             d.mkdir(parents=True, exist_ok=True)
             tf = str(getattr(self, "_base_tf", getattr(self, "base_tf", "TF")))
             p = d / f"column_names_{tf}_parquet.csv"
@@ -554,7 +554,7 @@ class TradingEnv(BaseTradingEnv):
                        t_idx:int, t_global:int, split:str) -> None:
         """ خروجی یک ترید بسته‌شده در CSV برای دیباگ. مسیر پیش‌فرض را با ENV: F03_TRADE_CSV می‌توان تغییر داد."""
         try:
-            default_path = os.path.join(str(_project_root()), "f15_testcheck/_MyFiles", "trades_debug.csv")
+            default_path = os.path.join(str(project_root()), "f15_testcheck/_MyFiles", "trades_debug.csv")
             path = os.getenv("F03_TRADE_CSV", default_path)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             newf = not os.path.exists(path)
@@ -1371,7 +1371,7 @@ def _parse_args():
     import argparse
     p = argparse.ArgumentParser(description="Smoke test for TradingEnv")
     p.add_argument("--symbol", required=True)
-    p.add_argument("-c", "--config", default=str(_project_root()/"f01_config"/"config.yaml"))
+    p.add_argument("-c", "--config", default=str(project_root()/"f01_config"/"config.yaml"))
     p.add_argument("--base-tf", default=None)
     p.add_argument("--window", type=int, default=128)
     p.add_argument("--normalize", action="store_true")

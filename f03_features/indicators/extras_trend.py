@@ -7,16 +7,18 @@
 
 1. supertrend  -> OK
 2. adx_di      -> OK
-3. aroon       -> 
-4. kama        -> 
-5. dema        -> 
-6. tema        -> 
-7. hma         -> 
-8. ichimoku    -> 
-9. ma_slope    -> 
-10.rsi_zone    -> 
+3. aroon       -> OK
+4. kama        -> OK
+5. dema        -> OK
+6. tema        -> OK
+7. hma         -> OK
+8. ichimoku    -> OK
+9. ma_slope    -> OK
+10.rsi_zone    -> visually OK
 
-11.registry
+11.registry    -> OK
+
+_safe_div, adx_di, aroon, kama, dema, tema, hma, ichimoku, ma_slope, rsi_zone, registry
 """
 
 from __future__ import annotations
@@ -28,9 +30,14 @@ import logging
 from datetime import datetime
 
 from f03_features.indicators.core import (
-    sma, ema, wma,
+    sma as sma_core,
+    wma as wma_core,
     rsi as rsi_core,
     atr as atr_core
+)
+from f03_features.indicators.utils import (
+    ema         as ema_core,
+    # compute_atr as atr_utils,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,24 +70,16 @@ def _ensure_series(
     return s
 
 
-def _safe_div(
-    num: pd.Series,
-    den: pd.Series,
-    eps: float = 1e-12,
-) -> pd.Series:
-    """
-    Numerically-safe division: num / (den + eps), preserving index.
-    """
-    den_safe = den.copy()
-    den_safe = den_safe.where(den_safe.abs() > eps, np.nan)
-    out = num / den_safe
-    return out
-
+def _safe_div(num: pd.Series, den: pd.Series, eps: float = 1e-12) -> pd.Series:
+    den_safe = den.where(den.abs() > eps, np.nan)
+    out = num.divide(den_safe)
+    return out.replace([np.inf, -np.inf], np.nan)
 
 # =============================================================================
 # Supertrend (classic)
 # ============================================================================= OK 05/01/24
 
+# --- By numpy ----------------------------------
 def supertrend_numpy(
     high: pd.Series,
     low: pd.Series,
@@ -92,11 +91,12 @@ def supertrend_numpy(
     Supertrend indicator (causal, production safe).
     Returns float64 series aligned with input index.
     """
+    atr_series = atr_core(high, low, close, n=period)
+    
     h = high.to_numpy(dtype="float64", copy=False)
     l = low.to_numpy(dtype="float64", copy=False)
     c = close.to_numpy(dtype="float64", copy=False)
-
-    atrv = atr_core(high, low, close, n=period).to_numpy(dtype="float64", copy=False)
+    atrv = atr_series.to_numpy(dtype="float64", copy=False)
 
     hl2 = (h + l) * 0.5
     m = float(multiplier)
@@ -124,6 +124,7 @@ def supertrend_numpy(
 
     return pd.Series(st, index=close.index, dtype="float64")
 
+# ---- By njit ----------------------------------
 @njit(cache=True)
 def _supertrend_njit_core(high, low, close, atr, multiplier):
 
@@ -182,7 +183,7 @@ def supertrend_njit(
 
     return pd.Series(st, index=close.index, dtype=np.float64)
 
-# WRAPPER
+# --- Wrapper -----------------------------------
 def supertrend(
     high: pd.Series,
     low: pd.Series,
@@ -196,7 +197,7 @@ def supertrend(
     else:
         result = supertrend_njit(high, low, close, period, multiplier)
     
-    return result.rename(f"supertrend_{period}_{multiplier}")
+    return result.rename(f"supertrend_{period}_{multiplier}").astype("float32")
 
 
 # =============================================================================
@@ -401,10 +402,10 @@ def adx_di(
 
     # 4) خروجی pandas Series
     return (
-        pd.Series(plus_di,  index=idx, dtype="float64", name=f"plus_di_{window}"),
-        pd.Series(minus_di, index=idx, dtype="float64", name=f"minus_di_{window}"),
-        pd.Series(adx,      index=idx, dtype="float64", name=f"adx_{window}"),
-        pd.Series(adxr,     index=idx, dtype="float64", name=f"adxr_{window}"),
+        pd.Series(plus_di,  index=idx, dtype="float32", name=f"plus_di_{window}"),
+        pd.Series(minus_di, index=idx, dtype="float32", name=f"minus_di_{window}"),
+        pd.Series(adx,      index=idx, dtype="float32", name=f"adx_{window}"),
+        pd.Series(adxr,     index=idx, dtype="float32", name=f"adxr_{window}"),
     )
 
 
@@ -435,8 +436,8 @@ osc : pd.Series (float32)
 def aroon_numpy( high: pd.Series, low: pd.Series, n: int = 25
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
   
-    H = high.to_numpy()   # dtype=np.float64
-    L = low.to_numpy()    # dtype=np.float64
+    H = high.to_numpy("float64")
+    L = low.to_numpy(dtype=np.float64)
     N = len(H)
 
     idx_up  = np.full(N, np.nan, dtype=np.float64)
@@ -462,8 +463,8 @@ def _aroon_njit_core(high: np.ndarray, low: np.ndarray, n: int
 ) -> tuple[np.ndarray, np.ndarray ,np.ndarray]:
     
     N = len(high)
-    idx_up = np.empty(N, dtype=np.float32)
-    idx_down = np.empty(N, dtype=np.float32)
+    idx_up = np.empty(N, dtype=np.float64)
+    idx_down = np.empty(N, dtype=np.float64)
 
     # fill NaN بدنه
     for i in range(N):
@@ -488,7 +489,7 @@ def _aroon_njit_core(high: np.ndarray, low: np.ndarray, n: int
 def aroon_njit(high: pd.Series, low: pd.Series, n: int = 25
 ) -> tuple[pd.Series, pd.Series, pd.Series]:
 
-    h = high.to_numpy(dtype=np.float64)
+    h = high.to_numpy("float64")
     l = low.to_numpy(dtype=np.float64)
     up, down, osc = _aroon_njit_core(h, l, n)
     return up, down, osc
@@ -508,37 +509,19 @@ def aroon(high: pd.Series, low: pd.Series, n: int = 25
     else:
         up, down, osc = aroon_njit(high, low, n)
     return (
-        pd.Series(up,   index=high.index, dtype="float64", name=f"arron_up_{n}"),
-        pd.Series(down, index=high.index, dtype="float64", name=f"arron_down_{n}"),
-        pd.Series(osc,  index=high.index, dtype="float64", name=f"arron_osc_{n}"),
+        pd.Series(up,   index=high.index, dtype="float32", name=f"arron_up_{n}"),
+        pd.Series(down, index=high.index, dtype="float32", name=f"arron_down_{n}"),
+        pd.Series(osc,  index=high.index, dtype="float32", name=f"arron_osc_{n}"),
     )
 
 
 # =============================================================================
-# KAMA / DEMA / TEMA / HMA
+# KAMA
 # =============================================================================
 
-# --- KAMA (Kaufman Adaptive Moving Average) --------------
+# --- KAMA (Kaufman Adaptive Moving Average) -------------- OK 05/01/27
 def kama_orig(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Series:
-    """
-    Kaufman Adaptive Moving Average (KAMA), causal implementation.
 
-    Parameters
-    ----------
-    s : pd.Series
-        Input price series.
-    n : int, default 10
-        Efficiency ratio lookback.
-    fast : int, default 2
-        Fast EMA equivalent length.
-    slow : int, default 30
-        Slow EMA equivalent length.
-
-    Returns
-    -------
-    kama : pd.Series (float64)
-        Adaptive moving average.
-    """
     N = len(s)
     s = s.astype("float64")
 
@@ -546,7 +529,7 @@ def kama_orig(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Se
     volatility = s.diff().abs().rolling(n, min_periods=n).sum()
     volatility = volatility.replace(0.0, np.nan)
 
-    ef = _safe_div(change, volatility)     # ==> (Efficiency Ratio)
+    ef = _safe_div(change, volatility)   # ==> (Efficiency Ratio)
 
     fast_sc = 2.0 / (fast + 1.0)
     slow_sc = 2.0 / (slow + 1.0)
@@ -557,21 +540,22 @@ def kama_orig(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Se
     if N == 0:
         return out.astype("float64")
 
-    out.iloc[:n] = s.iloc[:n]
+    out.iloc[:n] = s.iloc[:n]   # ==> warm-up part of (KAMA) 
 
     for i in range(n, N):
         prev = out.iloc[i - 1]
         out.iloc[i] = prev + sc.iloc[i] * (s.iloc[i] - prev)   # ==> (KAMA)
 
-    return (
-        change    .astype("float64").rename("change"),
-        volatility.astype("float64").rename("volat"),
-        ef        .astype("float64").rename("ef"),
-        sc        .astype("float64").rename("sc"),
-        out       .astype("float64").rename("out")
-    )
+    # return (                                            # for debug
+    #     change    .astype("float64").rename("change"),  # for debug
+    #     volatility.astype("float64").rename("volat"),   # for debug
+    #     ef        .astype("float64").rename("ef"),      # for debug
+    #     sc        .astype("float64").rename("sc"),      # for debug
+    #     out       .astype("float64").rename("out")      # for debug
+    # )
     return out.astype("float64").rename(f"KAMA_{n}_{fast}_{slow}")
 
+# --- By numpy ----------------------------------
 def kama_numpy(arr: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Series:
     # arr = arr.astype(np.float64)
     idx = arr.index
@@ -624,7 +608,7 @@ def kama_numpy(arr: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd
 
     return pd.Series(out, index=idx, dtype=np.float64, name=f"KAMA_{n}_{fast}_{slow}")
 
-
+# ---- By njit ----------------------------------
 @njit
 def kama_njit_core(arr, n=10, fast=2, slow=30) -> np.ndarray:
     arr = arr.astype(np.float64)
@@ -695,25 +679,6 @@ def kama_njit_core(arr, n=10, fast=2, slow=30) -> np.ndarray:
     return out
 
 def kama_njit(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Series:
-    """
-    Production-grade pandas wrapper for KAMA (Numba core).
-
-    Parameters
-    ----------
-    s : pd.Series
-        Input price series (float compatible)
-    n : int
-        Efficiency ratio window
-    fast : int
-        Fast EMA period
-    slow : int
-        Slow EMA period
-
-    Returns
-    -------
-    pd.Series
-        KAMA values with same index
-    """
 
     if not isinstance(s, pd.Series):
         raise TypeError("Input must be a pandas Series")
@@ -732,12 +697,35 @@ def kama_njit(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Se
         kama_values, index=s.index, dtype=np.float64, name=f"KAMA_{n}_{fast}_{slow}"
     )
 
+# --- Wrapper -----------------------------------
 def kama(s: pd.Series, n: int = 10, fast: int = 2, slow: int = 30) -> pd.Series:
-    if len(s) < 200_000:
-        return kama_numpy(arr=s, n=n, fast=fast, slow=slow)
-    return kama_njit(s=s, n=n, fast=fast, slow=slow)
+    """
+    Parameters
+    ----------
+    s : pd.Series
+        Input price series (float compatible)
+    n : int, default 10
+        Efficiency ratio window
+    fast : int, default 2
+        Fast EMA period
+    slow : int, default 30
+        Slow EMA period
 
-# --- DEMA (Double Exponential Moving Average) ------------
+    Returns
+    -------
+    pd.Series
+        KAMA values with same index
+    """
+    s = s.astype("float64")
+    if len(s) < 200_000:
+        return kama_numpy(arr=s, n=n, fast=fast, slow=slow).astype("float32")
+    return kama_njit(s=s, n=n, fast=fast, slow=slow).astype("float32")
+
+
+# =============================================================================
+# DEMA / TEMA / HMA
+# =============================================================================
+# --- DEMA (Double Exponential Moving Average) ------------ OK 05/01/27
 def dema(s: pd.Series, n: int = 20) -> pd.Series:
     """
     Double Exponential Moving Average (DEMA).
@@ -754,13 +742,13 @@ def dema(s: pd.Series, n: int = 20) -> pd.Series:
     dema : pd.Series (float64)
     """
     s = s.astype("float64")
-    e = ema(s, n).astype("float64")
-    e2 = ema(e, n).astype("float64")
-    out = 2.0 * e - e2
-    return out.astype("float64")
+    e1 = ema_core(s, n).astype("float64")
+    e2 = ema_core(e1, n).astype("float64")
+    out = 2.0 * e1 - e2
+    return out.astype("float32")
 
 
-# --- TEMA (Triple Exponential Moving Average) ------------
+# --- TEMA (Triple Exponential Moving Average) ------------ OK 05/01/27
 def tema(s: pd.Series, n: int = 20) -> pd.Series:
     """
     Triple Exponential Moving Average (TEMA).
@@ -777,14 +765,14 @@ def tema(s: pd.Series, n: int = 20) -> pd.Series:
     tema : pd.Series (float64)
     """
     s = s.astype("float64")
-    e1 = ema(s, n).astype("float64")
-    e2 = ema(e1, n).astype("float64")
-    e3 = ema(e2, n).astype("float64")
+    e1 = ema_core(s, n).astype("float64")
+    e2 = ema_core(e1, n).astype("float64")
+    e3 = ema_core(e2, n).astype("float64")
     out = 3.0 * e1 - 3.0 * e2 + e3
-    return out.astype("float64")
+    return out.astype("float32")
 
 
-# --- HMA (Hull Moving Average) ---------------------------
+# --- HMA (Hull Moving Average) --------------------------- OK 05/01/27
 def hma(s: pd.Series, n: int = 20) -> pd.Series:
     """
     Hull Moving Average (HMA).
@@ -802,17 +790,17 @@ def hma(s: pd.Series, n: int = 20) -> pd.Series:
     """
     s = s.astype("float64")
     n2 = max(2, n // 2)
-    w1 = wma(s, n2).astype("float64")
-    w2 = wma(s, n).astype("float64")
+    w1 = wma_core(s, n2).astype("float64")
+    w2 = wma_core(s, n).astype("float64")
     diff = 2.0 * w1 - w2
-    out = wma(diff, int(np.sqrt(n))).astype("float64")
-    return out.astype("float64")
+    out = wma_core(diff, int(np.sqrt(n))).astype("float64")
+    return out.astype("float32")
 
 
 # =============================================================================
 # Ichimoku (Tenkan / Kijun / Senkou A / Senkou B)
 # NOTE: Chikou is intentionally excluded from the return to avoid look-ahead.
-# =============================================================================
+# ============================================================================= OK 05/01/28
 
 def ichimoku(
     high: pd.Series,
@@ -877,88 +865,295 @@ def ichimoku(
 
 # =============================================================================
 # MA Slope (normalized)
-# =============================================================================
+# ============================================================================= OK 05/02/09
 
-def ma_slope(
-    df: pd.DataFrame,
-    price_col: str = "close",
-    window: int = 20,
-    method: Literal["sma", "ema"] = "ema",
-    norm: Literal["stdev", "price", "none"] = "stdev",
-    eps: float = 1e-12,
+# --- Helpers for Multi-Step & Regression ------- start
+"""
+def _sma(series: pd.Series, window: int, min_periods: int = None):
+    if min_periods is None:
+        min_periods = max(2, window // 2)
+    return series.rolling(window=window, min_periods=min_periods).mean()
+
+def _ema(series: pd.Series, window: int, min_periods: int = None):
+    
+    if min_periods is None:
+        min_periods = max(2, window // 2)
+    return series.ewm(span=window, min_periods=min_periods, adjust=False).mean()
+
+def _atr(high: pd.Series, low: pd.Series, close: pd.Series, window: int, min_periods: int = None):
+    if min_periods is None:
+        min_periods = max(2, window // 2)
+    prev_close = close.shift(1)
+    tr = pd.concat([
+        (high - low).abs(),
+        (high - prev_close).abs(),
+        (low - prev_close).abs()
+    ], axis=1).max(axis=1)
+    return tr.rolling(window=window, min_periods=min_periods).mean()
+"""
+# --- Helpers for Multi-Step & Regression ------- end
+
+
+# --- Multi-Step Slope (quant‑grade) ------------ Main Function (050209)
+"""sample call:
+    ma_slope_multistep(
+        time_series=time_series,
+        window=window,
+        step=3
+        method="sma",
+        norm="atr",
+        high=high, low=low, close=close)
+"""
+def ma_slope_multistep(
+    time_series: pd.Series,
+    window: int,
+    method: Literal["sma", "ema"] = "sma",
+    step: int = 3,
+    norm: Literal["none", "price", "stdev", "atr"] = "atr",
+    norm_window: int = None,
+    # -------------
+    eps: float = 1e-9,             # for using in: _safe_div()
+    min_periods_ma: int = None,    # related to "window"
+    min_periods_norm: int = None,  # related to "norm_window"
+    # -------------
+    high: pd.Series = None,
+    low: pd.Series = None,
+    close: pd.Series = None,
 ) -> pd.Series:
     """
-    Normalized moving-average slope, suitable as a trend-strength feature.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Input dataframe, must contain `price_col`.
-    price_col : str, default "close"
-        Column to use for price.
-    window : int, default 20
-        MA and normalization window.
-    method : {"sma", "ema"}, default "ema"
-        Moving average type.
-    norm : {"stdev", "price", "none"}, default "stdev"
-        Normalization scheme:
-          - "stdev": slope / rolling std(price)
-          - "price": slope / |price|
-          - "none" : raw slope
-    eps : float, default 1e-12
-        Numerical epsilon for denominator.
-
-    Returns
-    -------
-    slope : pd.Series (float32)
-        Normalized slope with name f"ma_slope_{method}_{window}".
+    Production-grade MA slope.
+    slope = (MA_t - MA_{t-step}) / step
     """
-    if price_col not in df.columns:
-        raise ValueError(f"df must contain column '{price_col}'")
+    # 1) --- Initial check ---
+    if time_series is None or len(time_series) == 0:
+        raise ValueError(f"func: ma_slope_multistep, check time_series: {time_series}")
+    if window < 2:
+        raise ValueError(f"func: ma_slope_multistep, window is < 2")
+    if norm_window is None:
+        norm_window = window
+    if min_periods_ma is None:
+        min_periods_ma = max(2, window // 2)
+    if min_periods_norm is None:
+        min_periods_norm = max(2, norm_window // 2)
 
-    px = df[price_col].astype("float64")
+    time_series = time_series.astype(dtype="float64", copy=False)
 
-    if method == "ema":
-        ma = px.ewm(
-            span=window,
-            adjust=False,
-            min_periods=max(2, window // 2),
-        ).mean()
-    elif method == "sma":
-        ma = px.rolling(
-            window=window,
-            min_periods=max(2, window // 2),
-        ).mean()
+    # 2) --- MA ---
+    if method.lower() == "sma":
+        # ma =    _sma(time_series, window, min_periods=min_periods_ma) # NOT DELETE
+        ma = sma_core(time_series, window, min_periods=min_periods_ma)
+    elif method.lower() == "ema":
+        # ma =    _ema(time_series, window, min_periods=min_periods_ma) # NOT DELETE
+        ma = ema_core(time_series, window, min_periods=min_periods_ma)
+    else:
+        raise ValueError("method must be 'sma' or 'ema'")
+    
+    # 3) --- multi-step slope ---
+    slope = (ma - ma.shift(step)) / float(step)       # <== هسته اصلی
+
+    # 4) --- normalization ---
+    if norm == "none":
+        out = slope
+
+    elif norm == "price":
+        out = _safe_div(num=slope, den=time_series, eps=eps)
+
+    elif norm == "stdev":
+        st = time_series.rolling(norm_window, min_periods=min_periods_norm).std()
+        out = _safe_div(num=slope, den=st, eps=eps)
+
+    elif norm == "atr":
+        if high is None or low is None or close is None:
+            raise ValueError("ATR normalization requires high/low/close series.")
+        high = high.astype(dtype="float64", copy=False)
+        low = low.astype(dtype="float64", copy=False)
+        close = close.astype(dtype="float64", copy=False)
+        # atr = _atr(high, low, close, norm_window, min_periods=min_periods_norm) # NOT DELETE
+        atr = atr_core(high, low, close, 
+                       n=norm_window, method="classic", min_periods=min_periods_norm)
+        out = _safe_div(num=slope, den=atr, eps=eps)
+
+    else:
+        raise ValueError(f"Unknown norm mode: {norm}")
+
+    # 5) --- output ---
+
+    # print(f"==> window={window}")                     # for debug
+    # print(f"==> norm_window={norm_window}")           # for debug
+    # print(f"==> min_periods_ma={min_periods_ma}")     # for debug
+    # print(f"==> min_periods_norm={min_periods_norm}") # for debug
+
+    return out.astype("float32").rename(f"ma_slope_{method}{window}_step{step}_{norm}")
+
+
+# --- Helpers for Regression -------------------- start
+def _linreg_slope_rolling(series: pd.Series, window: int, min_periods: int = None):
+    """
+    Rolling linear regression slope using least squares.
+    x = 0..window-1
+    slope = (n*sum(xy) - sum(x)sum(y)) / (n*sum(x^2) - (sum(x))^2)
+    """
+    if min_periods is None:
+        min_periods = max(2, window // 2)
+
+    x = np.arange(window, dtype=float)
+    n = float(window)
+    sum_x = x.sum()
+    sum_x2 = (x * x).sum()
+    denom = (n * sum_x2 - sum_x * sum_x)
+    if denom == 0:
+        denom = 1e-12
+
+    # rolling sum(y)
+    sum_y = series.rolling(window, min_periods=min_periods).sum()
+
+    # rolling sum(x*y)
+    # استفاده از apply برای ضرب در بردار x
+    sum_xy = series.rolling(window, min_periods=min_periods).apply(
+        lambda v: np.dot(v, x), raw=True
+    )
+
+    slope = (n * sum_xy - sum_x * sum_y) / denom
+    return slope
+
+def _linreg_slope_rolling_fast(series: pd.Series, window: int, min_periods: int = None):
+    """
+    Fast rolling linear regression slope using rolling sums (no apply).
+    x = 0..N-1 (absolute index). Slope is invariant to x-shift.
+
+    Handles NaNs by masking (optional).
+    """
+
+    y = series.astype(float)
+    n = len(y)
+
+    x = pd.Series(np.arange(n, dtype=float), index=y.index)
+
+    # mask for NaNs (so sums align with valid y)
+    valid = y.notna().astype(float)
+
+    # rolling sums
+    sum_y  = y.rolling(window, min_periods=min_periods).sum()
+    sum_xy = (y * x).rolling(window, min_periods=min_periods).sum()
+
+    sum_x  = (x * valid).rolling(window, min_periods=min_periods).sum()
+    sum_x2 = (x * x * valid).rolling(window, min_periods=min_periods).sum()
+
+    count = valid.rolling(window, min_periods=min_periods).sum()
+
+    denom = (count * sum_x2 - sum_x * sum_x)
+    denom = denom.replace(0.0, np.nan)
+
+    slope = (count * sum_xy - sum_x * sum_y) / denom
+    return slope
+
+# --- Helpers for Regression -------------------- end
+
+
+# --- Regression Slope (Production‑Grade) ------- Main Function (050209)
+"""sample call:
+    ma_slope_regression(
+        time_series=time_series,
+        window=window,
+        reg_window=5
+        method="sma",
+        norm="atr",
+        high=high, low=low, close=close)
+"""
+def ma_slope_regression(
+    time_series: pd.Series,
+    window: int,
+    method: Literal["sma", "ema"] = "sma",
+    reg_window: int = None,        # طول پنجره رگرسیون
+    norm: Literal["none", "price", "stdev", "atr"] = "atr",
+    norm_window: int = None,
+    # -------------
+    eps: float = 1e-9,               # for using in: _safe_div()
+    min_periods_ma: int = None,      # related to "window"
+    min_periods_regwin: int = None,  # related to "reg_window"
+    min_periods_norm: int = None,    # related to "norm_window"
+    # -------------
+    high: pd.Series = None,
+    low: pd.Series = None,
+    close: pd.Series = None,
+) -> pd.Series:
+    """
+    Regression-based MA slope (least squares).
+    """
+    # 1) --- Initial check ---
+    if time_series is None or len(time_series) == 0:
+        raise ValueError(f"func: ma_slope_regression, check time_series: {time_series}")
+    if window < 2:
+        raise ValueError(f"func: ma_slope_regression, window is < 2")
+    if reg_window is None:
+        reg_window = window
+    if norm_window is None:
+        norm_window = window
+    if min_periods_ma is None:
+        min_periods_ma = max(2, window // 2)
+    if min_periods_regwin is None:
+        min_periods_regwin = max(2, reg_window // 2)
+    if min_periods_norm is None:
+        min_periods_norm = max(2, norm_window // 2)
+
+    time_series = time_series.astype(dtype="float64", copy=False)
+
+    # 2) --- MA ---
+    if method.lower() == "sma":
+        # ma =    _sma(time_series, window, min_periods=min_periods_ma) # NOT DELETE
+        ma = sma_core(time_series, window, min_periods=min_periods_ma)
+    elif method.lower() == "ema":
+        # ma =    _ema(time_series, window, min_periods=min_periods_ma) # NOT DELETE
+        ma = ema_core(time_series, window, min_periods=min_periods_ma)
     else:
         raise ValueError("method must be 'sma' or 'ema'")
 
-    slope = ma.diff()
+    # 3) --- Regression slope on MA ---
+    slope = _linreg_slope_rolling_fast(ma, reg_window, min_periods=min_periods_regwin)  # <== هسته اصلی
+    
+    # 4) --- normalization ---
+    if norm == "none":
+        out = slope
 
-    if norm == "stdev":
-        denom = px.rolling(
-            window=window,
-            min_periods=max(2, window // 2),
-        ).std()
-        slope = _safe_div(slope, denom + eps)
     elif norm == "price":
-        slope = _safe_div(slope, px.abs() + eps)
-    elif norm == "none":
-        pass
-    else:
-        raise ValueError("norm must be 'stdev', 'price', or 'none'")
+        out = _safe_div(num=slope, den=time_series, eps=eps)
 
-    slope = slope.astype("float32")
-    slope.name = f"ma_slope_{method}_{window}"
-    return slope
+    elif norm == "stdev":
+        st = time_series.rolling(norm_window, min_periods=min_periods_norm).std()
+        out = _safe_div(num=slope, den=st, eps=eps)
+
+    elif norm == "atr":
+        if high is None or low is None or close is None:
+            raise ValueError("ATR normalization requires high/low/close series.")
+        high = high.astype(dtype="float64", copy=False)
+        low = low.astype(dtype="float64", copy=False)
+        close = close.astype(dtype="float64", copy=False)
+        # atr = _atr(high, low, close, norm_window, min_periods=min_periods_norm) # NOT DELETE
+        atr = atr_core(high, low, close, 
+                       n=norm_window, method="classic", min_periods=min_periods_norm)
+        out = _safe_div(num=slope, den=atr, eps=eps)
+
+    else:
+        raise ValueError(f"Unknown norm mode: {norm}")
+
+    # 5) --- output ---
+
+    # print(f"==> window={window}")                          # for debug
+    # print(f"==> reg_window={reg_window}")                  # for debug
+    # print(f"==> norm_window={norm_window}")                # for debug
+    # print(f"==> min_periods_ma={min_periods_ma}")          # for debug
+    # print(f"==> min_periods_regwin={min_periods_regwin}")  # for debug
+    # print(f"==> min_periods_norm={min_periods_norm}")      # for debug
+
+    return out.astype("float32").rename(f"ma_slope_{method}{window}_reg{reg_window}_{norm}")
 
 
 # =============================================================================
 # RSI Zone flags / score
-# =============================================================================
+# ============================================================================= OK visual 05/02/09
 
 def rsi_zone(
-    df: pd.DataFrame,
-    price_col: str = "close",
+    s: pd.Series,
     period: int = 14,
     overbought: float = 70.0,
     oversold: float = 30.0,
@@ -970,10 +1165,8 @@ def rsi_zone(
 
     Parameters
     ----------
-    df : pd.DataFrame
-        Input dataframe, must contain `price_col`.
-    price_col : str, default "close"
-        Column used for RSI computation.
+    s : pd.Series
+        Series used for RSI computation.
     period : int, default 14
         RSI lookback length.
     overbought : float, default 70.0
@@ -994,10 +1187,10 @@ def rsi_zone(
         - rsi_is_oversold : bool
         - rsi_mid_zone : bool
     """
-    if price_col not in df.columns:
-        raise ValueError(f"df must contain column '{price_col}'")
+    # if price_col not in df.columns:
+    #     raise ValueError(f"df must contain column '{price_col}'")
 
-    px = df[price_col].astype("float64")
+    px = s.astype("float64")
     rsi = rsi_core(px, length=period).astype("float32")
 
     is_ob = (rsi >= overbought)
@@ -1011,7 +1204,7 @@ def rsi_zone(
             "rsi_is_oversold": is_os.astype(bool),
             "rsi_mid_zone": is_mid.astype(bool),
         },
-        index=df.index,
+        index=s.index,
     )
     return out
 
@@ -1034,7 +1227,7 @@ def registry() -> Mapping[str, Callable[..., Dict[str, pd.Series]]]:
         # اگر ایندکس‌ها یکی باشند، reindex هیچ سرباری ندارد و سریع عبور می‌کند.
         if not s.index.equals(target_index):
             s = s.reindex(target_index)
-        return s
+        return s.astype("float32", copy=False)
 
     def make_supertrend(
         df: pd.DataFrame,
@@ -1128,22 +1321,38 @@ def registry() -> Mapping[str, Callable[..., Dict[str, pd.Series]]]:
             f"ichi_span_b_{span_b}": _align(sb, idx),
         }
 
-    def make_ma_slope(
+    def make_ma_slope_step(
         df: pd.DataFrame,
         price_col: str = "close",
         window: int = 20,
         method: Literal["sma", "ema"] = "ema",
-        norm: Literal["stdev", "price", "none"] = "stdev",
+        step: int = 5,
+        norm: Literal["none", "price", "stdev", "atr"] = "stdev",
         **_,
     ) -> Dict[str, pd.Series]:
-        s = ma_slope(
-            df=df,
-            price_col=price_col,
-            window=window,
-            method=method,
-            norm=norm,
-        )
-        name = s.name if s.name else f"ma_slope_{method}_{window}"
+        s = ma_slope_multistep(
+            time_series=df[price_col],
+            window=window, method=method, step=step, norm=norm,
+            high=df["high"], low=df["low"], close=df["close"])
+        
+        name = s.name if s.name else f"ma_slope_{method}{window}_step{step}_{norm}"
+        return {name: _align(s, df.index)}
+    
+    def make_ma_slope_reg(
+        df: pd.DataFrame,
+        price_col: str = "close",
+        window: int = 20,
+        method: Literal["sma", "ema"] = "ema",
+        reg_window: int = 5,
+        norm: Literal["none", "price", "stdev", "atr"] = "stdev",
+        **_,
+    ) -> Dict[str, pd.Series]:
+        s = ma_slope_regression(
+            time_series=df[price_col],
+            window=window, method=method, reg_window=reg_window, norm=norm,
+            high=df["high"], low=df["low"], close=df["close"])
+        
+        name = s.name if s.name else f"ma_slope_{method}{window}_reg{reg_window}_{norm}"
         return {name: _align(s, df.index)}
 
     def make_rsi_zone(
@@ -1172,16 +1381,17 @@ def registry() -> Mapping[str, Callable[..., Dict[str, pd.Series]]]:
         return out
 
     return {
-        "supertrend": make_supertrend,
-        "adx": make_adx,
-        "aroon": make_aroon,
-        "kama": make_kama,
-        "dema": make_dema,
-        "tema": make_tema,
-        "hma": make_hma,
-        "ichimoku": make_ichimoku,
-        "ma_slope": make_ma_slope,
-        "rsi_zone": make_rsi_zone,
+        "supertrend"   : make_supertrend,
+        "adx"          : make_adx,
+        "aroon"        : make_aroon,
+        "kama"         : make_kama,
+        "dema"         : make_dema,
+        "tema"         : make_tema,
+        "hma"          : make_hma,
+        "ichimoku"     : make_ichimoku,
+        "ma_slope_step": make_ma_slope_step,
+        "ma_slope_reg" : make_ma_slope_reg,
+        "rsi_zone"     : make_rsi_zone,
     }
 
 # =============================================================================

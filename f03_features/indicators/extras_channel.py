@@ -4,7 +4,6 @@
 """Channel and volatility derived features (production-grade)."""
 
 from __future__ import annotations
-
 import numpy as np
 import pandas as pd
 from typing import Dict

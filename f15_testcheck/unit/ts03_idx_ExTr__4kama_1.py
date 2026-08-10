@@ -72,3 +72,4 @@ if results_df is not None:
 df = data[- 10_000:].copy()
 chang, volat, ef, sc, out = kama_orig(df["close"], n = 10, fast=2, slow=30)
 pd.concat([df["close"], chang, volat, ef, sc, out], axis=1).to_csv("ts03_idx_ExTr__4kama_2.csv")
+

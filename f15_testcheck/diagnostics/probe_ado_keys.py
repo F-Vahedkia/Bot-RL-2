@@ -5,7 +5,7 @@ import numpy as np, pandas as pd
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from f03_features.feature_registry import get_indicator
+from f03_features.OLD.feature_registry import get_indicator
 
 
 idx = pd.date_range("2022-01-01", periods=200, freq="min", tz="UTC")

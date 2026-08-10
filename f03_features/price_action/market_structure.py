@@ -12,7 +12,7 @@ import pandas as pd
 import numpy as np
 from typing import Literal
 
-from f03_features.indicators.zigzag import zigzag, zigzag_mtf_adapter
+from f03_features.indicators.zigzag import zigzag_wrapper as zigzag, zigzag_mtf_adapter
 from f03_features.indicators.utils import compute_atr
 from f03_features.indicators.levels import compute_adr
 

@@ -1,23 +1,30 @@
 # f03_features/indicators/ts03_idx_cor__1sma_ema_wma_1.py
 # Run: python -m f15_testcheck.unit.ts03_idx_cor__1sma_ema_wma_1
 
-#####################################################################
-# فایل تستر براساس داده های واقعی
-#####################################################################
-
 import pandas as pd
 from datetime import datetime
 
 from f03_features.indicators.core import (
-    sma_orig_slow, sma,
-    ema, ema_numpy_slow,
-    wma_slow, wma
+    sma_old, sma
+    # ema_old, ema, ema_fast,
+    # wma_slow, wma
 )
+# from f03_features.indicators.extras_trend import _sma
+# from f03_features.indicators.utils import (
+#     _ema_numpy,
+#     ema
+# )
+
+_PATH = "f16_test_results/"
+# _PATH = ""
+#####################################################################
+# فایل تستر براساس داده های واقعی
+#####################################################################
 
 # --- Load data -----------------------------------------------------
 t1 = datetime.now()
 data = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
-df = data[-1_000:].copy()
+df = data[-5_000:].copy()
 df["time"] = pd.to_datetime(df["time"], utc=True)
 df.set_index("time", inplace=True)
 
@@ -30,20 +37,42 @@ print(f"Time taken to load data: {round((t2 - t1).total_seconds(), 5)} seconds, 
 
 # --- Calling functions ---------------------------------------------
 funcs = {
-    "sma_orig_slow": sma_orig_slow,
+    "sma_old": sma_old,
     "sma": sma,
-    "ema": ema,
-    "eema_numpy_slow": ema_numpy_slow,
-    "wwma_slowa": wma_slow,
-    "wma": wma,
+    # "_sma": _sma,
+
+    # "ema_old": ema_old,
+    # "ema": ema,
+    # "_ema_numpy": _ema_numpy,
+    # "ema": ema,
+    # "ema_new1": ema_new1,
+    # "ema_new2": ema_new2,
+
+    # "wwma_slowa": wma_slow,
+    # "wma": wma,
 }
 # دیتافریم برای ذخیره همه نتایج
-results_df = pd.DataFrame(index=df.index)
+results_df = pd.DataFrame(data=df["close"] ,index=df.index)
 
 for name, func in funcs.items():
     t1 = datetime.now()
-    result = func(df["open"], n=20)
+    if name == "sma_old":
+        result = func(df["close"], n=14)
+    if name in {"sma", "_sma"}:
+        result = func(df["close"], 14, 7)
     t2 = datetime.now()
+
+    # t1 = datetime.now()
+    # if name in {"ema_utils"}:
+    #     result = func(df["close"], 14)
+    # if name in {"ema_fast", "ema_complete"}:
+    #     result = func(df["close"], 14, 7)
+    # t2 = datetime.now()
+
+    # t1 = datetime.now()
+    # result = func(s=df["close"], n=14, min_periods=7)
+    # t2 = datetime.now()
+
 
     elapsed = round((t2 - t1).total_seconds(), 3)
     print(f"Time taken to run {name}: {elapsed} seconds, length_df:{len(df)}")
@@ -52,4 +81,6 @@ for name, func in funcs.items():
 
 
 # --- Save results --------------------------------------------------
-results_df.to_csv("ts03_idx_cor__1sma_ema_wma_1.csv")
+full_path = f"{_PATH}ts03_idx_cor__1sma_ema_wma_1.csv"
+results_df.to_csv(full_path)
+print(f"\nCSV saved -> {full_path}")

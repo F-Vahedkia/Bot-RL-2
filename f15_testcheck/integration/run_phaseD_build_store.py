@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from f03_features.feature_store import build_and_save_feature_store
+from f03_features.OLD.feature_store_old1 import build_and_save_feature_store
 
 
 def make_minutes_df(n_minutes: int = 60 * 24 * 60, seed: int = 2026) -> pd.DataFrame:

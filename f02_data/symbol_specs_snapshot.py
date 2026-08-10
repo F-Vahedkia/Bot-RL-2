@@ -28,23 +28,26 @@ from typing import Any
 import yaml
 import logging
 
-from f10_utils.config_ops import _deep_get
+from f10_utils.config_operations import _deep_get
 #from f10_utils.config_loader import load_config   # (delayed import after bootstrap)
 #from f02_data.mt5_connector import MT5Connector
 
 # -------------------- Logger for this module ----------------------- OK
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+    )
 
 # ------------------------------------------------------------------- OK
 def _resolve_symbols(cfg: dict, argsymbols: Any = None) -> list[str]:
     
     # sym = مستقیم مقدار لیست یا None را از مسیر کامل می‌گیریم
-    sym = _deep_get(cfg, "env.download_defaults.symbols", default=None)
+    sym = _deep_get(cfg, "download_defaults.symbols", default=None)
     
     # اگر نبود یا از نوع اشتباه بود، تلاش کنیم والد را بگیریم و از آن فیلد symbols بخوانیم
     if sym is None or not isinstance(sym, list):
-        parent = _deep_get(cfg, "env.download_defaults", default={})
+        parent = _deep_get(cfg, "download_defaults", default={})
         sym = parent.get("symbols") if isinstance(parent, dict) else None
     symbols = argsymbols or (sym if isinstance(sym, list) else [])
 
@@ -177,13 +180,12 @@ if __name__ == "__main__":  # pragma: no cover
 
 
 
-
 ''' Reserve functions
 # -------------------------------------------------------------------
 def _resolve_symbols_old(cfg: dict) -> list[str]:
     # ترجیح: download_defaults.symbols ، در غیر این صورت data.symbols یا project.symbols یا symbols
     cand_keys = [
-        ("env", "download_defaults", "symbols"),
+        ("download_defaults", "symbols"),
         ("data", "symbols"),
         ("project", "symbols"),
         ("symbols",),

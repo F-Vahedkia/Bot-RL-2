@@ -24,7 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 # نکته: طبق ساختار پروژه، indicators زیر f03_features قرار دارد و engine.apply
 # طبق تست‌ها به run_specs_v2 متصل است. (No guessing: بر اساس فایل‌های فعلی)
-from f03_features.feature_engine import apply as engine_apply  # entry wrapper
+from f03_features.OLD.feature_engine import apply as engine_apply  # entry wrapper
 
 def make_synthetic_ohlcv(n: int = 3000, seed: int = 2025) -> pd.DataFrame:
     """ساخت دیتای OHLCV دقیقه‌ای واقع‌نما برای تست؛ ایندکس UTC."""

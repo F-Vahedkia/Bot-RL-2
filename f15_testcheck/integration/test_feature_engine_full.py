@@ -20,8 +20,8 @@ import pandas as pd
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from f03_features.feature_registry import list_all_indicators
-from f03_features.feature_engine import run_specs_v2
+from f03_features.OLD.feature_registry import list_all_indicators
+from f03_features.OLD.feature_engine import run_specs_v2
 
 # ---------------------- پیکربندی عمومی ----------------------
 CONFIG_PATH = ROOT / "f01_config" / "config.yaml"
@@ -150,7 +150,7 @@ def _probe_spec_proc(df_path: pathlib.Path, spec: str, base_tf: str, q: mp.Queue
     ok یعنی DataFrame خروجی معتبر است و «ستون جدید» هم اضافه شده.
     """
     import pandas as _pd
-    from f03_features.feature_engine import run_specs_v2 as _run
+    from f03_features.OLD.feature_engine import run_specs_v2 as _run
     dfb = _pd.read_parquet(df_path)
     pre_cols = set(dfb.columns)
     out = _run(df=dfb, specs=[spec], base_tf=base_tf)

@@ -7,7 +7,7 @@ import numpy as np, pandas as pd
 import sys, pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
-from f03_features import feature_engine
+from f03_features.OLD import feature_engine
 
 idx = pd.date_range("2022-01-01", periods=200, freq="min", tz="UTC")
 rng = np.random.default_rng(0)

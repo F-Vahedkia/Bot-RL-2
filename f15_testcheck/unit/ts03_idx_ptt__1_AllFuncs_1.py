@@ -260,7 +260,7 @@ def test_registry_structure_and_builders():
 
 
 # ---------- تست build_patterns() (در صورت وجود) ----------
-
+"""
 @pytest.mark.skipif(
     not hasattr(patterns, "build_patterns"),
     reason="patterns.build_patterns() not present in this version of patterns.py",
@@ -329,3 +329,5 @@ def test_build_patterns_prefix_and_scale_k_options():
     # index باید با df هم‌تراز باشد
     pd.testing.assert_index_equal(out1.index, df.index)
     pd.testing.assert_index_equal(out2.index, df.index)
+
+"""

@@ -50,7 +50,7 @@ if str(ROOT) not in sys.path:
 from f10_utils.config_loader import ConfigLoader
 cfg = ConfigLoader().get_all()
 import f03_features.indicators.levels as lv
-from f10_utils.config_ops import _deep_get
+from f10_utils.config_operations import _deep_get
 
 # -----------------------------------------------------------------------------
 # تنظیم لاگینگ سبک برای این اسکریپت (پیام‌ها باید انگلیسی باشند)

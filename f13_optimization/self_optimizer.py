@@ -58,7 +58,7 @@ except Exception:  # pragma: no cover
 
 # تازه‌سازی دیتاست‌ها
 try:
-    from f02_data.data_handler import refresh_datasets  # type: ignore
+    from f02_data.OLD.data_handler import refresh_datasets  # type: ignore
 except Exception:  # pragma: no cover
     refresh_datasets = None
 

@@ -58,8 +58,8 @@ if __name__ == "__main__":
 '''
 # Ensure `f03_features/indicators` is importable (so that `indicators` can be imported)
 _TEST_FILE = Path(__file__).resolve()
-_PROJECT_ROOT = (_TEST_FILE.parent.parent.parent)
-_MAINFILES_DIR = _PROJECT_ROOT / "f03_features"
+project_root = (_TEST_FILE.parent.parent.parent)
+_MAINFILES_DIR = project_root / "f03_features"
 if str(_MAINFILES_DIR) not in sys.path: sys.path.insert(0, str(_MAINFILES_DIR))
 try: indicators_pkg = importlib.import_module("indicators")
 except Exception as e: pytest.skip(f"Cannot import indicators package from {_MAINFILES_DIR}: {e}")

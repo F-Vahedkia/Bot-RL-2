@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from f03_features.indicators.zigzag import zigzag_mtf_adapter
 
 _PATH = "f16_test_results/"
+_PATH = ""
 #--- ساختن داده های واقعی ----------------------------- Start
 data = pd.read_csv("f02_data/raw/XAUUSD/M1.csv")
 df = data[-10_000:].copy()
@@ -20,7 +21,7 @@ tf_higher = "5min"
 
 zz_last = zigzag_mtf_adapter(
     high=high, low=low, tf_higher=tf_higher,
-    depth=12, deviation=5.0, backstep=10, point=0.01,
+    depth=12, deviation=0.05, backstep=10,
     mode="last",
     extend_last_leg=False,
     use_timeshift=True,
@@ -32,7 +33,7 @@ legs.to_csv(f"{_PATH}ts03_idx_zzg__3zigzag_mtf_adapter_1_legs_last.csv", index_l
 
 zz_ffill = zigzag_mtf_adapter(
     high=high, low=low, tf_higher=tf_higher,
-    depth=12, deviation=5.0, backstep=10, point=0.01,
+    depth=12, deviation=5.0, backstep=10,
     mode="forward_fill",
     extend_last_leg=True,
     use_timeshift=True,

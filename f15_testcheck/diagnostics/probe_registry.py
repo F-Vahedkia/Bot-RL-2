@@ -3,7 +3,7 @@
 
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
-from f03_features.feature_registry import get_indicator, list_all_indicators
+from f03_features.OLD.feature_registry import get_indicator, list_all_indicators
 
 fn_adr = get_indicator("adr")
 fn_ado = get_indicator("adr_distance_to_open")

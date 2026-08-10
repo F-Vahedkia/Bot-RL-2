@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 
 from f10_utils.config_loader import load_config
-from f10_utils.config_ops import _deep_get
+from f10_utils.config_operations import _deep_get
 from f04_env.trading_env import TradingEnv, EnvConfig
 import f04_env.utils as U  # لازم است تا پچ conftest روی paths_from_cfg اثر کند.
 

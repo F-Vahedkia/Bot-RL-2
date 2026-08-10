@@ -2,7 +2,8 @@
 # Run: python -m f15_testcheck.unit.ts03_idx_prsr__1AllFuncs_1
 
 import pprint
-from f03_features.indicators.parser import (
+# from f10_utils.config_loader import load_config
+from f10_utils.parser import (
     _split_top_level_commas,
     _parse_value,
     _parse_args_kwargs,
@@ -45,6 +46,32 @@ def test_parse_spec():
         "fib_ext_targets(atr_mult=1.5)@H1",
         "ma_slope(window=20, method='ema')@M5",
         "rsi_zone(period=14)@H1",
+
+        "div_rsi(14,2,classic)@M1",
+        "div_rsi(14,2,classic)@M30",
+        "sma(close,20)@M1",      # Simple Moving Average
+        "wma(close,20)@M5",      # Weighted Moving Average
+        "ema(close,20)@M30",      # Exponential Moving Average
+        "roc(close,14)@H4",      # Rate of Change
+        "rsi(14)@M1",            # Relative Strength Index
+        "tr@M1",                 # True Range
+        "atr(14)@M1",            # Average True Range
+        "macd(fast=12,slow=26,signal=9)@M1",      # MACD
+        "bbands(close,20,2)@M1",     # Bollinger Bands
+        "keltner(close,20,2)@M5",    # Keltner Channel
+        "stoch(14,3)@M1",            # Stochastic
+        "cci(20)@M5",          # Commodity Channel Index
+        "mfi(14)@M5",          # Money Flow Index
+        "obv@M1",              # On Balance Volume
+        "willr(14)@M5",                  # Williams %R
+        "sar(0.02,0.02,0.2)@M1",         # Parabolic SAR
+        "heikinashi@M5",            # Heikin Ashi
+        "supertrend(10,3)@M5",      # Supertrend
+        "aroon(25)@M5",             # Aroon
+        "dema(close,20)@M5",    # Double Exponential Moving Average
+        "tema(close,20)@M5",    # Triple Exponential Moving Average
+        "kama(close,20)@M5",    # Kaufman's Adaptive Moving Average
+        "hma(close,20)@M5",     # Hull Moving Average
     ]
     for s in specs:
         parsed = parse_spec(s)

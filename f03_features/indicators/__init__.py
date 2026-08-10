@@ -14,11 +14,11 @@ import logging
 import pandas as pd
 import argparse
 
-from .parser import parse_spec
+from ...f10_utils.parser import parse_spec
 
 #from ..feature_engine import run_specs_v2
 def run_specs_v2(*args, **kwargs):
-    from f03_features.feature_engine import run_specs_v2 as _impl
+    from f03_features.OLD.feature_engine import run_specs_v2 as _impl
     return _impl(*args, **kwargs)
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def main() -> int:
     _setup_logging(args.log_level)
 
     if args.list:
-        from ..feature_registry import list_all_indicators 
+        from ..OLD.feature_registry import list_all_indicators 
         items = list_all_indicators(include_legacy=True)
         for k, src in sorted(items.items()):
             print(f"{k:20s}  [{src}]")

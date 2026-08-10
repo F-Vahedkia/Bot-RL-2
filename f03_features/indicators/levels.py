@@ -1,5 +1,6 @@
 # f03_features/indicators/levels.py
 # Status in (Bot-RL-2): Reviewed at 1404/12/07
+#                       Reviewed at 1405/02/12
 
 #==============================================================================
 # Imports & Logger
@@ -7,10 +8,8 @@
 from __future__ import annotations
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from numba import njit
-from datetime import datetime
-from typing import List, Sequence, Dict, Optional, Tuple, Any
+from typing import Sequence, Dict, Optional
 
 from .utils import compute_atr
 from .zigzag import zigzag_mtf_adapter, zigzag_legs
@@ -19,8 +18,10 @@ import logging
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-from f10_utils.config_loader import ConfigLoader
-cfg = ConfigLoader().get_all()
+# from f10_utils.config_loader import ConfigLoader
+# cfg = ConfigLoader().get_all()
+# _loader = ConfigLoader()
+# _CONFIG_CACHE = _loader.get_all()
 
 """ =========================================================================== OK Func1
 """
@@ -66,7 +67,7 @@ def sr_from_zigzag_legs_orig_1(
 ) -> pd.DataFrame:
     """ نسخه اصلی بدون شیفت زمانی:
     در این نسخه قیمتهای ابتدا و انتهای لگ ها از دیتافریم لگ ها گرفته نمی شود،
-    بلکه از دیتافریم اصلی داده ها اساخراج میشود
+    بلکه از دیتافریم اصلی داده ها استخراج میشود
     
     extend_last_leg = True: فرض میکند که انتهای آخرین لگ نقش اس/آر را برای دیتاهای بعد از لگ آخر بازی میکند.
     نقش این آرگومان با آرگومان هم نامی که در تابع زیگزاگ چند تایمفریمی است، متفاوت می باشد.
@@ -411,7 +412,7 @@ def sr_from_zigzag_legs(
             deviation=deviation,
             backstep=backstep,
             extend_last_leg=extend_last_leg,
-        )
+        )   # output: indexed, float32
     else:
         return sr_from_zigzag_legs_njit(
             df,
@@ -420,7 +421,7 @@ def sr_from_zigzag_legs(
             deviation=deviation,
             backstep=backstep,
             extend_last_leg=extend_last_leg,
-        )
+        )   # output: indexed, float32
 
 """ =========================================================================== OK Func3
 """
@@ -803,9 +804,9 @@ def fibo_levels_from_legs(
 
     # --- choose implementation ---
     if bytes_used <= threshold_bytes:
-        return fibo_levels_from_legs_orig(df, zz, ratios, extend_last_leg=extend_last_leg)
+        return fibo_levels_from_legs_orig(df, zz, ratios, extend_last_leg=extend_last_leg)   # output: indexed, float32
     else:
-        return fibo_levels_from_legs_njit(df, zz, ratios, extend_last_leg=extend_last_leg)
+        return fibo_levels_from_legs_njit(df, zz, ratios, extend_last_leg=extend_last_leg)   # output: indexed, float32
 
 """ =========================================================================== =Func6
 """
@@ -863,19 +864,6 @@ def registry() -> Dict[str, callable]:
     }
 
 
-""" === New Added =============================================================
-    افزودنی‌های Levels برای هم‌افزایی با فیبوناچی و امتیازدهی Confluence.
-    - round_levels(...): تولید سطوح رُند حول یک لنگر
-    تابع round_levels عیناً از این فایل به فایل utils منتقل شد
-    - compute_adr(...): محاسبهٔ ADR روزانه و نگاشت به تایم‌استمپ‌های درون‌روزی
-    - adr_distance_to_open(...): فاصلهٔ نرمال‌شدهٔ قیمت تا «بازِ روز» با ADR
-    - sr_overlap_score(...): امتیاز همپوشانی یک قیمت با سطوح S/R (۰..۱)
-
-    نکته‌ها:
-    - ورودی‌ها ایندکس زمانی UTC و مرتب فرض شده‌اند.
-    - همهٔ توابع افزایشی‌اند و چیزی از API موجود را تغییر نمی‌دهند.
-"""
-
 """ =========================================================================== OK Func7
 """
 def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Series:
@@ -905,7 +893,7 @@ def compute_adr(df: pd.DataFrame, window: int = 14, tz: str = "UTC") -> pd.Serie
 
     # نگاشت ADR روزانه به ایندکس درون‌روزی با ffill
     adr_intraday = adr_daily.reindex(df.index, method="ffill")
-    return adr_intraday
+    return adr_intraday.astype("float32")
 
 """ =========================================================================== OK Func8
 """
@@ -933,11 +921,11 @@ def adr_distance_to_open(df: pd.DataFrame, adr: pd.Series, tz: str = "UTC") -> p
     dist_pct = (100.0 * dist_abs / adr_safe).rename("dist_pct_of_adr")
 
     out = pd.concat([day_open, dist_abs, dist_pct], axis=1)
-    return out
+    return out.astype("float32")
 
 """ =========================================================================== OK Func9
 """
-def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> float:
+def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: float = 0.05) -> np.float32:
     """
     S/R Overlap Score (0..1)
     امتیاز همپوشانی قیمت با سطوح S/R:
@@ -952,7 +940,7 @@ def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: f
     خروجی: نمرهٔ 0..1
     """
     if not sr_levels:
-        return 0.0
+        return np.float32(0.0)
 
     # print(f" ---> price= {price}")               ##### for debug
     # print(f" ---> sr_levels= {sr_levels}")       ##### for debug
@@ -969,7 +957,7 @@ def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: f
     # print(f" ---> min_dist= {min_dist}")         ##### for debug
 
     if min_dist > tol_abs or tol_abs == 0.0:
-        return 0.0
+        return np.float32(0.0)
 
     # امتیاز پایه: نزدیکی خطی تا ۱
     base = 1.0 - (min_dist / tol_abs)
@@ -983,7 +971,7 @@ def sr_overlap_score_simple(price: float, sr_levels: Sequence[float], tol_pct: f
     score = min(1.0, max(0.0, base + bonus))
     # print(f" ---> score= {score}")               ##### for debug
 
-    return float(score)
+    return np.float32(score)
 
 # ----------------------------------------------------------------------------- OK Fun10
 def sr_overlap_score(
@@ -991,7 +979,7 @@ def sr_overlap_score(
     sr_levels: Sequence[float],
     tol_pct: float = 0.05,
     sr_weights: Optional[Sequence[float]] = None,
-) -> float:
+) -> np.float32:
     """
     امتیاز همپوشانی قیمت با سطوح S/R (نسخه پیشرفته)
     
@@ -1013,14 +1001,14 @@ def sr_overlap_score(
     sr_levels = np.asarray(sr_levels, dtype=float)
 
     if sr_levels.size == 0:
-        return 0.0
+        return np.float32(0.0)
     if not np.isfinite(price):
-        return 0.0
+        return np.float32(0.0)
 
     # آستانه مطلق
     tol_abs = abs(price) * float(tol_pct)
     if tol_abs <= 0.0:
-        return 0.0
+        return np.float32(0.0)
 
     # فاصله‌ها از قیمت
     abs_diffs = np.abs(price - sr_levels)
@@ -1040,7 +1028,7 @@ def sr_overlap_score(
 
     # اگر نزدیک‌ترین سطح خارج tol_abs بود → score = 0
     if min_dist > tol_abs:
-        return 0.0
+        return np.float32(0.0)
 
     # --- امتیاز غیرخطی برای نزدیک‌ترین سطح ---
     # برای حساسیت بیشتر به نزدیکی، از سیگموئید ساده استفاده می‌کنیم
@@ -1059,36 +1047,223 @@ def sr_overlap_score(
 
     score = base + np.sum(bonus)
     
-    return float(min(1.0, max(0.0, score)))
+    return np.float32(min(1.0, max(0.0, score)))
 
 
 
-# =====================================================================================
-# تست پوشش کد (برای توسعه‌دهندگان) 
-# =====================================================================================
-""" Func Names                           Used in Functions: ...
-                                1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18
-1  pivots_classic              --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+from f03_features.indicators.utils import (
+    round_levels as _round_levels,
+    nearest_level_distance as _nearest_level_distance,
+)
+from f10_utils.config_operations import _deep_get
 
-2  sr_from_zigzag_legs_orig_1  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
-3  sr_from_zigzag_legs_njit_1  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
-4  sr_from_zigzag_legs_orig    --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --
-5  sr_from_zigzag_legs_njit    --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --
-6  sr_from_zigzag_legs         --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+# --- adr --------------------------------------------------------------------- Func.4 (edited 041204) 
+def _adv_adr(df, **cfg) -> Dict[str, pd.Series]:
+    # --- read config ----------------- start
+    # params = _deep_get(_CONFIG_CACHE, "features.adr", {}) or {}
+    params = _deep_get(cfg, "features.adr", {}) or {}
 
-7  sr_distance_from_levels     --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+    enabled   = bool(params.get("enabled", False))
+    window    = int(params.get("window", params.get("w", 14)))
+    tz        = params.get("tz", "UTC")
+    normalize = bool(params.get("normalize", False))
+    # --- read config ----------------- end
 
-8  _zigzag_leg_mask_orig       --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --
-9  _zigzag_leg_mask_njit       --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --
-10 _zigzag_leg_mask            --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+    key = f"adr_{window}"
 
-11 fibo_levels_from_legs_orig  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
-12 fibo_levels_from_legs_njit  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
-13 fibo_levels_from_legs       --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --
+    # اگر غیرفعال است
+    if not enabled:
+        return {key: pd.Series(0.0, index=df.index, dtype="float32")}
 
-14 registry                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
-15 compute_adr                 --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
-16 adr_distance_to_open        --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
-17 sr_overlap_score_simple     --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED
-18 sr_overlap_score            --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- USED in feature_registry
-"""
+    # محاسبه ADR
+    s = compute_adr(df, window=window, tz=tz)
+    if not isinstance(s, pd.Series):
+        s = pd.Series(s, index=df.index)
+
+    # اعمال normalize در صورت فعال بودن
+    if normalize:
+        close = df["close"].astype(float).replace(0, np.nan)
+        s = s.astype(float) / close
+
+    s = s.astype("float32")
+
+    return {key: s}
+
+
+# --- adr_distance_to_open ---------------------------------------------------- Func.5 (edited 041204)
+def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
+    """
+    Wrapper برای adapter اصلی `adr_distance_to_open` با اعمال تنظیمات کانفیگ.
+
+    کلیدهای کانفیگ استفاده شده:
+        enabled     : فعال/غیرفعال کردن feature
+        window      : طول پنجره ADR
+        use_percent : آیا فاصله نرمال‌شده بر اساس ADR محاسبه شود یا خیر
+
+    خروجی:
+        {
+            'adr_day_open_<w>': Series open روز
+            'adr_dist_abs_<w>': Series فاصله مطلق close تا open
+            'adr_dist_pct_<w>': Series فاصله درصدی (در صورت فعال بودن use_percent)
+        }
+    """
+
+    # --- خواندن تنظیمات از کانفیگ
+    # params = (_deep_get(_CONFIG_CACHE, "features.adr_distance_to_open", {}) or {})
+    params = (_deep_get(cfg, "features.adr_distance_to_open", {}) or {})
+    enabled     = bool(params.get("enabled", False))
+    window      = int(params.get("window", 14))
+    tz          = params.get("tz", "UTC")
+    use_percent = bool(params.get("use_percent", True))
+
+    w = window
+
+    # --- اگر feature غیرفعال است، ستون صفر برگردان
+    if not enabled:
+        zero = pd.Series(0.0, index=df.index, dtype="float32")
+        return {
+            f"adr_day_open_{w}": zero.copy(),
+            f"adr_dist_abs_{w}": zero.copy(),
+            f"adr_dist_pct_{w}": zero.copy(),
+        }
+
+    # --- فراخوانی adapter اصلی
+    out = adr_distance_to_open(df, window=w, tz=tz)
+
+    # اگر Series بازگردد، تبدیل به DataFrame می‌کنیم
+    if isinstance(out, pd.Series):
+        out = out.to_frame("dist_abs")
+
+    # --- استخراج ستون‌ها
+    s_open = out.get("day_open", df["open"].astype(float)).reindex(df.index)
+    s_abs  = out.get("dist_abs", (df["close"].astype(float) - s_open).abs()).reindex(df.index)
+
+    # --- محاسبه درصد نرمال‌شده فقط در صورت use_percent=True
+    if use_percent:
+        s_pct = out.get("dist_pct")
+        if s_pct is None:
+            # fallback: dist_abs / adr
+            adr = compute_adr(df, window=w, tz=tz)
+            s_pct = (s_abs / adr.replace(0, np.nan)).fillna(0.0)
+        s_pct = s_pct.reindex(df.index)
+    else:
+        s_pct = pd.Series(0.0, index=df.index)
+
+    # --- تبدیل dtype به float32
+    s_open = s_open.astype("float32")
+    s_abs  = s_abs.astype("float32")
+    s_pct  = s_pct.astype("float32")
+
+    return {
+        f"adr_day_open_{w}": s_open,
+        f"adr_dist_abs_{w}": s_abs,
+        f"adr_dist_pct_{w}": s_pct,
+    }
+
+
+# --- sr_overlap_score -------------------------------------------------------- Func.6 (edited 041204)
+def _adv_sr_overlap_score(df, **cfg) -> Dict[str, pd.Series]:
+    """
+    محاسبه امتیاز همپوشانی close با سطوح S/R رُند
+    خروجی:
+        {'sr_overlap_score_<step>_<n>_<tolbp>bp': Series}
+    
+    رفتار:
+    - اگر feature غیرفعال باشد → سری صفر برمی‌گردد
+    - normalize=True → امتیاز به [0,1] scale می‌شود
+    """
+
+    # --- خواندن تنظیمات از کانفیگ
+    # params = (_deep_get(_CONFIG_CACHE, "features.sr_overlap_score", {}) or {})
+    params = (_deep_get(cfg, "features.sr_overlap_score", {}) or {})
+    enabled   = bool(params.get("enabled", False))
+    anchor    = float(params.get("anchor", params.get("a", 0.0)))
+    step      = float(params.get("step", 10))
+    n         = int(params.get("n", 5))
+    tol_pct   = float(params.get("tolerance_pct", params.get("tol_pct", 0.05)))
+    normalize = bool(params.get("normalize", True))
+
+    # اگر غیرفعال است → صفر برگردان
+    if not enabled:
+        zero = pd.Series(0.0, index=df.index, dtype="float32")
+        key = f"sr_overlap_score_{str(step).replace('.','_')}_{int(n)}_{int(round(tol_pct*10000))}bp"
+        return {key: zero}
+
+    # --- تولید سطوح رُند
+    levels = _round_levels(anchor=anchor, step=step, n=n)
+
+    # --- محاسبه سری امتیاز
+    close = df["close"].astype(float)
+    vals = [float(sr_overlap_score(px, levels, tol_pct=tol_pct)) for px in close]
+    s = pd.Series(vals, index=df.index, dtype="float32")
+
+    # --- اعمال normalize
+    if normalize:
+        max_val = s.max()
+        if max_val > 0:
+            s = s / max_val
+
+    # --- کلید امن
+    tolbp = int(round(tol_pct * 10000))
+    key = f"sr_overlap_score_{str(step).replace('.','_')}_{int(n)}_{tolbp}bp"
+
+    return {key: s}
+
+
+# --- round_levels (nearest distance) ----------------------------------------- Func.7
+def _adv_round_levels(df, anchor: float, step: float, n: int = 10, **_) -> Dict[str, pd.Series]:
+    """
+    آداپتر round_levels: برای هر close فاصله تا نزدیک‌ترین سطح رُند.
+    - levels = round_levels(anchor, step, n)
+    - nearest_level_distance(price_t, levels) → {'nearest_level','signed','abs'}
+    خروجی: سه سری هم‌نام با suffix:
+       {'rl_nearest_<step>_<n>', 'rl_signed_<step>_<n>', 'rl_abs_<step>_<n>'}
+    """
+    levels = _round_levels(anchor=anchor, step=step, n=int(n))
+    close = df["close"].astype(float)
+    nearest_list = []
+    signed_list = []
+    abs_list = []
+    for px in close:
+        d = _nearest_level_distance(float(px), levels)
+        nearest_list.append(d["nearest_level"])
+        signed_list.append(d["signed"])
+        abs_list.append(d["abs"])
+    s_nearest = pd.Series(nearest_list, index=df.index, name="rl_nearest").astype("float32")
+    s_signed  = pd.Series(signed_list,  index=df.index, name="rl_signed").astype("float32")
+    s_abs     = pd.Series(abs_list,     index=df.index, name="rl_abs").astype("float32")
+    tag = f"{str(step).replace('.','_')}_{int(n)}"
+    return {
+        f"rl_nearest_{tag}": s_nearest,
+        f"rl_signed_{tag}":  s_signed,
+        f"rl_abs_{tag}":     s_abs,
+    }
+
+# =============================================================================
+# SR config injection (common/component/overrides by (Symbol, TF))
+# =============================================================================
+# استنتاج اختیاری Symbol/TF (اگر در کانفیگ باشد)
+def _infer_symbol_tf(cfg_all, default_sym=None, default_tf=None):
+    # کلیدهای رایج؛ اگر نبودند، overrides اعمال نمی‌شود (بدون خطا)
+    sym_keys = ["data.symbol", "dataset.symbol", "active.symbol", "symbol"]
+    tf_keys  = ["data.base_timeframe", "dataset.base_timeframe", "active.timeframe", "timeframe", "base_timeframe"]
+    sym = next(( _deep_get(cfg_all, k) for k in sym_keys if _deep_get(cfg_all, k) is not None), default_sym)
+    tf  = next(( _deep_get(cfg_all, k) for k in tf_keys  if _deep_get(cfg_all, k) is not None), default_tf)
+    return sym, tf
+
+
+def merge_sr_kwargs(name: str, cfg: dict, df: pd.DataFrame) -> dict:
+    # cfg_all = _loader.get_all()
+    cfg_all = cfg
+    # 1) مشترک (فقط کلیدهای عمومی)
+    base = _deep_get(cfg_all, "features.support_resistance.sr_advanced.common", {}) or {}
+    # 2) پیش‌فرض‌های سطح کامپوننت (fvg/supply_demand/...)
+    comp = _deep_get(cfg_all, f"features.support_resistance.sr_advanced.{name}", {}) or {}
+    # 3) پروفایل اختیاری (Symbol/TF) اگر تعریف شده باشد
+    sym, tf = _infer_symbol_tf(cfg_all)
+    over = {}
+    if sym and tf:
+        over = _deep_get(cfg_all, f"features.support_resistance.sr_advanced.overrides.{sym}.{tf}.{name}", {}) or {}
+    # 4) ادغام نهایی: پیش‌فرض کد ← base ← component ← overrides ← پارامترهای صریح کاربر
+    return {**base, **comp, **over, **(cfg or {})}
+

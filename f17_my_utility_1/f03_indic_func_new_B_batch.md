@@ -1,0 +1,51 @@
+# Python Functions List
+
+## File_1: `f03_features/indicators_new/indicators_B_batch.py`
+
+- `sma_batch(data, period, min_periods = -1)`
+- `sma_batch_df(df, column, period, min_periods = -1, result_col = 'sma', add_para_to_names = False)`
+- `wma_batch(data, period, min_periods = -1)`
+- `wma_batch_df(df, column, period, min_periods = -1, result_col = 'wma', add_para_to_names = False)`
+- `ema_batch(data, period, min_periods = -1)`
+- `ema_batch_df(df, column, period, min_periods = -1, result_col = 'ema', add_para_to_names = False)`
+- `roc_batch(data, period)`
+- `roc_batch_df(df, column, period, result_col = 'roc', add_para_to_names = False)`
+- `rsi_batch(data, period, method = 0)`
+- `rsi_batch_df(df, column = 'close', period = 14, method = 'ema', result_col = 'rsi', add_para_to_names = False)`
+- `truerange_batch(high, low, close)`
+- `truerange_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', result_col = 'true_range', add_para_to_names = False)`
+- `atr_batch(high, low, close, n = 14, method = 1, min_periods = -1)`
+- `atr_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', n = 14, method = 'wilder', min_periods = -1, result_col = 'atr', add_para_to_names = False)`
+- `macd_batch(close, fast = 12, slow = 26, signal = 9)`
+- `macd_batch_df(df, close_col = 'close', fast = 12, slow = 26, signal = 9, macd_col = 'macd', signal_col = 'macd_signal', hist_col = 'macd_hist', add_para_to_names = False)`
+- `bollinger_batch(close, n = 20, k = 2.0, min_periods = -1)`
+- `bollinger_batch_df(df, close_col = 'close', n = 20, k = 2.0, min_periods = -1, upper_col = 'bb_upper', middle_col = 'bb_middle', lower_col = 'bb_lower', width_col = 'bb_width', percent_col = 'bb_percent', add_para_to_names = False)`
+- `keltner_batch(high, low, close, n = 20, m = 2.0, min_periods = -1)`
+- `keltner_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', n = 20, m = 2.0, min_periods = -1, upper_col = 'kc_upper', middle_col = 'kc_middle', lower_col = 'kc_lower', width_col = 'kc_width', percent_col = 'kc_percent', add_para_to_names = False)`
+- `stochastic_batch(high, low, close, k_period = 14, d_period = 3, smooth_k = 3, method = 0, min_periods = -1)`
+- `stochastic_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', k_period = 14, d_period = 3, smooth_k = 3, method = 'sma', min_periods = -1, k_col = 'stoch_k', d_col = 'stoch_d', add_para_to_names = False)`
+- `cci_batch(high, low, close, n = 20, min_periods = -1)`
+- `cci_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', n = 20, min_periods = -1, result_col = 'cci', add_para_to_names = False)`
+- `mfi_batch(high, low, close, volume, n = 14, min_periods = -1)`
+- `mfi_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', volume_col = 'volume', n = 14, min_periods = -1, result_col = 'mfi', add_para_to_names = False)`
+- `obv_batch(close, volume)`
+- `obv_batch_df(df, close_col = 'close', volume_col = 'volume', result_col = 'obv', add_para_to_names = False)`
+- `williamsr_batch(high, low, close, n = 14, min_periods = -1)`
+- `williamsr_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', n = 14, min_periods = -1, result_col = 'williamsr', add_para_to_names = False)`
+- `parabolicsar_batch(high, low, af_start = 0.02, af_step = 0.02, af_max = 0.2)`
+- `parabolicsar_batch_df(df, high_col = 'high', low_col = 'low', af_start = 0.02, af_step = 0.02, af_max = 0.2, result_col = 'psar', add_para_to_names = False)`
+- `heikinashi_batch(open_, high, low, close)`
+- `heikinashi_batch_df(df, open_col = 'open', high_col = 'high', low_col = 'low', close_col = 'close', result_prefix = 'ha', add_para_to_names = False)`
+- `supertrend_batch(high, low, close, period = 10, multiplier = 3.0, atr_method = 1, min_periods = -1)`
+- `supertrend_batch_df(df, high_col = 'high', low_col = 'low', close_col = 'close', period = 10, multiplier = 3.0, atr_method = 'wilder', min_periods = -1, super_col = 'supertrend', direction_col = 'st_direction', add_para_to_names = False)`
+- `aroon_batch(high, low, period = 25, min_periods = -1)`
+- `aroon_batch_df(df, high_col = 'high', low_col = 'low', period = 25, min_periods = -1, aroon_up_col = 'aroon_up', aroon_down_col = 'aroon_down', aroon_osc_col = 'aroon_oscillator', add_para_to_names = False)`
+- `dema_batch(data, n = 20, min_periods = -1)`
+- `dema_batch_df(df, price_col = 'close', n = 20, min_periods = -1, result_col = 'dema', add_para_to_names = False)`
+- `tema_batch(data, n = 20, min_periods = -1)`
+- `tema_batch_df(df, price_col = 'close', n = 20, min_periods = -1, result_col = 'tema', add_para_to_names = False)`
+- `kama_batch(data, n = 10, fast_span = 2, slow_span = 30, min_periods = -1)`
+- `kama_batch_df(df, price_col = 'close', n = 10, fast_span = 2, slow_span = 30, min_periods = -1, result_col = 'kama', add_para_to_names = False)`
+- `hma_batch(data, n = 20, min_periods = -1)`
+- `hma_batch_df(df, price_col = 'close', n = 20, min_periods = -1, result_col = 'hma', add_para_to_names = False)`
+

@@ -17,10 +17,10 @@ def _zigzag_mql_numpy_complete(
     high: np.ndarray,
     low: np.ndarray,
     depth: int = 12,
-    deviation: float = 5.0,
+    deviation: float = 0.05,
     backstep: int = 3,
-    point: float = 0.01,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+# ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Numpy-based ZigZag with confirmed and developing leg tracking (retrospective confirmed_at).
 
@@ -36,51 +36,52 @@ def _zigzag_mql_numpy_complete(
 
     # بافرهای اصلی
     zz_buffer    = np.zeros(n)                 # نقاط ZigZag
-    high_map     = np.zeros(n)                 # candidate highs
-    low_map      = np.zeros(n)                 # candidate lows
     state_series = np.zeros(n, dtype=np.int8)  # -1=high, 1=low, 0=none
 
     # confirmed و developing
     confirmed_at   = np.full(n, -1, dtype=np.int32)
     developing_leg = np.zeros(n, dtype=np.int8)
 
-    last_high = 0.0
-    last_low = 0.0
-    last_high_pos = -1
-    last_low_pos = -1
-    search_mode = 0  # 0=Extremum, 1=Search next peak, -1=Search next bottom
-
-    # ------------------------------
-    # مرحله ۱: محاسبه local highs/lows
-    low_windows  = np.lib.stride_tricks.sliding_window_view(low, depth)
+    # ---------------------------------
+    # phase-1: calculating local highs/lows
+    #          by means of depth, deviation, backstep
+    # ---------------------------------
+    # دو سطر زیر یک آرایهٔ دوبعدی می‌سازد که شامل تمام پنجره‌های پشت‌سر‌هم
+    # (sliding windows) از آرایهٔ low/high با طول ثابت depth است
+    low_windows  = np.lib.stride_tricks.sliding_window_view(low, depth)  # len = (n - depth + 1)
     high_windows = np.lib.stride_tricks.sliding_window_view(high, depth)
 
+    # برای هر پنجرهٔ depth، ایندکس (کمترین کف/بیشترین سقف) را داخل همان پنجره پیدا می‌کند
     low_idx_in_window  = np.argmin(low_windows, axis=1)
     high_idx_in_window = np.argmax(high_windows, axis=1)
 
-    low_idx  = np.arange(depth - 1, n) - (depth - 1) + low_idx_in_window
-    high_idx = np.arange(depth - 1, n) - (depth - 1) + high_idx_in_window
+    # تبدیل اندکسهای کف/سقف داخل هر پنجره به اندکس کل داده اصلی
+    # low_idx  = np.arange(depth - 1, n) - (depth - 1) + low_idx_in_window
+    # high_idx = np.arange(depth - 1, n) - (depth - 1) + high_idx_in_window
+    low_idx  = np.arange(0, n - depth + 1) + low_idx_in_window
+    high_idx = np.arange(0, n - depth + 1) + high_idx_in_window
 
     low_vals  = low[low_idx]
     high_vals = high[high_idx]
 
-    low_map  = np.zeros(n)
-    high_map = np.zeros(n)
+    # بافرهای اصلی
+    low_map  = np.zeros(n)  # candidate lows
+    high_map = np.zeros(n)  # candidate highs
 
     for i in range(depth - 1, n):
         # LOW
-        val = low_vals[i - (depth - 1)]
-        if (low[i] - val) <= deviation * point:
-            back_range = slice(max(0, i - backstep), i)
-            mask = (low_map[back_range] != 0) & (low_map[back_range] > val)
-            idx = np.where(mask)[0] + back_range.start
+        val = low_vals[i - (depth - 1)]                                     # بدست آوردن مقدار کف هر پنجره
+        if (low[i] - val) <= deviation:
+            back_range = slice(max(0, i - backstep), i)                     # ساخت بازه: [i - backstep, i - 1]
+            mask = (low_map[back_range] != 0) & (low_map[back_range] > val) # ساخت فیلتر برای حذف کف های بی اعتبار شده
+            idx = np.where(mask)[0] + back_range.start                      # یک لیست است
             low_map[idx] = 0.0
-        if low[i] == val:
-            low_map[i] = val
+        if low[i] == val:      # اگر کف کندل فعلی دقیقاً برابر با کف پنجره‌ بود،
+            low_map[i] = val   # مقدار کف پنجره را در همین اندکس از آرایه جواب ذخیره کن.
 
         # HIGH
         val = high_vals[i - (depth - 1)]
-        if (val - high[i]) <= deviation * point:
+        if (val - high[i]) <= deviation:
             back_range = slice(max(0, i - backstep), i)
             mask = (high_map[back_range] != 0) & (high_map[back_range] < val)
             idx = np.where(mask)[0] + back_range.start
@@ -88,17 +89,22 @@ def _zigzag_mql_numpy_complete(
         if high[i] == val:
             high_map[i] = val
 
-    # ------------------------------
-    # مرحله ۲: resolve zigzag + developing (retrospective confirmed_at)
+    # ---------------------------------
+    # phase-2: resolve zigzag + developing (retrospective confirmed_at)
+    # ---------------------------------
+    last_high = 0.0
+    last_low = 0.0
+    last_high_pos = -1
+    last_low_pos = -1
+    search_mode = 0  # 0=Extremum, 1=Search next peak, -1=Search next bottom
+
     for i in range(depth - 1, n):
-        h_val = high_map[i]
         l_val = low_map[i]
+        h_val = high_map[i]
 
         # developing_leg
-        if search_mode == 1:
-            developing_leg[i] = 1
-        elif search_mode == -1:
-            developing_leg[i] = -1
+        if search_mode == 1: developing_leg[i] = 1
+        elif search_mode == -1: developing_leg[i] = -1
 
         if search_mode == 0:
             if last_high == 0.0 and h_val != 0.0:
@@ -155,8 +161,8 @@ def _zigzag_mql_numpy_complete(
     high_actual = np.where(state_series == -1, high, 0)
     low_actual  = np.where(state_series == +1, low , 0)
 
-    # return state_series, high_actual, low_actual, confirmed_at, developing_leg
-    return state_series, high_actual, low_actual
+    return state_series, high_actual, low_actual, confirmed_at, developing_leg
+    # return state_series, high_actual, low_actual
 
 #====================================================================
 # Loop-wise and njit
@@ -167,26 +173,27 @@ def _zigzag_mql_njit_loopwise_complete(
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 3,
-    point: float = 0.00001,
+    # point: float = 0.01,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+# ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     high_arr = high.astype(np.float64)
     low_arr  = low.astype(np.float64)
 
     @njit(cache=True)
-    def _zigzag_core(high_arr, low_arr, depth, deviation, backstep, point):
+    def _zigzag_core(high_arr, low_arr, depth, deviation, backstep):  #, point):
         n = high_arr.shape[0]
 
-        zz_buffer   = np.zeros(n, dtype=np.float64)
-        high_map    = np.zeros(n, dtype=np.float64)
         low_map     = np.zeros(n, dtype=np.float64)
+        high_map    = np.zeros(n, dtype=np.float64)
+        zz_buffer   = np.zeros(n, dtype=np.float64)
         state       = np.zeros(n, dtype=np.int8)
         confirmed_at = np.full(n, -1, dtype=np.int32)
         developing_leg = np.zeros(n, dtype=np.int8)
 
-        # ------------------
+        # -----------------------------
         # Stage 1: local extrema
-        # ------------------
+        # -----------------------------
         for i in range(depth - 1, n):
             # LOW
             lo_val = low_arr[i]
@@ -197,7 +204,7 @@ def _zigzag_mql_njit_loopwise_complete(
                     lo_val = low_arr[j]
                     lo_idx = j
 
-            if (low_arr[i] - lo_val) <= deviation * point:
+            if (low_arr[i] - lo_val) <= deviation:  # * point:
                 for b in range(1, backstep + 1):
                     j = i - b
                     if j >= 0 and low_map[j] != 0.0 and low_map[j] > lo_val:
@@ -217,7 +224,7 @@ def _zigzag_mql_njit_loopwise_complete(
                     hi_val = high_arr[j]
                     hi_idx = j
 
-            if (hi_val - high_arr[i]) <= deviation * point:
+            if (hi_val - high_arr[i]) <= deviation:  # * point:
                 for b in range(1, backstep + 1):
                     j = i - b
                     if j >= 0 and high_map[j] != 0.0 and high_map[j] < hi_val:
@@ -228,9 +235,9 @@ def _zigzag_mql_njit_loopwise_complete(
             if high_arr[i] == hi_val:
                 high_map[i] = hi_val
 
-        # ------------------
+        # -----------------------------
         # Stage 2: zigzag resolve + developing + retrospective confirmed_at
-        # ------------------
+        # -----------------------------
         last_high = 0.0
         last_low = 0.0
         last_hp = -1
@@ -299,7 +306,7 @@ def _zigzag_mql_njit_loopwise_complete(
         return state, zz_buffer, high_map, low_map, confirmed_at, developing_leg
 
     state, zz, hmap, lmap, confirmed_at, developing_leg = _zigzag_core(
-        high_arr, low_arr, depth, deviation, backstep, point
+        high_arr, low_arr, depth, deviation, backstep  #, point
     )
 
     high_actual = np.zeros_like(high_arr)
@@ -311,23 +318,25 @@ def _zigzag_mql_njit_loopwise_complete(
         elif state[i] == 1:
             low_actual[i] = low_arr[i]
 
-    # return state, high_actual, low_actual, confirmed_at, developing_leg
-    return state, high_actual, low_actual
+    return state, high_actual, low_actual, confirmed_at, developing_leg
+    # return state, high_actual, low_actual
 
 #====================================================================
 # Wrapper function to choose between njit and non-njit based on data size
 #==================================================================== Func3
-def zigzag(
+def zigzag_wrapper(
     high: pd.Series,
     low: pd.Series,
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 10,
-    point: float = 0.01,
+    # point: float = 0.01,
     addmeta: bool = True,
     final_check: bool = True,   # Added: 1404/12/01
 ) -> pd.DataFrame:
     
+    n = len(high)
+
     idx = high.index
     high_np = np.ascontiguousarray(high.values, dtype=np.float64)
     low_np  = np.ascontiguousarray(low.values,  dtype=np.float64)
@@ -335,12 +344,16 @@ def zigzag(
 
     # Using "bytes_used <= 1_280_000"  isntead of "len(high_np) <= 80_000"
     if bytes_used <= 1_280_000:
-        state, high_actual, low_actual = _zigzag_mql_numpy_complete(
-                high_np, low_np, depth, deviation, backstep, point)
+        state, high_actual, low_actual, confirmed_at, developing_leg = \
+            _zigzag_mql_numpy_complete(
+                # high_np, low_np, depth, deviation, backstep, point)
+                high_np, low_np, depth, deviation, backstep)
 
     else:
-        state, high_actual, low_actual = _zigzag_mql_njit_loopwise_complete(
-                high_np, low_np, depth, deviation, backstep, point)
+        state, high_actual, low_actual, confirmed_at, developing_leg = \
+            _zigzag_mql_njit_loopwise_complete(
+                # high_np, low_np, depth, deviation, backstep, point)
+                high_np, low_np, depth, deviation, backstep)
 
     # --- state correction ----------------------------------------------------
     # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
@@ -352,10 +365,10 @@ def zigzag(
         index=idx,
         data={
             "state": state.astype(np.int8),        # at HIGHs: state = +1, at LOWs: state = -1
-            "high" : high_actual.astype(float),
-            "low"  : low_actual.astype(float),
-            # "confirmed_at": confirmed_at.astype(np.int32),
-            # "developing_leg": developing_leg.astype(np.int8),
+            "high_zz" : high_actual.astype(float),
+            "low_zz"  : low_actual.astype(float),
+            "confirmed_at": confirmed_at.astype(np.int32),
+            "developing_leg": developing_leg.astype(np.int8),
         }
     )
     # --- build zigzag legs metadata ------------------------------------------
@@ -381,22 +394,22 @@ def zigzag(
                     "start_ts": last_idx,               # timestamp
                     "end_ts": idx_val,                  # timestamp
                     "direction": int(state_val),        # -1/+1
-                    "start_extr": price_st,
-                    "end_extr":   price_ed,
+                    "start_extr": price_st,             # price at "start extremum"
+                    "end_extr":   price_ed,             # price at "end extremum"
                     "price_diff": price_ed - price_st, 
                     "start_pos": int(start_pos),                  # pos = position
                     "end_pos": int(end_pos),                      # pos = position
-                    # "start_confirmed_at": int(confirmed_at[start_pos]),          # pos
-                    # "end_confirmed_at": int(confirmed_at[end_pos]),              # pos
-                    # "start_developing_leg": int(developing_leg[start_pos]),      # pos
-                    # "end_developing_leg": int(developing_leg[end_pos]),          # pos
+                    "start_confirmed_at": int(confirmed_at[start_pos]),          # pos
+                    "end_confirmed_at": int(confirmed_at[end_pos]),              # pos
+                    "start_developing_leg": int(developing_leg[start_pos]),      # pos
+                    "end_developing_leg": int(developing_leg[end_pos]),          # pos
                 })
 
         last_idx = idx_val
         last_state = state_val
     
     # --- final check at wrapper ---------------------------------------------- added 1404/12/01
-    if legs and final_check:
+    if (legs is not None) and (final_check==True):
         merged_legs = []
         temp_leg = legs[0]
 
@@ -407,8 +420,8 @@ def zigzag(
                 # --- اصلاح خروجی گرفته شده از تابع زیگزاگ ---
                 e = temp_leg["end_pos"]
                 zz_df.loc[zz_df.index[e], "state"] = 0
-                zz_df.loc[zz_df.index[e], "high"] = 0
-                zz_df.loc[zz_df.index[e], "low"] = 0
+                zz_df.loc[zz_df.index[e], "high_zz"] = 0
+                zz_df.loc[zz_df.index[e], "low_zz"] = 0
 
                 # --- بسط لگ فعلی: end_ts، end_extr، end_pos، price_diff ---
                 temp_leg["end_ts"] = leg["end_ts"]
@@ -462,7 +475,7 @@ def zigzag_mtf_adapter(
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 10,
-    point: float = 0.01,
+    # point: float = 0.01,
     mode: Literal["last", "forward_fill"] = "forward_fill",
     extend_last_leg: bool = False,  # True: فرض میکند که آخرین لگ تا انتهای دیتاها ادامه می یابد
     use_timeshift: bool = False,
@@ -486,10 +499,10 @@ def zigzag_mtf_adapter(
         raise ValueError("HTF resample produced empty dataframe")
     
     # --- Run original ZigZag on HTF ------------------------------------------ ok3
-    zz_htf = zigzag(
+    zz_htf = zigzag_wrapper(
         high=htf["high"],
         low=htf["low"],
-        depth=depth, deviation=deviation, backstep=backstep, point=point,
+        depth=depth, deviation=deviation, backstep=backstep, # point=point,
         addmeta=True,
         final_check=True,
     )
@@ -649,11 +662,11 @@ def zigzag_mtf_adapter(
 def zigzag_legs(
     high: pd.Series,
     low: pd.Series,
-    tf: str,
+    tf: str,   # این تایم فریم باید از تایم فریم مربوط به داده ها بزرگتر باشد
     depth: int = 12,
     deviation: float = 5.0,
     backstep: int = 10,
-    point: float = 0.01,
+    # point: float = 0.01,
     # mode: Literal["last", "forward_fill"] = "forward_fill",
     extend_last_leg: bool = False,
     use_timeshift: bool = False,
@@ -702,13 +715,13 @@ def zigzag_legs(
 
     # --- equal TF --------------------------------------------------
     if tf_td == tf_df:
-        zz = zigzag(
+        zz = zigzag_wrapper(
             high=high,
             low=low,
             depth=depth,
             deviation=deviation,
             backstep=backstep,
-            point=point,
+            # point=point,
             addmeta=True,
             final_check=True,
         )
@@ -739,7 +752,7 @@ def zigzag_legs(
         depth=depth,
         deviation=deviation,
         backstep=backstep,
-        point=point,
+        # point=point,
         # mode=mode,
         extend_last_leg=extend_last_leg,
         use_timeshift=use_timeshift,
@@ -757,9 +770,708 @@ def zigzag_legs(
 # =====================================================================================
 """ Func Names                           Used in Functions: ...
                                         1   2   3   4   5   6   7   8   9  10
-1  _zigzag_mql_numpy_complete          --  --  ok  --  --  --  --  --  --  --  --
-2  _zigzag_mql_njit_loopwise_complete  --  --  ok  --  --  --  --  --  --  --  --
-3  zigzag                              --  --  --  --  --  --  --  --  --  --  -- For External Use
-4  zigzag_mtf_adapter                  --  --  --  --  --  --  --  --  --  --  -- For External Use
-5  zigzag_legs                         --  --  --  --  --  --  --  --  --  --  -- For External Use
+1  _zigzag_mql_numpy_complete          --  --  ok  --  --  --  --  --  --  --
+2  _zigzag_mql_njit_loopwise_complete  --  --  ok  --  --  --  --  --  --  --
+3  zigzag                              --  --  --  ok  ok  --  --  --  --  -- For Internal, External Use
+4  zigzag_mtf_adapter                  --  --  --  --  ok  --  --  --  --  -- For Internal, External Use
+5  zigzag_legs                         --  --  --  --  --  --  --  --  --  -- For External Use
 """
+
+
+#########################################################################################
+# NEW ZIGZAG FILE
+#########################################################################################
+
+#####################################################################
+# Layer 1 — New Zigzag Core
+#####################################################################
+
+#================================================ func-1
+# Numpy function
+#================================================
+def _zigzag_numpy(
+    high: np.ndarray,
+    low: np.ndarray,
+    depth: int = 12,
+    deviation: float = 0.05,
+    backstep: int = 3,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+
+    n = len(high)
+
+    zz_buffer    = np.zeros(n)
+    state_series = np.zeros(n, dtype=np.int8)
+
+    confirmed_at   = np.full(n, -1, dtype=np.int32)
+    developing_leg = np.zeros(n, dtype=np.int8)
+
+    # -----------------------------
+    # phase 1 : candidate detection
+    # -----------------------------
+    low_windows  = np.lib.stride_tricks.sliding_window_view(low, depth)
+    high_windows = np.lib.stride_tricks.sliding_window_view(high, depth)
+
+    low_idx_in_window  = np.argmin(low_windows, axis=1)
+    high_idx_in_window = np.argmax(high_windows, axis=1)
+
+    base = np.arange(depth - 1, n) - (depth - 1)
+
+    low_vals  = low[base + low_idx_in_window]
+    high_vals = high[base + high_idx_in_window]
+
+    low_map  = np.zeros(n)
+    high_map = np.zeros(n)
+
+    for i in range(depth - 1, n):
+
+        l_val = low_vals[i - (depth - 1)]
+        if (low[i] - l_val) <= deviation:
+            r = slice(max(0, i - backstep), i)
+            m = (low_map[r] != 0) & (low_map[r] > l_val)
+            low_map[np.where(m)[0] + r.start] = 0.0
+        if low[i] == l_val:
+            low_map[i] = l_val
+
+        h_val = high_vals[i - (depth - 1)]
+        if (h_val - high[i]) <= deviation:
+            r = slice(max(0, i - backstep), i)
+            m = (high_map[r] != 0) & (high_map[r] < h_val)
+            high_map[np.where(m)[0] + r.start] = 0.0
+        if high[i] == h_val:
+            high_map[i] = h_val
+
+    # -----------------------------
+    # phase 2 : resolve
+    # -----------------------------
+    last_high = 0.0
+    last_low = 0.0
+    last_high_pos = -1
+    last_low_pos = -1
+
+    search_mode = 0
+
+    for i in range(depth - 1, n):
+
+        l_cand = low_map[i]
+        h_cand = high_map[i]
+
+        if search_mode == 1:
+            developing_leg[i] = 1
+        elif search_mode == -1:
+            developing_leg[i] = -1
+
+        # -----------------
+        # initial pivot
+        # -----------------
+        if search_mode == 0:
+
+            if h_cand != 0:
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+                search_mode = -1
+
+            elif l_cand != 0:
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+                search_mode = 1
+
+        # -----------------
+        # searching LOW
+        # -----------------
+        elif search_mode == 1:
+
+            if l_cand != 0 and (last_low == 0 or l_cand < last_low):
+
+                # حذف extreme قبلی همان لگ
+                if last_low_pos >= 0:
+                    zz_buffer[last_low_pos] = 0
+                    state_series[last_low_pos] = 0
+
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+
+
+            if h_cand != 0:
+
+                if last_low_pos >= 0:
+                    confirmed_at[last_low_pos] = i
+
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+
+                search_mode = -1
+
+        # -----------------
+        # searching HIGH
+        # -----------------
+        elif search_mode == -1:
+
+            if h_cand != 0 and (last_high == 0 or h_cand > last_high):
+
+                if last_high_pos >= 0:
+                    zz_buffer[last_high_pos] = 0
+                    state_series[last_high_pos] = 0
+
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+
+
+            if l_cand != 0:
+
+                if last_high_pos >= 0:
+                    confirmed_at[last_high_pos] = i
+
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+
+                search_mode = 1
+
+    high_actual = np.where(state_series == -1, high, 0)
+    low_actual  = np.where(state_series == 1 , low , 0)
+
+    return state_series, high_actual, low_actual, confirmed_at, developing_leg
+
+
+#================================================ func-2
+# Numba function
+#================================================
+@njit(cache=True, fastmath=True)
+def _zigzag_njit(
+    high: np.ndarray,
+    low: np.ndarray,
+    depth: int = 12,
+    deviation: float = 0.05,
+    backstep: int = 3,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+
+    n = len(high)
+
+    zz_buffer = np.zeros(n)
+    state_series = np.zeros(n, dtype=np.int8)
+
+    confirmed_at = np.full(n, -1, dtype=np.int32)
+    developing_leg = np.zeros(n, dtype=np.int8)
+
+    low_map = np.zeros(n)
+    high_map = np.zeros(n)
+
+    # -------------------------------------------------
+    # phase 1 : candidate detection (manual sliding window)
+    # -------------------------------------------------
+    for i in range(depth - 1, n):
+
+        start = i - depth + 1
+
+        min_low = low[start]
+        max_high = high[start]
+
+        for j in range(start + 1, i + 1):
+            if low[j] < min_low:
+                min_low = low[j]
+
+            if high[j] > max_high:
+                max_high = high[j]
+
+        # LOW candidate
+        if (low[i] - min_low) <= deviation:
+
+            b_start = i - backstep
+            if b_start < 0:
+                b_start = 0
+
+            for k in range(b_start, i):
+                if low_map[k] != 0 and low_map[k] > min_low:
+                    low_map[k] = 0.0
+
+        if low[i] == min_low:
+            low_map[i] = min_low
+
+        # HIGH candidate
+        if (max_high - high[i]) <= deviation:
+
+            b_start = i - backstep
+            if b_start < 0:
+                b_start = 0
+
+            for k in range(b_start, i):
+                if high_map[k] != 0 and high_map[k] < max_high:
+                    high_map[k] = 0.0
+
+        if high[i] == max_high:
+            high_map[i] = max_high
+
+    # -------------------------------------------------
+    # phase 2 : resolve zigzag
+    # -------------------------------------------------
+
+    last_high = 0.0
+    last_low = 0.0
+
+    last_high_pos = -1
+    last_low_pos = -1
+
+    search_mode = 0
+
+    for i in range(depth - 1, n):
+
+        l_cand = low_map[i]
+        h_cand = high_map[i]
+
+        if search_mode == 1:
+            developing_leg[i] = 1
+        elif search_mode == -1:
+            developing_leg[i] = -1
+
+        # ---------------------------------
+        # initial pivot
+        # ---------------------------------
+        if search_mode == 0:
+
+            if h_cand != 0.0:
+
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+
+                search_mode = -1
+
+            elif l_cand != 0.0:
+
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+
+                search_mode = 1
+
+        # ---------------------------------
+        # searching LOW
+        # ---------------------------------
+        elif search_mode == 1:
+
+            # improving low
+            if l_cand != 0.0 and (last_low == 0.0 or l_cand < last_low):
+
+                if last_low_pos >= 0:
+                    zz_buffer[last_low_pos] = 0.0
+                    state_series[last_low_pos] = 0
+
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+
+            # RAW confirmation: only if opposite candidate appears
+            if h_cand != 0.0:
+
+                if last_low_pos >= 0:
+                    confirmed_at[last_low_pos] = i
+
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+
+                search_mode = -1
+
+        # ---------------------------------
+        # searching HIGH
+        # ---------------------------------
+        elif search_mode == -1:
+
+            #  improving high
+            if h_cand != 0.0 and (last_high == 0.0 or h_cand > last_high):
+
+                if last_high_pos >= 0:
+                    zz_buffer[last_high_pos] = 0.0
+                    state_series[last_high_pos] = 0
+
+                last_high = h_cand
+                last_high_pos = i
+
+                zz_buffer[i] = h_cand
+                state_series[i] = -1
+
+            # RAW confirmation: only if opposite candidate appears
+            if l_cand != 0.0:
+
+                if last_high_pos >= 0:
+                    confirmed_at[last_high_pos] = i
+
+                last_low = l_cand
+                last_low_pos = i
+
+                zz_buffer[i] = l_cand
+                state_series[i] = 1
+
+                search_mode = 1
+
+    # --------------------------------------
+    # generate high_actual / low_actual
+    # --------------------------------------
+    high_actual = np.zeros(n)
+    low_actual = np.zeros(n)
+
+    for i in range(n):
+        if state_series[i] == -1:
+            high_actual[i] = high[i]
+        elif state_series[i] == 1:
+            low_actual[i] = low[i]
+
+    return state_series, high_actual, low_actual, confirmed_at, developing_leg
+
+
+#================================================ func-3
+# Wrapper function
+#================================================
+def zigzag_new_wrapper(
+    high: pd.Series,
+    low: pd.Series,
+    depth: int = 12,
+    deviation: float = 5.0,
+    backstep: int = 10,
+    # ---
+    soft_confirmation: bool = True,
+    atr: pd.Series = None,
+    deviation_soft_mult: float = 1.0,
+    time_threshold: int = 10,
+    atr_mult: float = 1.5,
+    # ---
+    addmeta: bool = True,
+    final_check: bool = False, # لازم است بخش مربوط به این، به قبل از (تاییدهای نرم) منتقل بشود
+        # همچنین فعلاً برای جلوگیری از دستکاری گذشته، باداشتن اطلاعات آینده، بهتر است اعمال نشود
+) -> pd.DataFrame:
+    
+    n = len(high)
+
+    idx = high.index
+    high_np = np.ascontiguousarray(high.values, dtype=np.float64)
+    low_np  = np.ascontiguousarray(low.values,  dtype=np.float64)
+    bytes_used = high_np.nbytes + low_np.nbytes
+
+    # Using "bytes_used <= 1_280_000"  isntead of "len(high_np) <= 80_000"
+    if bytes_used <= 1_280_000:
+        state, high_actual, low_actual, confirmed_at, developing_leg = \
+            _zigzag_numpy(high_np, low_np, depth, deviation, backstep)
+    else:
+        state, high_actual, low_actual, confirmed_at, developing_leg = \
+            _zigzag_njit(high_np, low_np, depth, deviation, backstep)
+
+    # --- soft confirmation ---------------------------------------------------
+    if soft_confirmation:
+        sc_deviation, sc_time, sc_structure, sc_atr = \
+            zigzag_layer2_soft_confirmations(
+                high=high,
+                low=low,
+                state_series=state,
+                high_pivot=high_actual,
+                low_pivot=low_actual,
+                # ---
+                atr=atr,
+                deviation_soft_mult = deviation_soft_mult,
+                time_threshold=time_threshold,
+                atr_mult=atr_mult
+            )
+    # --- state correction ----------------------------------------------------
+    # از اینجا به بعد وضعیت سوئینگ را از (جستجوی آینده) به (وضعیت فعلی) اصلاح میکنیم
+    # یعنی در سقفها برابر با +1 است و در کفها برابر با -1 است    
+    state = -1 * state
+    
+    # --- main result of this function ----------------------------------------
+    zz_df = pd.DataFrame(
+        index=idx,
+        data={
+            "state": state.astype(np.int8),        # at HIGHs: state = +1, at LOWs: state = -1
+            "high_zz" : high_actual.astype(float),
+            "low_zz"  : low_actual.astype(float),
+            "confirmed_at": confirmed_at.astype(np.int32),
+            "developing_leg": developing_leg.astype(np.int8),
+
+            "sc_deviation": sc_deviation,
+            "sc_time": sc_time,
+            "sc_structure": sc_structure,
+            "sc_atr": sc_atr,
+        }
+    )
+    # --- build zigzag legs metadata ------------------------------------------
+    # leg = فاصله بین دو اکسترمم متوالی با جهت مشخص
+    legs = []
+    # precompute positional map (O(1) lookup)
+    pos_map = {ts: i for i, ts in enumerate(idx)}
+
+    last_idx = None
+    last_state = 0
+    for idx_val, state_val in zip(idx, state):
+        if state_val == 0:
+            continue
+
+        if last_idx is not None:
+            start_pos = pos_map[last_idx]
+            end_pos   = pos_map[idx_val]
+            price_st = high_np[start_pos] if last_state == 1 else low_np[start_pos]
+            price_ed = high_np[end_pos]   if state_val  == 1 else low_np[end_pos]
+
+            if end_pos > start_pos:
+                legs.append({
+                    "start_ts": last_idx,               # timestamp
+                    "end_ts": idx_val,                  # timestamp
+                    "direction": int(state_val),        # -1/+1
+                    "start_extr": price_st,             # price at "start extremum"
+                    "end_extr":   price_ed,             # price at "end extremum"
+                    "price_diff": price_ed - price_st, 
+                    "start_pos": int(start_pos),                  # pos = position
+                    "end_pos": int(end_pos),                      # pos = position
+                    "start_confirmed_at": int(confirmed_at[start_pos]),          # pos
+                    "end_confirmed_at": int(confirmed_at[end_pos]),              # pos
+                    "start_developing_leg": int(developing_leg[start_pos]),      # pos
+                    "end_developing_leg": int(developing_leg[end_pos]),          # pos
+                })
+
+        last_idx = idx_val
+        last_state = state_val
+    
+    # --- final check at wrapper ---------------------------------------------- added 1404/12/01
+    if (legs is not None) and (final_check == True):
+        merged_legs = []
+        temp_leg = legs[0]
+
+        for leg in legs[1:]:
+            # اگر اختلاف قیمت (لگ موقت) هم‌علامت است با (لگ قبلی)، ادغام صورت بگیرد
+            if np.sign(leg["price_diff"]) == np.sign(temp_leg["price_diff"]):
+                
+                # --- اصلاح خروجی گرفته شده از تابع زیگزاگ ---
+                e = temp_leg["end_pos"]
+                zz_df.loc[zz_df.index[e], "state"] = 0
+                zz_df.loc[zz_df.index[e], "high_zz"] = 0
+                zz_df.loc[zz_df.index[e], "low_zz"] = 0
+
+                # --- بسط لگ فعلی: end_ts، end_extr، end_pos، price_diff ---
+                temp_leg["end_ts"] = leg["end_ts"]
+                temp_leg["end_extr"] = leg["end_extr"]
+                temp_leg["end_pos"] = leg["end_pos"]
+                temp_leg["price_diff"] = temp_leg["end_extr"] - temp_leg["start_extr"]
+                temp_leg["direction"] = np.sign(temp_leg["price_diff"])  # این سطر شاید لازم نباشد
+            else:
+                merged_legs.append(temp_leg)
+                temp_leg = leg
+
+        merged_legs.append(temp_leg)  # آخرین لگ
+        legs = merged_legs
+
+    # --- attach metadata -----------------------------------------------------
+    if not addmeta:
+        return zz_df
+    
+    zz_df.attrs["legs"] = legs
+    return zz_df
+
+
+#####################################################################
+# Layer 2 — Soft Confirmation Engine
+##################################################################### func-4
+def zigzag_layer2_soft_confirmations(
+    high: np.ndarray,
+    low: np.ndarray,
+    # close: np.ndarray,
+
+    state_series: np.ndarray,
+    high_pivot: np.ndarray,
+    low_pivot: np.ndarray,
+    # confirmed_at: np.ndarray,
+    # developing_leg: np.ndarray,
+
+    atr: np.ndarray | None = None,
+
+    deviation_soft_mult: float = 1.0,
+    time_threshold: int = 10,
+    atr_mult: float = 1.5
+):
+
+    n = len(high)
+
+    sc_deviation = np.zeros(n, dtype=np.int8)
+    sc_time      = np.zeros(n, dtype=np.int8)
+    sc_structure = np.zeros(n, dtype=np.int8)
+    sc_atr       = np.zeros(n, dtype=np.int8)
+
+    last_pivot_price = None
+    last_pivot_index = -1
+    last_pivot_type  = 0
+
+    prev_high_pivot = None
+    prev_low_pivot  = None
+
+    for i in range(n):
+
+        # ---------------------
+        # detect new pivot
+        # ---------------------
+        if state_series[i] == -1:
+
+            prev_high_pivot = high_pivot[i]
+
+            last_pivot_price = high_pivot[i]
+            last_pivot_index = i
+            last_pivot_type  = -1
+
+        elif state_series[i] == 1:
+
+            prev_low_pivot = low_pivot[i]
+
+            last_pivot_price = low_pivot[i]
+            last_pivot_index = i
+            last_pivot_type  = 1
+
+        if last_pivot_index < 0:
+            continue
+
+        # ------------------------------
+        # 1- deviation soft confirmation
+        # ------------------------------
+        if last_pivot_type == 1:  # from low
+            move = high[i] - last_pivot_price
+        else:                     # from high
+            move = last_pivot_price - low[i]
+
+        if move >= deviation_soft_mult:
+            sc_deviation[i] = 1
+
+        # ------------------------------
+        # 2- time soft confirmation
+        # ------------------------------
+        bars_since = i - last_pivot_index
+
+        if bars_since >= time_threshold:
+            sc_time[i] = 1
+
+        # ------------------------------
+        # 3- structure soft confirmation
+        # ------------------------------
+        if state_series[i] == -1 and prev_high_pivot is not None:
+            if high_pivot[i] < prev_high_pivot:
+                sc_structure[i] = 1
+
+        if state_series[i] == 1 and prev_low_pivot is not None:
+            if low_pivot[i] > prev_low_pivot:
+                sc_structure[i] = 1
+
+        # -----------------------------
+        # 4- ATR soft confirmation
+        # ------------------------------
+        if atr is not None:
+
+            if last_pivot_type == 1:
+                atr_move = high[i] - last_pivot_price
+            else:
+                atr_move = last_pivot_price - low[i]
+
+            if atr_move >= atr_mult * atr[i]:
+                sc_atr[i] = 1
+
+    return sc_deviation, sc_time, sc_structure, sc_atr  # sc: soft_confirmation
+
+
+#####################################################################
+# Layer 3 — Final Candle‑Level Market State
+##################################################################### func-5
+def zigzag_layer3_market_state(
+    high: np.ndarray,
+    low: np.ndarray,
+    close: np.ndarray,
+
+    state_series: np.ndarray,
+    confirmed_at: np.ndarray,
+    developing_leg: np.ndarray,
+
+    sc_deviation: np.ndarray,
+    sc_time: np.ndarray,
+    sc_structure: np.ndarray,
+    sc_atr: np.ndarray,
+):
+
+    n = len(close)
+
+    # بخش‌های اصلی state لایه سوم
+    trend_state = np.zeros(n, dtype=np.int8)
+    pivot_age = np.full(n, -1, dtype=np.int32)
+    last_pivot_price_arr = np.zeros(n)
+    distance_from_pivot = np.zeros(n)
+    soft_strength = np.zeros(n, dtype=np.int8)
+
+    last_pivot_index = -1
+    last_pivot_price = None
+
+    for i in range(n):
+
+        # ---------------------------
+        # 1) تعیین trend_state
+        # ---------------------------
+        # developing_leg = خروجی لایه اول
+        trend_state[i] = developing_leg[i]
+
+        # ---------------------------
+        # 2) pivot detection
+        # ---------------------------
+        if state_series[i] == 1:       # low pivot
+            last_pivot_price = low[i]
+            last_pivot_index = i
+
+        elif state_series[i] == -1:    # high pivot
+            last_pivot_price = high[i]
+            last_pivot_index = i
+
+        # ---------------------------
+        # 3) pivot age
+        # ---------------------------
+        if last_pivot_index >= 0:
+            pivot_age[i] = i - last_pivot_index
+
+        # ---------------------------
+        # 4) distance from pivot
+        # ---------------------------
+        if last_pivot_price is not None:
+            last_pivot_price_arr[i] = last_pivot_price
+            distance_from_pivot[i] = abs(close[i] - last_pivot_price)
+
+        # ---------------------------
+        # 5) soft-strength
+        # ---------------------------
+        soft_strength[i] = (
+            sc_deviation[i]
+            + sc_time[i]
+            + sc_structure[i]
+            + sc_atr[i]
+        )
+
+    return {
+        "trend_state": trend_state,
+        "pivot_age": pivot_age,
+        "last_pivot_price": last_pivot_price_arr,
+        "distance_from_pivot": distance_from_pivot,
+        "soft_strength": soft_strength,
+    }
+
+

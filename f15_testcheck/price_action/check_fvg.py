@@ -135,7 +135,7 @@ print("BF:", int(out["bf_born"].sum()), int(out["bf_alive_n"].sum()), int((out["
 
 # --- تست کوچک برای 5 گانه همراه با فیوژن ---------------------------
 import pandas as pd
-from f03_features.feature_registry import ADV_INDICATOR_REGISTRY
+from f03_features.OLD.feature_registry import ADV_INDICATOR_REGISTRY
 
 # Load H1 data
 df = pd.read_parquet("f02_data/processed/XAUUSD/H1.parquet")[["H1_open","H1_high","H1_low","H1_close"]]

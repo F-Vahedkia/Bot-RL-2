@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
+
 def load_sb3(alg: str, path: Path):
     import stable_baselines3 as sb3
     if alg.lower() == "auto":

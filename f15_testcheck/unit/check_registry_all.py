@@ -26,7 +26,7 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 # ⚠️ واردکردن فقط REGISTRY برای جلوگیری از اجرای اضافی
-from f03_features.feature_registry import REGISTRY  # noqa: E402
+from f03_features.OLD.feature_registry import REGISTRY  # noqa: E402
 
 def _safe_str(x: object, max_len: int = 180) -> str:
     """برگرداندن رشتهٔ امن با برش طول در صورت نیاز (برای CSV)."""

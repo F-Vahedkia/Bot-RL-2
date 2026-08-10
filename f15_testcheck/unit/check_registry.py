@@ -4,7 +4,7 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from f03_features.feature_registry import REGISTRY
+from f03_features.OLD.feature_registry import REGISTRY
 exp = ["golden_zone","fib_cluster","fib_ext_targets","fibo_features_full","levels_from_legs","select_legs_from_swings"]
 keys = sorted(REGISTRY.keys())
 miss = [k for k in exp if k not in keys]

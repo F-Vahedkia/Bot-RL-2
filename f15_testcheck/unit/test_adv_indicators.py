@@ -27,8 +27,8 @@ if str(_PR) not in sys.path:
 
 # -- وارد کردن ماژول‌ها؛ در صورت خطا، کل ماژول را Skip کن ----------------------
 try:
-    from f03_features import feature_engine as _engine
-    from f03_features.feature_registry import (
+    from f03_features.OLD import feature_engine as _engine
+    from f03_features.OLD.feature_registry import (
         get_indicator,
         list_all_indicators,
     )

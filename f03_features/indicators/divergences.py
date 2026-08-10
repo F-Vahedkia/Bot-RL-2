@@ -5,12 +5,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 # pd.set_option('future.no_silent_downcasting', True)
-from typing import Dict
+from typing import Dict, Literal
 from .core import rsi, macd
 from collections import deque
 from numba import njit
 
-#------------------------------------------------------------------------------ ok
+#------------------------------------------------------------------------------ 1- ok
 """
 تشخیص pivot به صورت causal (بدون استفاده از داده‌های آینده)
 pivot زمانی تایید می‌شود که k کندل بعد از آن تشکیل شده باشند
@@ -103,7 +103,7 @@ def pivots(series: pd.Series, k: int = 2):
         pd.Series(pl, index=series.index, name="pl"),
     )
 
-#------------------------------------------------------------------------------ ok
+#------------------------------------------------------------------------------ 2- ok
 # تشخیص واگرایی کلاسیک و مخفی بین قیمت و اسیلاتور
 # خروجی به صورت فلگ باینری (مناسب برای استفاده در سیگنال‌ها)
 def divergence_flags_old(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = "classic"):
@@ -288,8 +288,11 @@ def divergence_flags_njit(price: pd.Series, osc: pd.Series, k: int = 2, mode: st
     return bull, bear
 
 # WRAPPER:
-def divergence_flags(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = "classic"):
-    
+def divergence_flags(price: pd.Series,
+                     osc: pd.Series,
+                     k: int = 2,
+                     mode: Literal ["classic", "hidden"] = "classic",
+):
     # --- نوع داده باید Series باشد ---
     if not isinstance(price, pd.Series):
         raise TypeError("price must be a pandas Series")
@@ -333,7 +336,7 @@ def divergence_flags(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = "
         pd.Series(bear, index=price.index, dtype="int8", name=f"div_bear_{abb_mod}"),
     )
 
-#------------------------------------------------------------------------------ ok
+#------------------------------------------------------------------------------ 3- ok
 def registry_flag() -> Dict[str, callable]:
     # رجیستری فیچرهای باینری واگرایی
     
@@ -375,7 +378,7 @@ def registry_flag() -> Dict[str, callable]:
         "div_rsi": make_div_rsi,
     }
 
-#------------------------------------------------------------------------------ ok
+#------------------------------------------------------------------------------ 4- ok
 def divergence_values_old(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = "classic"):
     """
     این تابع برای بازار زنده مناسب نیست و فقط برای مرور استراتژی کدنویسی موضوع نگه داشته شده
@@ -504,7 +507,7 @@ def divergence_values(price: pd.Series, osc: pd.Series, k: int = 2, mode: str = 
         pd.Series(bear, index=price.index),
     )
 
-#------------------------------------------------------------------------------ ok
+#------------------------------------------------------------------------------ 5- ok
 def registry() -> Dict[str, callable]:
     # رجیستری فیچرهای عددی واگرایی (برای استفاده مستقیم در RL)
     def cast32(d: Dict[str, pd.Series]) -> Dict[str, pd.Series]:
@@ -557,5 +560,4 @@ def registry() -> Dict[str, callable]:
 3  registry_flag      --  --  --  --  --   Only For Live Trading
 4  divergence_values  --  --  --  --  ok
 5  registry           --  --  --  --  --   MAIN REGISTRY FUNCTION
-
 """

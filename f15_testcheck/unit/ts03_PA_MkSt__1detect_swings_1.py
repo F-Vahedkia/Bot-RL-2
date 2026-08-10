@@ -5,7 +5,7 @@ import pandas as pd
 # import numpy as np
 
 from f03_features.price_action.market_structure import detect_swings
-from f03_features.indicators.zigzag import zigzag
+from f03_features.indicators.zigzag import zigzag_wrapper as zigzag
 
 _PATH = "f16_test_results/"
 # ---------------------------------------------------

@@ -20,8 +20,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 
-from f03_features.feature_registry import list_all_indicators
-from f03_features.feature_engine import run_specs_v2
+from f03_features.OLD.feature_registry import list_all_indicators
+from f03_features.OLD.feature_engine import run_specs_v2
 
 # ---------------------- پیکربندی عمومی ----------------------
 CONFIG_PATH = pathlib.Path("f01_config/config.yaml")
@@ -87,7 +87,7 @@ def _probe_spec_proc(df_base, spec, base_tf, q):
     اجرای ایزولهٔ یک spec در پروسس جدا؛ نتیجهٔ PASS/FAIL را در Queue می‌گذارد.
     """
     import pandas as _pd
-    from f03_features.feature_engine import run_specs_v2 as _run
+    from f03_features.OLD.feature_engine import run_specs_v2 as _run
     out = _run(df=df_base.copy(), specs=[spec], base_tf=base_tf)
     q.put(isinstance(out, _pd.DataFrame) and len(out) == len(df_base))
 

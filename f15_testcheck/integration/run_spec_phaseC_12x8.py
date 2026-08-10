@@ -15,8 +15,8 @@ import sys, pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 # entry-point هسته (طبق ساختار فعلی پروژه)
-from f03_features.feature_engine import apply as _engine_apply
-from f03_features.feature_registry import REGISTRY  # برای چک‌کردن وجود اندیکاتورها
+from f03_features.OLD.feature_engine import apply as _engine_apply
+from f03_features.OLD.feature_registry import REGISTRY  # برای چک‌کردن وجود اندیکاتورها
 
 # ----------------------------- ابزار ساخت دیتای تست -----------------------------
 def make_synthetic_ohlcv(n_minutes: int = 80000, seed: int = 2025) -> pd.DataFrame:
@@ -111,7 +111,7 @@ def nonfinite_report(df: pd.DataFrame) -> dict:
 
 # ----------------------------- اجرای اصلی -----------------------------
 def main():
-    from f03_features.feature_registry import REGISTRY
+    from f03_features.OLD.feature_registry import REGISTRY
     print("stoch in REGISTRY:", "stoch" in REGISTRY)
     print("keys like stoch:", [k for k in REGISTRY if "stoch" in k])
 

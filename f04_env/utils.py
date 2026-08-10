@@ -17,10 +17,10 @@ import numpy as np
 import pandas as pd
 
 from f10_utils.config_loader import load_config
-from f10_utils.config_ops import _deep_get
+from f10_utils.config_operations import _deep_get
 # --- مسیر پروژه و فایل‌ها ---
 
-def _project_root() -> Path:
+def project_root() -> Path:
     return Path(__file__).resolve().parents[1]  # .../f04_env → ریشهٔ پروژه
 
 def paths_from_cfg(cfg: Dict[str, Any]) -> Dict[str, Path]:
@@ -34,7 +34,7 @@ def paths_from_cfg(cfg: Dict[str, Any]) -> Dict[str, Path]:
         p_proj = ((cfg.get("project") or {}).get("paths") or {})
         p_flat = (cfg.get("paths") or {})
         raw = p_proj.get(key) or p_flat.get(key) or default
-        return _project_root() / raw
+        return project_root() / raw
 
     processed = _p("processed_dir", "f02_data/processed")
     cache     = _p("cache_dir",     "f02_cache")

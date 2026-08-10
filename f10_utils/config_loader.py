@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # f10_utils/config_loader.py
 # Status in (Bot-RL-2): Reviewed before 1404/09/05
 
@@ -28,6 +27,7 @@ import logging
 from typing import Any, Dict, Iterable, Literal, Optional, Union, List, Tuple
 from datetime import datetime, timezone
 from pathlib import Path
+from f10_utils.config_path_funcs import project_root
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
@@ -36,17 +36,9 @@ logger = logging.getLogger(__name__)
 # ابزارهای کمکی سطح پایین 
 # ============================================================ OK ALL
 # جایگزینِ مقاوم:
-def _project_root() -> Path:
-    """  پوشه ای که دارای زیرپوشه های f01, f10 باشد را به عنوان پوشه ریشه معرفی میکند  """
-    here = Path(__file__).resolve()
-    for p in [here.parent, *here.parents]:
-        if (p / "f01_config").exists() and (p / "f10_utils").exists():
-            return p
-    return here.parent  # fallback
-
 def _default_config_path() -> Path:
     """  مسیر پیش‌فرض فایل کانفیگ. """
-    return _project_root() / "f01_config" / "config.yaml"
+    return project_root() / "f01_config" / "config.yaml"
 
 def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False) -> Dict[str, Any]:
     p = Path(path)
@@ -126,7 +118,7 @@ class ConfigLoader:
         env_prefix: پیشوند کلیدهای محیطی (مثلاً BOT_). جستجوی بدون پیشوند نیز انجام می‌شود.
         enable_env_override: اگر False، ENV نادیده گرفته می‌شود.
         """
-        self.base_dir: Path = _project_root()
+        self.base_dir: Path = project_root()
 
         # بارگذاری .env از ریشهٔ پروژه (اگر موجود باشد)
         env_path = self.base_dir / ".env"
@@ -149,7 +141,7 @@ class ConfigLoader:
         self.reload()
 
     # ---------- بارگذاری اولیه با merge لایه‌ای ----------
-    def _load_yaml_layered(self) -> Dict[str, Any]:
+    def _load_yaml_layered_old1(self) -> Dict[str, Any]:     # Reserved at 05-04-20 05/04/20
         """
         config.yaml اصلی را می‌خواند و اگر کلیدهای top-level زیر وجود داشت ادغام می‌کند:
           - extends: list[str]  → به ترتیب خوانده و به‌عنوان Base merge می‌کند (اولی کم‌اهمیت‌تر)
@@ -173,7 +165,7 @@ class ConfigLoader:
           - f01_config/base_common.yaml
           - f01_config/base_live.yaml
          یا به‌جای extends از bases استفاده کنی،
-این لیست‌ها به‌عنوان فایل‌های Base خوانده می‌شوند و با _deep_merge روی هم merge می‌شوند.         
+        این لیست‌ها به‌عنوان فایل‌های Base خوانده می‌شوند و با _deep_merge روی هم merge می‌شوند.         
         extends و bases کلیدهای اختیاری top-level هستند برای لایه‌بندی کانفیگ.
         این لایه، ضعیف ترین لایه است.
         """
@@ -193,6 +185,63 @@ class ConfigLoader:
         overlays = root_cfg.get("overlays", []) or []
         if not isinstance(overlays, list):
             raise ValueError("'overlays' must be a list of file paths.")
+        for f in overlays:
+            merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
+
+        return merged
+
+    def _load_yaml_layered(self) -> Dict[str, Any]:          # Added at 05-04-20 05/04/20
+        """
+        config.yaml اصلی را می‌خواند و اگر کلیدهای top-level زیر وجود داشت ادغام می‌کند:
+          - extends: list[str]  → به ترتیب خوانده و به‌عنوان Base merge می‌کند (اولی کم‌اهمیت‌تر)
+          - overlays: list[str] → در انتها روی نتیجه merge می‌کند (بالاترین اولویت)
+        مسیرها می‌توانند نسبی به ریشهٔ پروژه یا مطلق باشند.
+        """
+        
+        # خواندن کانفیگ و ذخیره آن در یک دیکشنری به نام root_cfg 
+        root_cfg = _read_yaml_file(self.config_path, fail_on_duplicates=self._fail_on_dupe_keys)
+
+        """ Absolute path
+        یک مسیر مانند p را به مسیر مطلق تبدیل نموده و برمی گرداند
+        """
+        def _resolve(p: str) -> Path:
+            pp = Path(p)
+            return pp if pp.is_absolute() else (self.base_dir / pp)
+
+        """ extends / bases
+        اگر در کانفیگ بنویسی:
+        extends:
+          - f01_config/base_common.yaml
+          - f01_config/base_live.yaml
+         یا به‌جای extends از bases استفاده کنی،
+        این لیست‌ها به‌عنوان فایل‌های Base خوانده می‌شوند و با _deep_merge روی هم merge می‌شوند.         
+        extends و bases کلیدهای اختیاری top-level هستند برای لایه‌بندی کانفیگ.
+        این لایه، ضعیف ترین لایه است.
+        """
+
+
+        # دریافت لایه‌ها از کلید جدید config_layers
+        layers = root_cfg.get("config_layers", {})
+        extends = layers.get("extends", []) or []
+        bases = layers.get("bases", []) or []
+        overlays = layers.get("overlays", []) or []
+
+        merged: Dict[str, Any] = {}
+        # ادغام extends (کم‌اهمیت‌ترین)
+        for f in extends:
+            merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
+        # ادغام bases (اهمیت بیشتر)
+        for f in bases:
+            merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
+
+        # ادغام محتوای اصلی (به جز config_layers که فقط wrapper است)
+        main_content = {k: v for k, v in root_cfg.items() if k != "config_layers"}
+        merged = _deep_merge(merged, main_content)
+
+        # ادغام overlays (بالاترین اولویت)
+
+
+
         for f in overlays:
             merged = _deep_merge(merged, _read_yaml_file(_resolve(f), fail_on_duplicates=self._fail_on_dupe_keys))
 
@@ -316,7 +365,7 @@ class ConfigLoader:
         return out
 
     # ---------- اعتبارسنجی حداقلی/ارتقایافته ----------
-    def _validate(self, cfg: Dict[str, Any]) -> None:
+    def _validate(self, cfg: Dict[str, Any]) -> None:          # Changed at 05-04-20 05/04/20
         """
         بررسی حضور کلیدهای حیاتی و نوع داده‌ها. در صورت مشکل، ValueError می‌دهد.
         هستهٔ حیاتی (الزامی):
@@ -338,9 +387,10 @@ class ConfigLoader:
                 logger.warning("Config validation warning: %s", msg)
 
         allowed_top = {
-            "version", "project",
-            "extends", "bases", "overlays",
-            "paths", "connection", "features", "env", "risk",
+            "version", "logging", "project",
+            # "extends", "bases", "overlays",   # old 05-04-20 05/04/20
+            "config_layers",                    # new 05-04-20 05/04/20
+            "paths", "connection", "download_defaults", "features", "data_quality", "env", "risk",
             "training", "evaluation", "executor", "self_optimize",
             "monitoring", "safety", "cicd", "scripts", "secrets", "per_symbol_overrides",
             
@@ -348,7 +398,8 @@ class ConfigLoader:
             "extensions",                         # for custom extensions
         }
         # کلیدهای ناشناختهٔ سطح-۱
-        unknown = [k for k in cfg.keys() if k not in allowed_top and k not in ("extends","bases")]
+        # unknown = [k for k in cfg.keys() if k not in allowed_top and k not in ("extends","bases")]   # old 05-04-20 05/04/20
+        unknown = [k for k in cfg.keys() if k not in allowed_top]                                      # new 05-04-20 05/04/20
         if unknown:
             msg = f"Unknown top-level keys: {unknown}"
             if mode == "strict":
@@ -566,7 +617,7 @@ def _infer_versions_dir(cfg: Dict[str, Any]) -> Path:
     این تابع مسیر فایلهای خروجی برای تابع save_config_versioned را تعیین میکند و برمیگرداند
     """
     paths = cfg.get("paths") or {}
-    base = _project_root()
+    base = project_root()
     versions = paths.get("config_versions_dir") or "f01_config/versions"
     return base / versions
 
@@ -580,7 +631,7 @@ def save_config_versioned(cfg: Dict[str, Any],
     خروجی: مسیر کامل فایل ذخیره‌شده
     """
     # قبل از ذخیره یک اعتبارسنجی انجام دهیم تا فایل معیوب ذخیره نشود
-    ConfigLoader._validate(cfg)
+    ConfigLoader()._validate(cfg)
 
     versions_dir = _infer_versions_dir(cfg)
     _ensure_dir(versions_dir)
@@ -597,19 +648,19 @@ def save_config_versioned(cfg: Dict[str, Any],
 # ============================================================
 # نمونهٔ آماده برای import سریع 
 # ============================================================ OK ALL
-try:
-    config: Dict[str, Any] = ConfigLoader().get_all(copy_="shallow")
-except Exception:
-    # در صورت خطا، یک dict خالی ارائه می‌کنیم تا importهای قدیمی از کار نیفتند.
-    logger.exception("Autoload of ConfigLoader failed; `config` set to {}.")
-    config = {}
+# try:
+#     config: Dict[str, Any] = ConfigLoader().get_all(copy_="shallow")
+# except Exception:
+#     # در صورت خطا، یک dict خالی ارائه می‌کنیم تا importهای قدیمی از کار نیفتند.
+#     logger.exception("Autoload of ConfigLoader failed; `config` set to {}.")
+#     config = {}
 
 # ============================================================
 # تست پوشش کد (برای توسعه‌دهندگان) 
 # ============================================================
 """ Func Names                                                Used in Functions: ...
                                   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20  21
-1  _project_root                 --  ok  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
+1  project_root                  --  ok  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
 2  _default_config_path          --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 3  _read_yaml_file               --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
 4  _deep_merge                   --  --  --  ok  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --
@@ -620,7 +671,7 @@ except Exception:
 9  _env_name_for_path            --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
 10 _cast_env_value               --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
 11 _apply_env_overrides          --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
-12 _apply_compatibility_aliases  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
+12 _apply_compatibility_aliases  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- NOT USED- NOT NEEDED
 13 _validate                     --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  ok
 14 reload                        --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --  --  --  --  --
 15 get                 (DELETED) --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --
@@ -633,7 +684,7 @@ except Exception:
 """
 
 # ============================================================
-# Methode of Use
+# Method of Use
 # ============================================================
 """ 
 --- 1. Using ConfigLoader class -----------------

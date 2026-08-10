@@ -52,7 +52,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # ایمپورت ماژول‌های پروژه
 # ---------------------------------------------------------
 from f10_utils.config_loader import load_config
-from f02_data.mt5_data_loader import MT5DataLoader, _project_root  # استفاده از همان منطق مسیردهی
+from f02_data.OLD.mt5_data_loader import MT5DataLoader, project_root  # استفاده از همان منطق مسیردهی
 
 # ---------------------------------------------------------
 # تنظیم لاگ
@@ -73,7 +73,7 @@ def resolve_raw_dir_from_cfg(cfg: Dict[str, Any]) -> Path:
     """
     paths = cfg.get("paths", {}) or {}
     raw = paths.get("raw_dir") or (Path(paths.get("data_dir", "data")) / "raw")
-    return _project_root() / raw
+    return project_root() / raw
 
 
 def parse_args() -> argparse.Namespace:
