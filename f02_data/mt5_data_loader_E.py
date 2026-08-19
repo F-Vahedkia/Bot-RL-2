@@ -1,7 +1,8 @@
 # f02_data/mt5_data_loader_E.py
-# Last reviewed at 1405-04-12
+# Date reviewed
+#    1405/05/25-16:08 --> run result is OK.
 
-r"""
+"""
 Data Loader برای MT5 (Bot-RL-1)
 # =======================================================================================
 وظایف:
@@ -28,9 +29,9 @@ python -m f02_data.mt5_data_loader_E `
     --log-level DEBUG
 
 python -m f02_data.mt5_data_loader_E `
-    -c .\f01_config\config.yaml      `
-    --symbols XAUUSD_i    `
-    --timeframes D1 `
+    -c ./f01_config/config.yaml      `
+    --symbols BITCOIN          `
+    --timeframes M1 M2 M5 M10 M30 H4 D1 W1  `
     --format csv
 
 python -m f02_data.mt5_data_loader_E
@@ -55,15 +56,13 @@ from pathlib import Path
 from datetime import datetime, timezone, date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import re
 import pandas as pd
 import json
 import logging
 import argparse
-from dateutil import parser
 
 # ------------------ Importing Internal Modules -----------------------------------------
-from f10_utils.config_loader import load_config, ConfigLoader
+from f10_utils.config_completer import config_completer
 from f10_utils.config_path_funcs import project_root, resolve_raw_dir, full_file_path
 from f02_data.mt5_connector import MT5Connector
 
@@ -89,7 +88,49 @@ class DownloadPlan:
 
 # ------------------------------------------------------------------- OK=
 def _parse_dt(value, input_tz, output_tz=None):
+    """
+    مقدار تاریخ/زمان را دریافت کرده و آن را به یک datetime دارای منطقهٔ زمانی تبدیل می‌کند.
 
+    پارامترها
+    ----------
+    value : datetime, date, int, float, str یا None
+        مقدار تاریخ/زمان ورودی.
+
+        - اگر None یا رشتهٔ خالی باشد، مقدار None برگردانده می‌شود.
+        - اگر datetime بدون منطقهٔ زمانی باشد، input_tz به آن نسبت داده می‌شود.
+        - اگر datetime دارای منطقهٔ زمانی باشد، به output_tz تبدیل می‌شود.
+        - اگر date باشد، زمان 00:00:00 به آن اضافه شده و در input_tz
+          تفسیر می‌شود، سپس به output_tz تبدیل می‌شود.
+        - اگر int یا float باشد، به‌عنوان Unix timestamp در نظر گرفته
+          شده و مستقیماً به datetime در output_tz تبدیل می‌شود.
+        - اگر رشته برابر با "now" باشد، زمان فعلی در output_tz برگردانده می‌شود.
+        - سایر رشته‌ها با datetime.fromisoformat() تجزیه می‌شوند.
+          اگر نتیجه بدون timezone باشد، input_tz به آن نسبت داده می‌شود؛
+          در غیر این صورت مستقیماً به output_tz تبدیل می‌شود.
+
+    input_tz : str یا tzinfo
+        منطقهٔ زمانی مورد استفاده برای تفسیر مقادیر فاقد timezone.
+        اگر رشته باشد، با ZoneInfo به منطقهٔ زمانی تبدیل می‌شود.
+
+    output_tz : str یا tzinfo، اختیاری
+        منطقهٔ زمانی datetime خروجی.
+        اگر None باشد، input_tz به‌عنوان output_tz نیز استفاده می‌شود.
+
+    خروجی
+    -------
+    datetime یا None
+        یک datetime دارای timezone در منطقهٔ زمانی output_tz،
+        یا None در صورتی که value برابر None یا رشتهٔ خالی باشد.
+
+    خطاها
+    ------
+    ValueError
+        اگر input_tz یا output_tz یک منطقهٔ زمانی معتبر نباشد.
+
+    TypeError
+        اگر نوع value توسط تابع پشتیبانی نشود.
+    """
+    # ---------- validations ----------
     if value is None or value == "":
         return None
 
@@ -106,7 +147,7 @@ def _parse_dt(value, input_tz, output_tz=None):
     except ZoneInfoNotFoundError as e:
         raise ValueError(f"Invalid timezone: {e}")
 
-    # ---------- datetime ----------
+    # ---------- datetime -------------
     if isinstance(value, datetime):
 
         if value.tzinfo is None:
@@ -114,30 +155,26 @@ def _parse_dt(value, input_tz, output_tz=None):
 
         return value.astimezone(output_tz)
 
-    # ---------- date ----------
+    # ---------- date -----------------
     if isinstance(value, date):
 
         dt = datetime.combine(value, datetime.min.time())
         dt = dt.replace(tzinfo=input_tz)
         return dt.astimezone(output_tz)
 
-    # ---------- unix timestamp ----------
+    # ---------- unix timestamp -------
     if isinstance(value, (int, float)):
         return datetime.fromtimestamp(value, tz=output_tz)
 
-    # ---------- string ----------
+    # ---------- string ---------------
     if isinstance(value, str):
-
         value = value.strip()
-
         if value.lower() == "now":
             return datetime.now(output_tz)
 
         dt = datetime.fromisoformat(value)
-
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=input_tz)
-
         return dt.astimezone(output_tz)
 
     raise TypeError(f"Unsupported type: {type(value)}")
@@ -151,8 +188,6 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     - حذف رکوردهای تکراری بر اساس ایندکس
     """
     
-    logger.debug('starting "normalize_df" function')
-
     # -- 1 -- بررسی وجود و خالی نبودن دیتافریم ورودی ---------------------------------
     if df is None or df.empty:
         logger.debug('df is None or empty')
@@ -199,7 +234,7 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
 # ------------------------------------------------------------------- OK=
 def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[int, int]:
     fmt = fmt.lower().replace(" ", "")
-    
+
     # --- بخش خواندن فایل موجود (با مدیریت خطای کامل برای هر دو فرمت) ---
     if out_path.exists():
         df_old = pd.DataFrame()
@@ -342,7 +377,7 @@ class MT5DataLoader_batch:
                  connector: Optional[MT5Connector]   = None,
                  ) -> None:
         # -- 1 -- config, raw_dir -----------------------------------
-        self.cfg: Dict[str, Any] = cfg or load_config()
+        self.cfg: Dict[str, Any] = cfg or config_completer()
         self.raw_dir: Path = resolve_raw_dir(self.cfg)
 
         # -- 2 -- download defaults ---------------------------------
@@ -365,20 +400,18 @@ class MT5DataLoader_batch:
 
         # -- 4 -- broker_date_from & broker_date_to -----------------   # <= گیت ورودی از config
         temp = dl.get("broker_date_from")
-        self.date_from: datetime = _parse_dt(temp, "UTC")
+        self.date_from: datetime = _parse_dt(temp, self.broker_timezone, "UTC")
 
         temp = dl.get("broker_date_to")
-        self.date_to: datetime = _parse_dt(temp, "UTC")
+        self.date_to: datetime = _parse_dt(temp, self.broker_timezone, "UTC")
 
         # logger.info(f"fake time: (1) broker_date_form = {self.date_from},   broker_date_to = {self.date_to}")   # for debug
 
 
-        # -- 5 -- policy, batch_size, save_format -------------------
+        # -- 5 -- policy, save_format -------------------------------
         self.range_policy:  str = str(dl.get("range_policy")).lower()
 
-        # self.default_batch: int = int(dl.get("batch_size") or 50)          # NOT USED
         self.save_format:   str = str(dl.get("save_format", "csv")).lower()
-        
         if self.save_format not in ("csv", "parquet"):
             logger.warning("save_format is unknown; falling back to csv.")
             self.save_format = "csv"
@@ -447,6 +480,7 @@ class MT5DataLoader_batch:
                     date_from=dt_from, date_to=dt_to,
                     range_policy=rng_plcy)
                 )
+
         return plans
 
     # ---------------------------------------------------------------
@@ -468,12 +502,13 @@ class MT5DataLoader_batch:
             try:
                 # -- L1 -- fetching candles -------------------------
                 df = _fetch_candles(self.conn, p)
+
                 logger.debug(f'if df after "_fetch_candles" is a pd.DataFrame: {isinstance(df, pd.DataFrame)}')
 
-                df.index = df.index.tz_localize(None)                    # *** درست نمودن زمان داده های خام دانلود شده
-                df.index = df.index.tz_localize(self.broker_timezone)    # *** درست نمودن زمان داده های خام دانلود شده
-                if self.save_at_utc_time:                                # *** درست نمودن زمان داده های خام دانلود شده
-                    df.index = df.index.tz_convert("UTC")                # *** درست نمودن زمان داده های خام دانلود شده
+                df.index = df.index.tz_localize(None)                     # *** درست نمودن زمان داده های خام دانلود شده
+                df.index = df.index.tz_localize("UTC")                    # *** درست نمودن زمان داده های خام دانلود شده
+                if not self.save_at_utc_time:                             # *** درست نمودن زمان داده های خام دانلود شده
+                    df.index = df.index.tz_convert(self.broker_timezone)  # *** درست نمودن زمان داده های خام دانلود شده
 
                 # -- L2 -- Normalizing DataFrame --------------------
                 df = normalize_df(df)
@@ -527,13 +562,43 @@ class MT5DataLoader_batch:
 # CLI
 # =============================================================================
 # ------------------------------------------------------------------- OK=
-def _setup_logging(level: str = "INFO") -> None:
+def _setup_logging_all(level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         # format="%(asctime)s | %(levelname)-8s | %(filename)s | %(lineno)d : %(funcName)s | %(message)s",
         format="%(asctime)s | %(levelname)-6s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s",
         datefmt="%H:%M:%S",
     )
+
+def _setup_logging_funcname(
+    level: str = "INFO",
+    allowed_functions: list[str] | None = None,
+) -> None:
+
+    class FunctionFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            if allowed_functions is None:
+                return True
+            return record.funcName in allowed_functions
+
+    handler = logging.StreamHandler()
+    handler.setLevel(getattr(logging, level.upper(), logging.INFO))
+    handler.addFilter(FunctionFilter(allowed_functions))
+
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-6s | %(filename)-28s | "
+            "%(lineno)-4d : %(funcName)-24s | %(message)s",
+        datefmt="%H:%M:%S",
+    )
+
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    # جلوگیری از باقی ماندن handlerهای قبلی
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
 
 # ------------------------------------------------------------------- OK=
 def _parse_args() -> argparse.Namespace:
@@ -557,10 +622,16 @@ def main() -> int:
     args = _parse_args()
 
     # -- 2 -- ساخت لاگر و تعیین سطح آن، همراه با تعیین فرمت و فرمت زمان 
-    _setup_logging(args.log_level)
+    _setup_logging_all("info")
+    # _setup_logging_funcname(
+    #     "debug",
+    #     allowed_functions=[
+    #         "normalize_df",
+    #     ]
+    # )
 
     # -- 3 -- بارگذاری کانفیگ (با ENV Override فعال)
-    cfg = load_config(args.config, enable_env_override=True)
+    cfg = config_completer(args.config, enable_env_override=True)
 
     # -- 4 -- اوور راید موقتی فرمت بر روی کانفیگ
     # اگر کاربر فرمت را در CLI تعیین کرد، آن را در cfg منعکس کنیم (Override موقتی) 

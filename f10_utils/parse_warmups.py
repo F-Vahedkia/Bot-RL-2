@@ -4,7 +4,6 @@
 # Imports
 # =============================================================================
 import logging
-import pprint
 import numpy as np
 from typing import List, Dict, Optional
 from pathlib import Path
@@ -168,109 +167,7 @@ def _compute_warmup_from_specs(specs: List[str]) -> Dict[str, int]:
 # =============================================================================
 # رپر تابع بالا برای فراخوانی در مصرف کنندگان
 # =============================================================================
-# THIS FUNCTION IS DEPRICATED
-# ==> Address Used: config.features.indicators
-def get_warmup_from_config(cfg: Optional[Dict] = None) -> Dict[str, int]:
-    """
-    خواندن لیست رشته‌های اندیکاتور از کانفیگ و محاسبه warmup مورد نیاز برای هر تایم‌فریم.
-    در انتها، بدون در نظر گرفتن نماد مربوطه، دیکشنری حاصل به کانفیگ اضافه میشود.
-    Parameters:
-    -----------
-    cfg : dict, optional
-        دیکشنری کانفیگ. اگر None باشد، با load_config() بارگذاری می‌شود.
-    
-    Returns:
-    --------
-    dict
-        دیکشنری با کلید تایم‌فریم و مقدار warmup (حداقل تعداد کندل مورد نیاز برای آن تایم‌فریم).
-        مثال: {"M1": 26, "M5": 20, "H1": 14}
-    """
-    if cfg is None:
-        cfg = load_config(enable_env_override=True)
-    
-    specs = (cfg.get("features") or {}).get("indicators") or []
-    if not isinstance(specs, list):
-        logger.warning(f"Indicators specs is not a list: {specs}")
-        return {}  # برگرداندن دیکشنری خالی به جای None برای جلوگیری از کرش
-    
-    # بررسی کش: اگر کلید وجود ندارد یا خالی/None است، اقدام به محاسبه کن
-    warmup_dict = cfg.get("warmup_dict")
-    if warmup_dict is None or warmup_dict == {}:
-        warmup_dict = _compute_warmup_from_specs(specs)
-        # # افزایش تعداد کندلهای مورد نیاز به میزان shift
-        # for key in warmup_dict.keys():
-        #     warmup_dict[key] += int(shift)
-        cfg["warmup_dict"] = warmup_dict
-        return warmup_dict
-    
-    return warmup_dict
-
-
-# -------------------------------------
 # ==> Address Used: config.features.symbols.indicators
-def get_warmup_from_config_allsyms_old1(cfg: Optional[Dict] = None) -> Dict[str, Dict[str, int]]:
-    """
-    - خواندن لیست رشته‌های اندیکاتور از کانفیگ و محاسبه وارم-آپ مورد نیاز برای هر تایم‌فریم.
-    - این کار برای هر نماد بطور جداگانه انجام میشود. یعنی از حلقه روی نمادها استفاده میشود.
-    - در نهایت نمادهایی که دیکشنری وارم-آپ آنها تهی است، در نتیجه نهایی قرار نمیگیرند.
-
-    Parameters:
-    -----------
-    cfg : dict, optional
-        دیکشنری کانفیگ. اگر None باشد، با load_config() بارگذاری می‌شود.
-    
-    Returns:
-    --------
-    dict
-        دیکشنری با کلید نماد و مقدار یک دیکشنری warmup_dict
-    final_dict = {
-        "XAUUSD" : {"M1": 26, "M5": 20, "H1": 14},
-        "EURUSD" : {"M10: 10, "H1": 12},
-        "BITCOIN": {"M30: 14, "H4": 19},
-        ...
-        }
-    """
-    if cfg is None:
-        cfg = load_config()
-    
-    final_dict: Dict[str, Dict[str, int]]= {}    
-    symbols = (cfg.get("features") or {}).get("symbols") or {} # دیکشنری نمادها را برمیگرداند
-
-    for symbol in symbols.keys():
-        specs = symbols[symbol].get("indicators") or []
-        if not isinstance(specs, list):
-            logger.warning(f"Indicators specs is not a list: {specs}")
-            final_dict[symbol] = {}  # برگرداندن دیکشنری خالی به جای None برای جلوگیری از کرش
-            continue
-
-        # بررسی کش: اگر کلید وجود ندارد یا خالی/None است، اقدام به محاسبه کن
-        warmup_dict = cfg.get("warmup_dict")
-        if warmup_dict is None or warmup_dict == {}:
-            warmup_dict = _compute_warmup_from_specs(specs)
-
-            # ===== پچ جدید با mapping_tfs =====
-            candles_list = symbols[symbol].get("candles") or []
-            if candles_list:
-                candles_std = mapping_tfs(candles_list, mode="values")
-                for tf in candles_std:
-                    if tf not in warmup_dict:
-                        warmup_dict[tf] = 0
-                        logger.debug(f"Added {tf} with warmup=0 for {symbol} (from candles)")
-            # ===== پایان پچ =====
-            # مرتب‌سازی با check_tfs
-            if warmup_dict:
-                tfs = list(warmup_dict.keys())
-                _, _, sorted_tfs = check_tfs(tfs[0], tfs)
-                warmup_dict = {tf: warmup_dict[tf] for tf in sorted_tfs if tf in warmup_dict}
-            final_dict[symbol] = warmup_dict
-
-    # حذف نمادهایی که دیکشنری وارم-آپ آنها تهی است
-    warmups_dicts = {sym: dic for sym, dic in final_dict.items() if dic != {}}
-    
-    # cfg["__warmups_dicts"] = final_dict
-    return warmups_dicts
-
-
 def get_warmup_from_config_allsyms(cfg: Optional[Dict] = None) -> Dict[str, Dict[str, int]]:
     """
     - خواندن لیست رشته‌های اندیکاتور از کانفیگ و محاسبه وارم-آپ مورد نیاز برای هر تایم‌فریم.
@@ -296,7 +193,7 @@ def get_warmup_from_config_allsyms(cfg: Optional[Dict] = None) -> Dict[str, Dict
     if cfg is None:
         cfg = load_config()
     
-    final_dict: Dict[str, Dict[str, int]]= {}    
+    final_dict: Dict[str, Dict[str, int]]= {}
     symbols = (cfg.get("features") or {}).get("symbols") or {} # دیکشنری نمادها را برمیگرداند
 
     for symbol in symbols.keys():
@@ -308,7 +205,6 @@ def get_warmup_from_config_allsyms(cfg: Optional[Dict] = None) -> Dict[str, Dict
 
         warmup_dict = _compute_warmup_from_specs(specs)
 
-        # ===== پچ جدید با mapping_tfs =====
         candles_list = symbols[symbol].get("candles") or []
         if candles_list:
             candles_std = mapping_tfs(candles_list, mode="values")
@@ -316,7 +212,7 @@ def get_warmup_from_config_allsyms(cfg: Optional[Dict] = None) -> Dict[str, Dict
                 if tf not in warmup_dict:
                     warmup_dict[tf] = 0
                     logger.debug(f"Added {tf} with warmup=0 for {symbol} (from candles)")
-        # ===== پایان پچ =====
+
         # مرتب‌سازی با check_tfs
         if warmup_dict:
             tfs = list(warmup_dict.keys())
@@ -334,24 +230,26 @@ def get_warmup_from_config_allsyms(cfg: Optional[Dict] = None) -> Dict[str, Dict
 # =============================================================================
 # TESTER: for "get_warmup_from_config_allsyms"
 # =============================================================================
-def main():
-    path = Path(project_root() / "f01_config" / "config.yaml")
-    cfg = load_config((path), enable_env_override=True)
-    if cfg is None or cfg == {}:
-        return None
+#
+#                   تابع زیر منسوخ شده است
+# def main():
+#     path = Path(project_root() / "f01_config" / "config.yaml")
+#     cfg = load_config((path), enable_env_override=True)
+#     if cfg is None or cfg == {}:
+#         return None
 
-    specs = (cfg.get("features") or {}).get("indicators" or {})
+#     specs = (cfg.get("features") or {}).get("indicators" or {})
 
-    print("\n", "="*3, "specs", "="* (60-len("specs")))
-    print(specs)
+#     print("\n", "="*3, "specs", "="* (60-len("specs")))
+#     print(specs)
 
-    warmups_dicts = get_warmup_from_config_allsyms()
+#     warmups_dicts = get_warmup_from_config_allsyms()
     
-    print("\n", "="*3, "type(warmups_dicts)", "="* (60-len("type(warmups_dicts)")))
-    print(type(warmups_dicts))
+#     print("\n", "="*3, "type(warmups_dicts)", "="* (60-len("type(warmups_dicts)")))
+#     print(type(warmups_dicts))
 
-    print("\n", "="*3, "warmups_dicts", "="* (60-len("warmups_dicts")))
-    print(warmups_dicts)
+#     print("\n", "="*3, "warmups_dicts", "="* (60-len("warmups_dicts")))
+#     print(warmups_dicts)
 
 # =============================================================================
 # Run: python -m f10_utils.parse_warmups

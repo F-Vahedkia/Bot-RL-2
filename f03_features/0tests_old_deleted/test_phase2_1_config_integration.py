@@ -18,12 +18,14 @@ def _make_config():
             "mode": "train"
         },
         "env": {
-            "features_whitelist": [],
-            "features_blacklist": []
         },
         "features": {
-            "shift_features_by": 0,
-            "drop_na_head": True
+            "observation": {
+                "shift_features_by": 0,
+                "drop_na_head": True,
+                "features_whitelist": [],
+                "features_blacklist": []
+            }
         }
     }
 

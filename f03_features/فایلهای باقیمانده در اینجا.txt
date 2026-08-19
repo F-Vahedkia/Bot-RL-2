@@ -1,0 +1,146 @@
+
+
+=================================================
+1. feature_registry ✅ Freeze
+2. feature_cache ✅ Freeze
+3. feature_pipeline ✅ Freeze
+4. feature_engine ✅ Freeze
+
+
+5. feature_store
+مرحله بعد باید خیلی کوتاه بررسی کنیم که قرارداد FeatureStoreV2.build() با FeaturePipeline و MTFDataset دقیقاً منطبق است؛
+بعد Freeze می‌کنیم.
+ ✅ Freeze شد
+
+
+6. feature_graph
+مرحله بعد باید این Graph را با ObservationBuilder قدیمی تطبیق بدهیم، چون Graph عملاً برای آن ساخته می‌شود.
+ ✅ Freeze شد
+
+
+7. observation_builder ❌ 
+قدم بعدی باید بررسی دقیق همین قرارداد با FeaturePipeline و با Graph جدید باشد؛
+بعد اگر سازگار بود، این فایل را Freeze می‌کنیم.
+ ✅ Freeze شد
+
+
+8. feature_sys_contract ❌ 
+ ✅ Freeze شد
+
+=================================================
+توزیع داده ها در لایه فیچرز:
+
+Data flow
+   ↓
+FeatureEngine
+   ↓
+FeatureStore
+   ↓
+FeatureGraph
+   ↓
+ObservationBuilder
+   ↓
+Observation
+
+=================================================
+1. observation_builder.py  ← اول
+   ├─ قرارداد ورودی: MTFDataset نهاییِ FeatureStore
+   ├─ استفاده از FeatureGraph
+   ├─ انتخاب Featureها و Timeframeها
+   ├─ Alignment / عدم Look-Ahead
+   ├─ شکل و نوع Observation
+   └─ سازگاری با FeaturePipeline
+        ↓
+2. feature_graph.py  ← دوم
+   ├─ بر اساس نیاز واقعی ObservationBuilder
+   ├─ dependency / ordering فقط در صورت تعریف واقعی
+   ├─ API نهایی Graph
+   └─ Freeze
+        ↓
+3. feature_sys_contract.py  ← سوم
+   ├─ قرارداد مشترک کل Feature Layer
+   ├─ MTFDataset → Engine → Store → Graph → Observation
+   ├─ Batch / Live contracts
+   ├─ symbol / timeframe / mode
+   └─ Freeze
+        ↓
+4. بازبینی اتصال کل Feature Layer
+   ├─ registry ✅
+   ├─ cache ✅
+   ├─ engine ✅
+   ├─ pipeline ✅
+   ├─ store ✅
+   ├─ observation_builder ✅
+   ├─ graph ✅
+   └─ sys_contract ✅
+        ↓
+5. تست‌ها
+   ├─ FeatureStore tests
+   ├─ ObservationBuilder tests
+   ├─ Graph tests
+   └─ یک Integration Test نهایی
+        ↓
+6. Freeze نهایی کل Feature Layer
+
+# ===============================================
+# تست ها و کدنویسی فایل های تستر
+# ===============================================
+'''
+1. Unit tests
+   ├─ feature_registry
+   ├─ feature_cache        -->  تستر نوشته شد و 19 تا اوکی شد.
+   ├─ feature_engine       -->  تستر نوشته شد و 12 تا اوکی شد.
+   ├─ feature_store        -->  تستر نوشته شد و 22 تا اوکی شد.
+   ├─ feature_graph        -->  تستر نوشته شد و 28 تا اوکی شد.
+   ├─ observation_builder  -->  تستر نوشته شد و 23 تا اوکی شد.
+   └─ feature_sys_contract -->  تستر نوشته شد و 59 تا اوکی شد.
+
+2. Component / API tests
+   └─ FeaturePipeline      -->  تستر نوشته شد و 17 تا اوکی شد.
+
+3. Integration test
+   DataHandler
+       ↓
+   MTFDataset
+       ↓
+   FeaturePipeline
+       ↓
+   Observation
+
+4. Live integration tests
+   MTFDataset update
+       ↓
+   FeatureEngine live state
+       ↓
+   FeaturePipeline.process_live()
+       ↓
+   Observation
+'''
+
+
+
+
+
+
+
+
+
+f03_features
+   ├─ FeaturePipeline
+   ├─ feature_registry
+   ├─ feature_graph
+   ├─ feature_engine
+   ├─ feature_cache
+   ├─ feature_store
+   ├─ feature_sys_contract
+   └─ observation_builder
+
+ترتیب پیشنهادی برای بررسی وابستگی و جریان داده این هشت فایل، از پایین‌ترین وابستگی به بالاترین، این است:
+1- feature_sys_contract — قراردادهای پایه و مرزهای سیستم
+2- feature_registry — تعریف و ثبت Featureها
+3- feature_graph — وابستگی و ترتیب اجرای Featureها
+4- feature_cache — مکانیزم cache
+5- feature_engine — اجرای محاسبات Feature
+6- feature_store — نگهداری/ارائه خروجی Featureها
+7- FeaturePipeline — orchestration جریان batch/live
+8- observation_builder — مصرف نهایی Featureها و ساخت Observation

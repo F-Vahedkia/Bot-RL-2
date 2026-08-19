@@ -123,7 +123,7 @@ class LiveDataHandlerTester:
 
         # 1) اتصال DataHandler به EventBus و شروع مصرف در ترد جداگانه
         self.data_handler.subscribe_to_event_bus(self.event_bus)
-        threading.Thread(target=self.data_handler.start_consuming2, daemon=True).start()
+        threading.Thread(target=self.data_handler.start_consuming, daemon=True).start()
 
         # 2) راه‌اندازی worker (تنها base_tf را poll می‌کند)
         self.worker = MT5StreamWorker(

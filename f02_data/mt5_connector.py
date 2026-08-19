@@ -1,5 +1,7 @@
 # f02_data/mt5_connector.py
-# Last reviewed at 1405-04-25
+# Date reviewed
+#    1405/05/25-16:19 --> run result is OK.
+
 # =======================================================================================
 """MT5Connector (نسخهٔ حرفه‌ای برای Bot-RL-2) 
 قابلیت‌ها:
@@ -94,7 +96,7 @@ def _to_mt5_timeframe(tf: str) -> int:
 # Connector
 # ======================================================================================= OK
 class MT5Connector:
-    """Connector عمومی برای اتصال به MetaTrader5 
+    """ Connector عمومی برای اتصال به MetaTrader5 
     - با کانفیگ `f01_config/config.yaml` کار می‌کند (از طریق load_config())
     - خواص مورد نیاز سایر بخش‌ها:
         * self.connected  (bool)

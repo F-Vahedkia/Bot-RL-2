@@ -10,24 +10,20 @@
 Run: python -m f02_data.test_live_datahandler_A
 """
 from __future__ import annotations
-import sys
-import os
-import time
-import threading
-import logging
-from pathlib import Path
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
-
+import sys, os, threading, logging # , time
 import pandas as pd
+
+from pathlib import Path
+from datetime import timedelta     # , datetime, timezone
+from typing import Dict, Any, List # , Optional
 
 sys.path.insert(0, os.path.dirname(__file__) + "/../..")
 
 from f02_data.data_handler_F_3 import DataHandler, BuildParams
 from f02_data.mt5_data_loader_E import MT5DataLoader_batch, DownloadPlan
-from f02_data.market_data_engine.event_bus_2 import EventBus
-from f02_data.market_data_engine.mt5_stream_worker_2 import MT5StreamWorker
-from f10_utils.config_loader import load_config
+from f02_data.live_market_engine import EventBus, MT5StreamWorker
+# from f10_utils.config_loader import load_config
+from f10_utils.config_completer import config_completer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,12 +36,12 @@ logger = logging.getLogger(__name__)
 class LiveDataHandlerTester:
 
     # =========================================================================
-    def __init__(self, cfg: Dict[str, Any]):
+    def __init__(self, cfg: Dict[str, Any], symbol: str):
         self.cfg = cfg
         
         # تنظیمات تست
         dl = (cfg.get("download_defaults") or {})
-        self.symbol = "EURUSD_i"
+        self.symbol = symbol
         self.base_tf = "M1"
         self.timeframes: List[str] = list(dl.get("timeframes") or ["M1", "H1", "H4"])
         if self.base_tf not in self.timeframes:
@@ -54,7 +50,7 @@ class LiveDataHandlerTester:
         self.num_live_candles = 6  # تعداد کندل‌های زنده برای جمع‌آوری
         
         self.event_bus = EventBus(queue_size=1000)
-        self.data_handler = DataHandler(cfg=cfg, event_bus=self.event_bus)
+        self.data_handler = DataHandler(cfg=cfg, symbol=symbol, event_bus=self.event_bus)
         
         self.live_rows: List[pd.DataFrame] = []
         self.collected = 0
@@ -250,8 +246,7 @@ class LiveDataHandlerTester:
         self.worker = MT5StreamWorker(
             cfg=self.cfg,
             event_bus=self.event_bus,
-            symbols=[self.symbol],
-            timeframes=[self.base_tf],
+            warmups_dicts=self.cfg["__warmups_dicts"],
             poll_interval_sec=1.0
         )
         
@@ -285,8 +280,10 @@ class LiveDataHandlerTester:
 # MAIN TEST
 # =============================================================================
 def main():
-    cfg = load_config()
-    tester = LiveDataHandlerTester(cfg)
+    # cfg = load_config()
+    cfg = config_completer()
+
+    tester = LiveDataHandlerTester(cfg, "EURUSD")
     success = tester.run()
     
     print("\n" + "=" * 60)

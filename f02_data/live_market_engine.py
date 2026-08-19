@@ -1,4 +1,7 @@
-# f02_data/market_data_engine/live_market_engine.py
+# f02_data/live_market_engine.py
+
+# Date Reviewed:
+#    1405/05/19-21:58 ==> run result of 5 test in folder" tests_live_market_engine": All OK
 """
 نهایی هستند:
    - API عمومی
@@ -19,10 +22,11 @@
    - consumer naming
    - event persistence
 """
-# f02_data/market_data_engine/live_market_engine.py
+
 # =============================================================================
 # Imports
 # =============================================================================
+# f02_data/live_market_engine.py
 from __future__ import annotations
 
 import time
@@ -38,9 +42,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 # ---------------------------
 from f02_data.mt5_connector import MT5Connector
-from f02_data.data_handler_F_2_3_n import DataHandler
-
-from f10_utils.parse_warmups import get_warmup_from_config
+# from f02_data.data_handler_F_3 import DataHandler
 
 # =============================================================================
 # Logging
@@ -139,7 +141,7 @@ class EventBus:
             return self._subscribers.get(symbol)
         
     # --------------------------------------------------------- OK
-    def publish2_by_id(self, event_type: str, symbol: str, timeframe: str, all_dfs: Dict[str, Dict[str, Any]]
+    def publish_by_id(self, event_type: str, symbol: str, timeframe: str, all_dfs: Dict[str, Dict[str, Any]]
     ) -> None:
         """
         این متد، بدون صبر کردن، -دیکشنری- رویداد را در صف های همه مصرف کنندگان قرار می دهد
@@ -170,8 +172,13 @@ class EventBus:
                 )
 
     # -------------
-    def publish2(self, event_type: str, symbol: str, timeframe: str, all_dfs: Dict[str, Dict[str, Any]]) -> None:
-        event = {"event_type": event_type, "symbol": symbol, "timeframe": timeframe, "all_dfs": all_dfs}
+    def publish(self, event_type: str, symbol: str, timeframe: str, all_dfs: Dict[str, Dict[str, Any]]) -> None:
+        event = {
+            "event_type": event_type,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "all_dfs": all_dfs
+        }
         with self._lock:
             # ارسال به همان نماد
             q = self._subscribers.get(symbol)
@@ -196,12 +203,15 @@ class EventBus:
     
     # -------------
     def get_event(self, symbol: str, timeout: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        q = self.get_queue(symbol)
+        """
+        این متد، از صف یک مصرف کننده معلوم، یک -دیکشنری- رویداد را دریافت میکند
+        """
+        q = self.get_queue(symbol) # q: مخفف است برای queue
         if q is None:
             return None
         try:
             return q.get(timeout=timeout)
-        except Empty:
+        except Empty: # Empty: استثنائی است که وقتی تایم اوت تمام شد، توسط متد get() تولید میشود
             return None
 
     # --------------------------------------------------------- OK
@@ -236,7 +246,7 @@ class CandleState:
     last_candle_time: Optional[datetime] = None
 
 # =============================================================================
-# Candle Detector
+# 2) Candle Detector
 # =============================================================================
 class CandleDetector:
     """
@@ -345,9 +355,9 @@ class CandleDetector:
         }
     
 
-# ============================================================
+# =============================================================================
 # 3) MT5 Live Stream Worker
-# ============================================================
+# =============================================================================
 class MT5StreamWorker:
     """
     Live polling worker:  (polling: کشیدن  ,  pushing: فشار دادن)
@@ -357,7 +367,7 @@ class MT5StreamWorker:
         self,
         cfg: Dict[str, Any],
         event_bus: EventBus,
-        warmups_dicts: Dict[str, Dict[str, int]],
+        # warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
         poll_interval_sec: float = 2.0,
     ) -> None:
         """
@@ -365,9 +375,10 @@ class MT5StreamWorker:
         """
         self.cfg = cfg
         self.event_bus = event_bus
-        self.warmups_dicts = warmups_dicts
-        self.symbols = list(warmups_dicts.keys())
-        self.timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in warmups_dicts.items()}
+        # self.warmups_dicts = warmups_dicts   #////change_1405/05/20-16:30
+        self.warmups_dicts: Dict[str, Dict[str, int]] = cfg["__warmups_dicts"]
+        self.symbols = list(self.warmups_dicts.keys())
+        self.timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in self.warmups_dicts.items()}
         self.poll_interval_sec = poll_interval_sec
         self.connector = MT5Connector(config=cfg)
 
@@ -427,7 +438,7 @@ class MT5StreamWorker:
                             # در تمام تایمفریهای وارم آپ، دیتاها را دانلود نموده
                             # و همگی را در قالب یک دیکشنری برمیگرداند
                             all_dfs = self._fetch_all_tfs(symbol)
-                            self.event_bus.publish2(
+                            self.event_bus.publish(
                                 event_type="NEW_CANDLE",
                                 symbol=symbol,
                                 timeframe=tf,
@@ -453,10 +464,21 @@ class MT5StreamWorker:
             num_candles=n+1,
         )
         # سطر زیر کندل -1 را برنمی گرداند. چون هنوز بسته نشده است و کندل جاری است.
-        return df.iloc[-n-1:-1] if df is not None else pd.DataFrame()
-    
+        result = df.iloc[-n-1:-1] if df is not None else pd.DataFrame()
+        # logger.info(f"Candles for {symbol}/{timeframe} was lowmloaded. rows = {len(result)}")
+        return result
     # -------------------------------------------------------- OK
     def _fetch_all_tfs(self, symbol: str) -> Dict[str, pd.DataFrame]:
+        """
+        مثال برای خروجی این تابع:
+        all_dfs = {
+            "XAUUSD:M1" : DataFrame of "XAUUSD", at "M1" , contains (self.warmups_dicts["XAUUSD"]["M1" ]) closed candles
+            "XAUUSD:M15": DataFrame of "XAUUSD", at "M15", contains (self.warmups_dicts["XAUUSD"]["M15"]) closed candles
+            "XAUUSD:H1" : DataFrame of "XAUUSD", at "H1" , contains (self.warmups_dicts["XAUUSD"]["H1" ]) closed candles
+            "XAUUSD:H4" : DataFrame of "XAUUSD", at "H4" , contains (self.warmups_dicts["XAUUSD"]["H4" ]) closed candles
+        }
+        """
+
         all_dfs = {
             f"{symbol}:{tf.upper()}": self._fetch_closed(symbol, tf, self.warmups_dicts[symbol][tf])
             for tf in self.warmups_dicts[symbol]
@@ -489,12 +511,12 @@ class MarketDataEngine:
         )
         self.worker: Optional[MT5StreamWorker] = None
         self._running: bool = False
-        self.data_handler: Optional[DataHandler] = None  # ➕ Version-D
+        # self.data_handler: Optional[DataHandler] = None
 
     # -------------------------------------------------------- OK
     def start(
         self,
-        warmups_dicts: Dict[str, Dict[str, int]],
+        # warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
         poll_interval_sec: float = 2.0,
     ) -> None:
         """
@@ -510,7 +532,7 @@ class MarketDataEngine:
         self.worker = MT5StreamWorker(
             cfg=self.cfg,
             event_bus=self.event_bus,
-            warmups_dicts=warmups_dicts,
+            # warmups_dicts=warmups_dicts,   #////change_1405/05/20-16:30
             poll_interval_sec=poll_interval_sec,
         )
         self.worker.start()
@@ -538,13 +560,23 @@ class MarketDataEngine:
         """
         return self.event_bus
     
+
     # --------------------------------------------------------
-    def attach_data_handler(self, data_handler: DataHandler) -> None:
+    """ چرا فعلاً این تابع را کامنت/حذف کرده ام؟
+
+    چون با جداسازی مسیر نمادها تا ابتدای observation_builder ما
+    دارای DataHandler های متعددی خواهیم بود. بنابراین بهتر است
+    این کلاس خودش حق انتخاب آبجکت DataHandler را نداشته باشد.
+    """
+
+    # def attach_data_handler(self, data_handler: DataHandler) -> None:
         
-        """اتصال DataHandler به EventBus"""
-        self.data_handler = data_handler
-        data_handler.subscribe_to_event_bus(self.event_bus)
-        logger.info("DataHandler attached to MarketDataEngine")
+    #     """اتصال DataHandler به EventBus"""
+    #     self.data_handler = data_handler
+    #     data_handler.subscribe_to_event_bus(self.event_bus)
+    #     logger.info("DataHandler attached to MarketDataEngine")
 
     # --------------------------------------------------------
 
+
+# ============================================================================= END

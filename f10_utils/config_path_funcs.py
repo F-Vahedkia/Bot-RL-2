@@ -42,10 +42,9 @@ def full_file_path(raw_dir: Path, symbol: str, timeframe: str, fmt: str) -> Path
     """
     مسیر فایل خروجی را بر اساس (نماد/تایم‌فریم/فرمت) می‌سازد.
     """
-    sym_dir = raw_dir / symbol    #.upper()
+    sym_dir = raw_dir / symbol   #.upper()
     sym_dir.mkdir(parents=True, exist_ok=True)
     ext = ".parquet" if fmt.lower() == "parquet" else ".csv"
     return sym_dir / f"{timeframe.upper()}{ext}"
-
 
 # -------------------------------------------------------------------

@@ -163,6 +163,7 @@ def _align_args_with_signature(
     ind_name: str,
     args_in: List[Any],
     kwargs_in: Dict[str, Any],
+    mode: str = "train",
 ) -> tuple[list[Any], dict[str, Any]]:
     """
     تبدیل آرگومان‌های positional به kwargs بر اساس ParameterSpecهای رجیستری.
@@ -181,7 +182,7 @@ def _align_args_with_signature(
     """
 
     from f03_features.feature_C_registry_1 import get_indicator
-    spec = get_indicator(ind_name, mode="train")
+    spec = get_indicator(ind_name, mode=mode)
 
     if spec is None:
         return list(args_in), dict(kwargs_in)
@@ -228,6 +229,7 @@ def _validate_signature(
     ind_name: str,
     args_in: list[Any],
     kwargs_in: dict[str, Any],
+    mode: str = "train",
 ) -> tuple[list[Any], dict[str, Any]]:
     """
     Validate a ParsedSpec against IndicatorSpec.parameters.
@@ -248,7 +250,7 @@ def _validate_signature(
     """
     from f03_features.feature_C_registry_1 import get_indicator, _NO_DEFAULT, ParameterSpec
     
-    spec = get_indicator(ind_name, mode="train")
+    spec = get_indicator(ind_name, mode=mode)
     if spec is None:
         raise ValueError(f"Unknown indicator '{ind_name}'")
     params = spec.parameters or []
@@ -389,7 +391,7 @@ def _validate_signature(
 # =============================================================================
 # Main Function
 # =============================================================================
-def parse_spec(spec: str) -> ParsedSpec:
+def parse_spec(spec: str, mode: str = "train") -> ParsedSpec:
     """
     Parse + Compile + Validate feature specification.
 
@@ -411,6 +413,7 @@ def parse_spec(spec: str) -> ParsedSpec:
         ind_name=name,
         args_in=args,
         kwargs_in=kwargs,
+        mode=mode,
     )
 
     # print("AFTER ALIGN :", kwargs)   # for debug
@@ -419,6 +422,7 @@ def parse_spec(spec: str) -> ParsedSpec:
         ind_name=name,
         args_in=args,
         kwargs_in=kwargs,
+        mode=mode,
     )
     # print("AFTER VALID :", kwargs)   # for debug
 

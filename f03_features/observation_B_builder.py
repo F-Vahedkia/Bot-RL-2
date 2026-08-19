@@ -1,156 +1,267 @@
 # f03_features/observation_B_builder.py
-"""
-ObservationBuilder
-مسئول:
-    - انتخاب featureها از engine output
-    - alignment بین timeframe ها
-    - ساخت ماتریس نهایی (RL-ready)
-    - اعمال whitelist / blacklist / shift / normalization
-"""
+# Date reviewed:
+#    1405/05/23-16:00 --> run result for tester ver. _A is OK by 23 tests.
+
+# =============================================================================
+# Imports
+# =============================================================================
 from __future__ import annotations
-from typing import List, Dict, Any
+
+from fnmatch import fnmatch
+from typing import Any, Dict, List, Sequence
+
+import numpy as np
 import pandas as pd
+
 from f02_data.mtf_dataset import MTFDataset
-from f03_features.feature_B_graph import FeatureGraph
+from f03_features.feature_B_graph import FeatureGraph, FeatureNode
+from f03_features.feature_B_store import align_to_base
+from f03_features.feature_C_registry_1 import get_indicator
 
 
-# ============================================================
+# =============================================================================
 # Observation Builder
-# ============================================================
+# =============================================================================
+class ObservationBuilder:
+    """
+    Build the final observation from the FeatureStore MTFDataset.
 
-class ObservationBuilder:  #(version-2)
+    Contract
+    --------
+    Input:
+        - MTFDataset produced by FeaturePipeline after FeatureStoreV2.build().
+        - FeatureGraph built from the same feature specifications.
 
-    def __init__(self, config: Dict[str, Any]):
-        self.cfg = config
+    Output:
+        - pandas.DataFrame indexed by the base timeframe timestamps, or
+        - NumPy array through build_numpy().
 
-        self.shift = config.get("features", {}).get("shift_features_by", 0)
-        self.drop_na = config.get("features", {}).get("drop_na_head", True)
+    Responsibilities
+    ----------------
+    - Resolve graph nodes to the actual feature columns created by FeatureEngine.
+    - Align higher-timeframe data onto the base timeframe without look-ahead.
+    - Apply whitelist / blacklist selection.
+    - Apply the configured feature shift.
+    - Optionally remove only the leading warm-up rows.
+    - Return a deterministic feature-column order.
 
-        self.whitelist = set(config.get("env", {}).get("features_whitelist", []))
-        self.blacklist = set(config.get("env", {}).get("features_blacklist", []))
+    Non-responsibilities
+    --------------------
+    - Feature calculation: FeatureEngine.
+    - Dataset merge / persistence: FeatureStoreV2.
+    - Feature state / cache: FeatureEngine / FeatureCache.
+    - Specification ownership: FeaturePipeline.
+    - Dependency inference: FeatureGraph.
+    """
 
-    # --------------------------------------------------------
-    def build_deleted(self, dataset: MTFDataset, graph: FeatureGraph) -> pd.DataFrame:
+    def __init__(self, config: Dict[str, Any]) -> None:
+        if config is None:
+            raise ValueError("config is required for ObservationBuilder")
+        if not isinstance(config, dict):
+            raise TypeError(
+                f"config must be dict, got {type(config).__name__}"
+            )
 
-        # -------------------------------------------------------
-        # مرحله اول:
-        # ساخت Observation روی اندیس تایم‌فریم پایه
-        # -------------------------------------------------------
-        base_df = dataset.get(dataset.base_tf)
-        obs = pd.DataFrame(index=base_df.index)
+        self.cfg: Dict[str, Any] = config
 
-        # 1. collect feature columns from graph
-        feature_cols = [n.raw for n in graph.all_nodes()]
-        print("=" * 60)           # for debug new
-        print("FEATURE COLS")     # for debug new
-        for c in feature_cols:    # for debug new
-            print(repr(c))        # for debug new
-        print("=" * 60)           # for debug new
+        features_cfg = config.get("features", {}) or {}
+        observation_cfg = features_cfg.get("observation", {}) or {}
+        env_cfg = config.get("env", {}) or {}
 
-        # for c in feature_cols:                 # for debug
-        #     print("GRAPH:", repr(c), len(c))   # for debug
-        # for c in df.columns:                   # for debug
-        #     print("DF   :", repr(c), len(c))   # for debug
+        self.shift: int = int(observation_cfg.get("shift_features_by", 0) or 0)
+        if self.shift < 0:
+            raise ValueError("shift_features_by must be >= 0")
 
-        # # 2. whitelist filter (strict match OR substring)
-        # # این قسمت حذف نشود. فقط موقتاً کامنت شده است
-        # if self.whitelist:
-        #     feature_cols = [
-        #         c for c in feature_cols
-        #         if any(w in c for w in self.whitelist)
-        #     ]
+        self.drop_na_head: bool = bool(observation_cfg.get("drop_na_head", True))
 
-        # # 3. blacklist filter (support wildcard *)
-        # # این قسمت حذف نشود. فقط موقتاً کامنت شده است
-        # if self.blacklist:
-        #     feature_cols = [
-        #         c for c in feature_cols
-        #         if not any(b.replace("*", "") in c for b in self.blacklist)
-        #     ]
+        self.whitelist: tuple[str, ...] = tuple(
+            str(x) for x in (observation_cfg.get("features_whitelist", []) or [])
+        )
+        self.blacklist: tuple[str, ...] = tuple(
+            str(x) for x in (observation_cfg.get("features_blacklist", []) or [])
+        )
 
-        # # ---------------- for debug
-        # print("whitelist =", self.whitelist)                  # for debug
-        # print("blacklist =", self.blacklist)                  # for debug
-        # print("feature_cols after filters =", feature_cols)   # for debug
-        # # ---------------- for debug
-        # print("GRAPH TYPES:")                 # for debug
-        # for g in feature_cols:                # for debug
-        #     print(type(g), repr(g), len(g))   # for debug
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _validate_inputs(
+        dataset: MTFDataset,
+        graph: FeatureGraph,
+    ) -> None:
+        if dataset is None:
+            raise ValueError("dataset is required")
+        if graph is None:
+            raise ValueError("graph is required")
 
-        # print("\nDF TYPES:")                      # for debug
-        # for d in df.columns:                      # for debug
-        #     print(type(d), repr(d), len(str(d)))  # for debug
-        # # ---------------- for debug
-        # print("\n========== EXACT COMPARE ==========")        # for debug
-        # for g in feature_cols:                                # for debug
-        #     for d in df.columns:                              # for debug
-        #         # if len(g) == len(d):                          # for debug
-        #         print("----------------------------")     # for debug
-        #         print("GRAPH :", repr(g))                 # for debug
-        #         print("DF    :", repr(d))                 # for debug
-        #         print("==    :", g == d)                  # for debug
-        #         print("GRAPH ORD:", [ord(x) for x in g])  # for debug
-        #         print("DF    ORD:", [ord(x) for x in d])  # for debug
-        # print("==================================\n")         # for debug
+        if not isinstance(dataset, MTFDataset):
+            raise TypeError(
+                f"Expected dataset to be MTFDataset, got {type(dataset).__name__}"
+            )
+        if not isinstance(graph, FeatureGraph):
+            raise TypeError(
+                f"Expected graph to be FeatureGraph, got {type(graph).__name__}"
+            )
+        if not dataset.frames:
+            raise ValueError("MTFDataset contains no timeframe frames")
 
-        # -------------------------------------------------------
-        # مرحله دوم:
-        # پیدا کردن Featureها در تمام تایم‌فریم‌ها
-        # -------------------------------------------------------
-        matched = []
-        for tf in dataset.timeframes:
-            df = dataset.get(tf)
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _output_columns(node: FeatureNode) -> List[str]:
+        """
+        Resolve the exact column names produced by FeatureEngine.
 
-            for c in feature_cols:                            # for debug
-                print(repr(c), "IN DF =", c in df.columns)    # for debug
+        Batch and Live use the same naming rule:
+            one output  -> canonical
+            many outputs -> output_name + canonical suffix after indicator name
+        """
+        spec = get_indicator(node.name, mode="train")
+        if spec is None:
+            raise ValueError(
+                f"Indicator '{node.name}' from graph is not present in Registry"
+            )
 
-            cols = [c for c in feature_cols if c in df.columns]
+        output_names = list(spec.output_names or [])
+        if not output_names:
+            return [node.canonical]
 
-            print("-" * 60)
-            print("TIMEFRAME:", tf)
-            print("COLUMNS  :", df.columns.tolist())
-            print("MATCHED  :", cols)
+        if len(output_names) == 1:
+            return [node.canonical]
 
-            if cols:
-                matched.append((tf, cols))
+        suffix = node.canonical[len(node.name):]
+        return [f"{name}{suffix}" for name in output_names]
 
-        print("=" * 60)                      # for debug
-        print("FINAL MATCHED =", matched)    # for debug
-        print("=" * 60)                      # for debug
- 
-        return obs
+    # -------------------------------------------------------------------------
+    def _graph_columns(self, graph: FeatureGraph) -> List[str]:
+        """Return feature columns in graph execution/specification order."""
+        columns: List[str] = []
+        seen: set[str] = set()
 
-    # --------------------------------------------------------
+        for node in graph.execution_order():
+            for column in self._output_columns(node):
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+
+        return columns
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _matches_pattern(column: str, pattern: str) -> bool:
+        """Match exact names or glob patterns; non-glob patterns use substring."""
+        if "*" in pattern or "?" in pattern or "[" in pattern:
+            return fnmatch(column, pattern)
+        return column == pattern or pattern in column
+
+    # -------------------------------------------------------------------------
+    def _apply_filters(self, columns: Sequence[str]) -> List[str]:
+        selected = list(columns)
+
+        if self.whitelist:
+            selected = [
+                column
+                for column in selected
+                if any(
+                    self._matches_pattern(column, pattern)
+                    for pattern in self.whitelist
+                )
+            ]
+
+        if self.blacklist:
+            selected = [
+                column
+                for column in selected
+                if not any(
+                    self._matches_pattern(column, pattern)
+                    for pattern in self.blacklist
+                )
+            ]
+
+        return selected
+
+    # -------------------------------------------------------------------------
+    def _aligned_dataset(self, dataset: MTFDataset) -> pd.DataFrame:
+        """Create a base-timeframe view without mutating the MTFDataset."""
+        return align_to_base(dataset)
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _drop_leading_warmup(
+        obs: pd.DataFrame,
+        columns: Sequence[str],
+    ) -> pd.DataFrame:
+        """
+        Remove only leading rows required by feature warm-up.
+
+        Interior NaNs are preserved. This is intentional: a temporary missing
+        value in the middle of a dataset must not delete an otherwise valid
+        observation row.
+        """
+        if obs.empty or not columns:
+            return obs
+
+        selected = obs[list(columns)]
+        valid_rows = selected.notna().all(axis=1)
+        if not valid_rows.any():
+            return obs.iloc[0:0].copy()
+
+        first_valid = valid_rows.idxmax()
+        return obs.loc[first_valid:].copy()
+
+    # -------------------------------------------------------------------------
     def build(
         self,
         dataset: MTFDataset,
         graph: FeatureGraph,
     ) -> pd.DataFrame:
+        """
+        Build the final pandas Observation.
+        """
+        self._validate_inputs(dataset, graph)
 
-        if dataset.aligned is None:
-            raise ValueError("dataset.aligned is not built.")
+        aligned = self._aligned_dataset(dataset)
+        feature_columns = self._graph_columns(graph)
+        feature_columns = self._apply_filters(feature_columns)
 
-        obs = dataset.aligned.copy()
+        missing = [column for column in feature_columns if column not in aligned.columns]
+        if missing:
+            raise KeyError(
+                "Feature columns required by FeatureGraph are missing from "
+                f"the FeatureStore dataset: {missing}"
+            )
 
-        feature_cols = [n.raw for n in graph.all_nodes()]
-
-        cols = [c for c in feature_cols if c in obs.columns]
-
-        obs = obs[cols]
+        obs = aligned.loc[:, feature_columns].copy()
 
         if self.shift:
             obs = obs.shift(self.shift)
 
-        if self.drop_na:
-            obs = obs.dropna()
+        if self.drop_na_head:
+            obs = self._drop_leading_warmup(obs, feature_columns)
 
         return obs
-    
-    # --------------------------------------------------------
-    def build_numpy(self, dataset: MTFDataset, graph: FeatureGraph):     # << === در بدنه خودم دو سطر موفتی را نوشته ام
 
-        import numpy as np
-        base_df = dataset.get(dataset.base_tf) # Temporary
-        df = base_df.copy()                    # Temporary
-        return self.build(dataset, graph).to_numpy(dtype=float)
+    # -------------------------------------------------------------------------
+    def build_numpy(
+        self,
+        dataset: MTFDataset,
+        graph: FeatureGraph,
+    ) -> np.ndarray:
+        """Build the same observation as NumPy float64 values."""
+        observation = self.build(dataset, graph)
+        try:
+            return observation.to_numpy(dtype=float, copy=True)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                "Observation contains values that cannot be converted to float."
+            ) from exc
 
+    # -------------------------------------------------------------------------
+    def feature_columns(self, graph: FeatureGraph) -> List[str]:
+        """Return graph-derived feature columns after whitelist/blacklist filters."""
+        if graph is None:
+            raise ValueError("graph is required")
+        if not isinstance(graph, FeatureGraph):
+            raise TypeError(
+                f"Expected graph to be FeatureGraph, got {type(graph).__name__}"
+            )
+        return self._apply_filters(self._graph_columns(graph))
+
+# ----------------------------------------------------------------------------- END

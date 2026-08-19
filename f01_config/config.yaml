@@ -1,4 +1,6 @@
-#
+# Date Reviewed:
+#    1405/05/19-قبلاً انجام شده است
+
 version: 1.0.0
 # === 1 =============================================================
 project:
@@ -24,7 +26,7 @@ config_layers:
   # - f01_config/symbol_specs_22.yaml
   # - f01_config/symbol_specs_33.yaml
 
-# === added ========================================================= comptlete
+# === 3 ============================================================= comptlete
 # ----- Used: main.py
 logging:
   level: DEBUG          # DEBUG, INFO, WARNING, ERROR
@@ -33,7 +35,7 @@ logging:
   file_enabled: true
   file: "f00_logs/bot-rl-2.log"
 
-# === 3 ============================================================= 
+# === 4 ============================================================= 
 paths:
   root_dir: .
   config_versions_dir: f01_config/versions  ####
@@ -57,19 +59,16 @@ paths:
   reports_dir: _reports  ####
   tmp_dir:     _tmp   ####
 
-# === 4 ============================================================= comptlete
-# ----- Used: mt5_connector.py
-connection:
-  # ----- Used: mt5_connector.py / _read_credentials_from_config()
-  mt5_credentials:                                              
+# === 5 ============================================================= comptlete
+connection:   # ----- Used in: mt5_connector.py
+  mt5_credentials:   # ----- Used in: mt5_connector.py / _read_credentials_from_config()
     login: 00000000
     password: Password
     server: Server
     terminal_path: "C:/Program Files/Alpari MT5/terminal64.exe"
 
-  # ----- Used: mt5_connector.py / _read_options_from_config()
-  initialize_retry:
-    max_retries: 50  # int
+  initialize_retry:   # ----- Used in: mt5_connector.py / _read_options_from_config()
+    max_retries: 5  # int
     retry_delay: 5.0  # float
     backoff_multiplier: 1.0  # float
     auto_select_symbols: True  # bool
@@ -77,23 +76,21 @@ connection:
     symbol_activation_timeout: 0.0  # float
     ensure_on_each_call: True  # bool
 
-# === added ========================================================= new
-# ----- Used: mt5_data_loader.py / class MT5DataLoader / __init__()
-download_defaults:
-  # ----- Used: mt5_connector.py / _auto_select_symbols()
-  symbols:
-  - BITCOIN_i
-  # - XAUUSD_i
-  # - XAGUSD_i
-  # - EURUSD_i
-  # - GBPUSD_i
-  # - USDJPY_i
-  # - USDCHF_i
-  # - USDCAD_i
-  # - AUDUSD_i
-  # - NZDUSD_i
+# === 6 ============================================================= new
+download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader / __init__()
+  symbols:   # ----- Used in: mt5_connector.py / _auto_select_symbols()
+  # - XAUUSD
+  # - EURUSD
+  # - BITCOIN
+  # - XAGUSD
+  # - GBPUSD
+  # - USDJPY
+  # - USDCHF
+  # - USDCAD
+  # - AUDUSD
+  # - NZDUSD
   timeframes:
-  - M1
+  # - M1
   # - M2
   # - M4
   # - M5
@@ -104,84 +101,115 @@ download_defaults:
   # - H4
   # - D1
   # - W1
-  # ----- Used(4): mt5_data_loader/class DownloadPlan
-  lookback_bars: 14401   # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
-  broker_date_from: 2026-07-10 01:02:03  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
-  broker_date_to:   2026-07-16 10:20:30  # مقدار date_to میتواند NOW یا now هم اختیار کند 
-  range_policy: date     # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
+  # ----- below 4 keys, used in: mt5_data_loader/class DownloadPlan
+  lookback_bars: 1_000_000               # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
+  broker_date_from: 2024-01-01 03:00:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+  broker_date_to:   now                  # مقدار date_to میتواند NOW یا now هم اختیار کند 
+  range_policy: date                     # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
   
-  batch_size: 50         # NOT USED
-  save_format: parquet       # can be: csv | parquet
-  save_at_utc_time: true
+  batch_size: 50                                   # NOT USED
+  save_format: csv   # can be: csv | parquet   # Used many times in different files
+  save_at_utc_time: true                           # Used in: mt5_data_loader/class MT5DataLoader_batch/__init__()
 
-# === 5 =============================================================
+# === 7 =============================================================
 features:
-  # ============================================================
-  # بخش اصلی تنظیمات نمادها و تایم‌فریم‌ها
-  # ============================================================
+  save_format: parquet  # can be: csv | parquet
+  # ----------------------------------------
   symbols:
-    # --------------------------
+    # -----------------------
     COMMON:
-      # base_timeframe: M1
-      candles: []
+      # symbols: [XAUUSD] #, EURUSD, BITCOIN]
+      # candles: [M10]
       indicators:
-      # - dema(column='close', period=10)@H1    # Double Exponential Moving Average
-      # - tema(column='close', period=20)@H2    # Triple Exponential Moving Average
-      # - kama(column='close', period=30)@H4    # Kaufman's Adaptive Moving Average
-      # - hma(column='close', period=40)@D1     # Hull Moving Average
-      time_features:
-        add_hour_of_day: true
-        add_day_of_week: true 
-        add_session_flags: true
-        normalize_time: true
-
-    # --------------------------
-    XAUUSD_i:
+      # - sma(column='close',period=20)@M1      # Simple Moving Average
+      # - wma(column='close',period=20)@H4      # Weighted Moving Average
+      # - ema(column='close',period=30)@D1      # Exponential Moving Average
+      # - roc(column='close',period=14)@H4      # Rate of Change
+      # - rsi(period=14)@H1            # Relative Strength Index
+      # - true_range@H1                # True Range
+      # - atr(period=14)@H1            # Average True Range
+      # - macd(fast=12,slow=26,signal=9)@H1      # MACD
+      # - bollinger_bands(close,20,2)@H1         # Bollinger Bands
+      # - keltner_channel(close_col='close', n=20, m=2)@H1    # Keltner Channel
+      # - stochastic(k_period=14, d_period=3, slowing=3)@H1   # Stochastic
+      # - cci(period=20)@H1          # Commodity Channel Index
+      # - mfi(period=14)@H1          # Money Flow Index
+      # - obv@H1                     # On Balance Volume
+      # - williams_r(period=14)@H1   # Williams %R
+      # - parabolic_sar(step=0.02, max_step=0.02, acceleration=0.2)@H1  # Parabolic SAR
+      # - heikin_ashi@H1                              # Heikin Ashi
+      # - supertrend(period=10, multiplier=3)@H1      # Supertrend
+      # - aroon(period=25)@H1                   # Aroon
+      # - dema(column='close', period=20)@H1    # Double Exponential Moving Average
+      # - tema(column='close', period=20)@H1    # Triple Exponential Moving Average
+      # - kama(column='close', period=20)@H1    # Kaufman's Adaptive Moving Average
+      # - hma(column='close', period=20)@H1     # Hull Moving Average
+    # -----------------------
+    XAUUSD:
       # base_timeframe: M1
-      candles: [M1, M2, M10, H1]
+      # candles: [M1, M2, M10, H1]
       indicators:
-        - sma(column='close',period=100)@M4      # Simple Moving Average
-        - sma(column='close',period=200)@M2      # Simple Moving Average
-        - sma(column='close',period=300)@M1      # Simple Moving Average
-      time_features:
-        add_hour_of_day: true
-        add_day_of_week: true 
-        add_session_flags: true
-        normalize_time: true
-
-    # --------------------------
-    EURUSD_i:
+        # - sma(column='close',period=19)@M5     # Simple Moving Average
+        # - sma(column='close',period=19)@M2      # Simple Moving Average
+        # - sma(column='close',period=19)@M1      # Simple Moving Average
+    # -----------------------
+    EURUSD:
       # base_timeframe: M1
-      candles: [M5, M15]
+      # candles: [M5, M15]
       indicators:
-        - wma(column='close',period=5)@M10      # Weighted Moving Average
-        - wma(column='close',period=6)@M5      # Weighted Moving Average
-      time_features:
-        add_hour_of_day: true
-        add_day_of_week: true 
-        add_session_flags: true
-        normalize_time: true
-
-    # --------------------------
-    BITCOIN_i:
-      # base_timeframe: M1
-      candles: [M30, H1]
+        # - wma(column='close',period=5)@M10      # Weighted Moving Average
+        # - wma(column='close',period=6)@M5      # Weighted Moving Average
+    # -----------------------
+    BITCOIN:
+      # base_timeframe: M5
+      # candles: [M30, H1]
       indicators:
         - macd(fast=12,slow=26,signal=9)@M2      # MACD
         - macd(fast=12,slow=26,signal=9)@M1      # MACD
-      time_features:
-        add_hour_of_day: true
-        add_day_of_week: true 
-        add_session_flags: true
-        normalize_time: true
+        # - sma(column='close',period=19)@M1      # Simple Moving Average
+  # ----------------------------------------
+  observation:
+    features_whitelist:
+    - __sma_
+    - __rsi_
+    - __macd_
+    - __ema_close_
+    - __atr_
+    - __bb_
+    - __stoch_
+    - __sar_
+    - __supertrend_
+    
+    features_blacklist:
+    - qc_*
 
-
-
-  # ----- Used: data_handler.py / class DataHandler / __init__()
-  base_timeframe: M1       ###  <===>
-
-  # ----- Used: data_handler.py / _add_time_features()
+    shift_features_by: 1  # Used at observation_B_builder
+    drop_na_head: true    # Used at observation_B_builder
+  # ----------------------------------------
   time_features:
+    enabled: true
+    symbols:
+      XAUUSD: [
+        minute, hour, day_of_week, day_of_month, day_of_year, week_of_year, month, quarter,
+        session_asia, session_london, session_newyork,
+        is_weekend, is_month_start, is_month_end, is_quarter_start, is_quarter_end,
+        sin_hour, cos_hour, sin_day_of_week, cos_day_of_week, sin_month, cos_month,
+        market_open_flag, market_close_flag, is_new_day,
+       ]
+      EURUSD: [
+        minute, hour, day_of_week, day_of_month, day_of_year, week_of_year, month, quarter,
+        session_asia, session_london, session_newyork,
+        is_weekend, is_month_start, is_month_end, is_quarter_start, is_quarter_end,
+        sin_hour, cos_hour, sin_day_of_week, cos_day_of_week, sin_month, cos_month,
+        market_open_flag, market_close_flag, is_new_day,
+       ]
+      BITCOIN: [
+        minute, hour, day_of_week, day_of_month, day_of_year, week_of_year, month, quarter,
+        session_asia, session_london, session_newyork,
+        is_weekend, is_month_start, is_month_end, is_quarter_start, is_quarter_end,
+        sin_hour, cos_hour, sin_day_of_week, cos_day_of_week, sin_month, cos_month,
+        market_open_flag, market_close_flag, is_new_day,
+      ]
     add_hour_of_day: true
     add_day_of_week: true 
     add_session_flags: true
@@ -194,58 +222,10 @@ features:
   # pipeline: # ===> NOT USED
   #   use_default_set: true
   #   use_indicators: true
-  #   use_price_action: true
-  #   use_fibonacci: true
-  #   use_support_resistance: true
+  #   use_fibonacci: true           # یه نظر می آید که نیازی به این کلید نیست. چونکه در بخش مربوطه کلید enabled داریم
+  #   use_support_resistance: true  # یه نظر می آید که نیازی به این کلید نیست. چونکه در بخش مربوطه کلید enabled داریم
+  #   use_price_action: true        # یه نظر می آید که نیازی به این کلید نیست. چونکه در بخش مربوطه کلید enabled داریم
   #   use_volatility: true
-  
-  shift_features_by: 1  # Used at observation_B_builder
-  drop_na_head: true    # Used at observation_B_builder
-  
-
-  # ============================================================
-  # مجموعه‌ی هسته (Core) از اندیکاتورها (برای همه نمادها یکسان)
-  # ============================================================
-  indicators:
-  - sma(column='close',period=20)@M4      # Simple Moving Average
-  - sma(column='close',period=20)@M2      # Simple Moving Average
-  - sma(column='close',period=20)@M1      # Simple Moving Average
-
-  # - wma(column='close',period=20)@H4      # Weighted Moving Average
-  # - ema(column='close',period=20)@D1      # Exponential Moving Average
-  # - roc(column='close',period=14)@H4      # Rate of Change
-  # - rsi(period=14)@H1            # Relative Strength Index
-  # - true_range@H1                # True Range
-  # - atr(period=14)@H1            # Average True Range
-  # - macd(fast=12,slow=26,signal=9)@H1      # MACD
-
-  # - bollinger_bands(close,20,2)@H1     # Bollinger Bands
-  # - bollinger_bands(close,20,2)@H4     # Bollinger Bands
-  # - bollinger_bands(close,20,2)@D1     # Bollinger Bands
-
-  # - keltner_channel(close_col='close', n=20, m=2)@H1    # Keltner Channel
-  # - stochastic(k_period=14, d_period=3, slowing=3)@H1            # Stochastic
-  # - cci(period=20)@H1          # Commodity Channel Index
-  # - mfi(period=14)@H1          # Money Flow Index
-  # - obv@H1              # On Balance Volume
-  # - williams_r(period=14)@H1                  # Williams %R
-  # - parabolic_sar(step=0.02, max_step=0.02, acceleration=0.2)@H1         # Parabolic SAR
-
-  # - heikin_ashi@H1            # Heikin Ashi
-  # - supertrend(period=10, multiplier=3)@H1      # Supertrend
-  # - aroon(period=25)@H1             # Aroon
-  # - dema(column='close', period=20)@H1    # Double Exponential Moving Average
-  # - tema(column='close', period=20)@H1    # Triple Exponential Moving Average
-  # - kama(column='close', period=20)@H1    # Kaufman's Adaptive Moving Average
-  # - hma(column='close', period=20)@H1     # Hull Moving Average
-  # ---------------------------------------------------------------------------------------------
-
-  # - div_rsi(14,2,classic)@M1
-  # - div_rsi(14,2,classic)@M30
-  # - adx(14)@M30
-  # - donchian(20)@H1
-  # - vwap@M1
-  # - cmf(20)@M1
 
 
   fibonacci:
@@ -420,18 +400,17 @@ features:
       strong_entry_threshold: 0.7
       filter_threshold: 0.35   #===== Used by f03_features/price_action/config_wiring.py
 
-  # ---------------------------------------------------------------------------
+  # ---------------------------------------------
   # ADVANCED VOLATILITY & SR FEATURES
-  # ---------------------------------------------------------------------------
+  # ---------------------------------------------
   adr:
     enabled: true
     window: 14              # lookback window in days
     normalize: false        # if true, divide by close price
-
-  adr_distance_to_open:
-    enabled: true
-    window: 14              # must match adr.window normally
-    use_percent: true       # express distance as % of ADR
+    distance_to_open:
+      enabled: true
+      window: 14              # must match adr.window normally
+      use_percent: true       # express distance as % of ADR
 
   sr_overlap_score:
     enabled: true
@@ -441,36 +420,47 @@ features:
     tolerance_pct: 0.05     # price proximity tolerance
     normalize: true         # scale score to [0,1]
 
-# === 6 =============================================================
-data_quality:
-  spike_threshold: 0.05      # آستانه پیش‌فرض برای همه نمادها
-  stale_threshold: 0         # تعداد کندل‌های یکسان مجاز (0 = هیچ)
+# === 8 ============================================================= OK
+data_quality:   # NOT USED
+  defaults:
+    spike_threshold: 0.05      # آستانه پیش‌فرض برای همه نمادها
+    stale_threshold: 0         # تعداد کندل‌های یکسان مجاز (0 = هیچ)
+  symbols:
+    XAUUSD:
+      spike_threshold: 0.05
+      stale_threshold: 0
+    BITCOIN:
+      spike_threshold: 0.05
+      stale_threshold: 0
+    EURUSD:
+      spike_threshold: 0.05
+      stale_threshold: 0
 
-# === 7 =============================================================
+# === 9 =============================================================
 env:
+  sessions:
+    asia:
+      start_utc: '00:00'
+      end_utc: '08:00'
+    london:
+      start_utc: '08:00'
+      end_utc: '16:00'
+    newyork:
+      start_utc: '13:00'
+      end_utc: '21:00'
 
-  sessions:         ##################
-    asia:                   # This part is used in: 
-      start_utc: 00:00      #     data_handler.py / _add_session_flags ()
-      end_utc: 08:00        #
-    london:                 #
-      start_utc: 08:00      #
-      end_utc: '16:00'      #
-    newyork:                #
-      start_utc: '13:00'    #
-      end_utc: '21:00'      #
-
-  base_tf: M5
   use_ohlc: true
   use_volume: true
   use_spread: false
   reward_mode: pnl
+  
   observation:
     resample_to_base_tf: M5
     clip_values: true
     clip_range:
     - -5
     - 5
+
   action_space:
     type: discrete
     dim: 3
@@ -491,6 +481,7 @@ env:
     max_episode_steps: 5000
     stop_on_margin_call: true
     stop_on_max_drawdown_pct: 0.2
+
   window_size: 128
   normalize: true
   
@@ -518,33 +509,21 @@ env:
       margin_bars: 32
     flat_at_boundary: true
   
-  features_whitelist:
-  - __sma_
-  - __rsi_
-  - __macd_
-  - __ema_close_
-  - __atr_
-  - __bb_
-  - __stoch_
-  - __sar_
-  - __supertrend_
-  
-  features_blacklist:
-  - qc_*
 
-  timeframes:
-  - M1
-  - M5
-  - M30
-  - H4
-  - D1
-  - W1
-  n_candles_per_tf: 256
+  base_tf: M5           # chatgpt میگوید که حذف بشوند
+  timeframes:           # chatgpt میگوید که حذف بشوند
+  - M1                  #
+  - M5                  #
+  - M30                 # chatgpt میگوید که حذف بشوند
+  - H4                  #
+  - D1                  #
+  - W1                  #
+  n_candles_per_tf: 256 # chatgpt میگوید که حذف بشوند
 
 
   mode: offline #or online  # used in data_handler
 
-# === 8 =============================================================
+# === 10 =============================================================
 risk:
   risk_per_trade: 0.01
   max_daily_loss_pct: 0.02
@@ -573,7 +552,7 @@ risk:
     max_positions_per_symbol: 1
     cooldown_minutes_after_stop: 15
 
-# === 9 =============================================================
+# === 11 =============================================================
 training:
   total_timesteps: 2000000
   eval_freq_steps: 25000
@@ -654,7 +633,7 @@ training:
         action_noise: normal(0.1)
         policy_delay: 2
 
-# === 10 ============================================================
+# === 12 ============================================================
 evaluation:
   backtest:
     commissions_per_lot_usd: 7.0
@@ -674,7 +653,7 @@ evaluation:
     turnover_max_per_day: 80
     min_trades_total: 200
 
-# === 11 ============================================================
+# === 13 ============================================================
 executor:
   symbol:
     - XAUUSD_i
@@ -712,7 +691,7 @@ executor:
     stale_seconds: 8
     spike_pips: 25
 
-# === 12 ============================================================
+# === 14 ============================================================
 self_optimize:
   schedule:
     daily_utc: '22:30'
@@ -842,7 +821,7 @@ self_optimize:
     min_trades_total: 200
   alerts_on_change: true
 
-# === 13 ============================================================
+# === 15 ============================================================
 monitoring:
   logging:
     level: INFO
@@ -869,7 +848,7 @@ monitoring:
     include_equity_curve: true
     include_trade_log: true
 
-# === 14 ============================================================
+# === 16 ============================================================
 safety:
   hard_kill_switch:
     enabled: true
@@ -900,14 +879,14 @@ safety:
     - GBP
     - JPY
 
-# === 15 ============================================================
+# === 17 ============================================================
 cicd:
   enabled: false
   run_unit_tests_on_push: true
   run_backtest_on_main: true
   artifact_retention_days: 30
 
-# === 16 ============================================================
+# === 18 ============================================================
 scripts:
   download_data: scripts/run_download.py
   train: scripts/run_train.py
@@ -915,7 +894,7 @@ scripts:
   deploy: scripts/run_deploy.py
   self_optimize: scripts/run_self_optimize.py
 
-# === 17 ============================================================
+# === 19 ============================================================
 secrets:
   use_env: true
   env_keys:
@@ -926,10 +905,10 @@ secrets:
     TELEGRAM_BOT_TOKEN: TELEGRAM_BOT_TOKEN
     TELEGRAM_CHAT_ID: TELEGRAM_CHAT_ID
 
-# === 18 ============================================================
+# === 20 ============================================================
 # Some keys of this part is used in: f02_data/data_handler.py
 per_symbol_overrides:
-  XAUUSD_i:
+  XAUUSD:
     # اندیکاتورهای اضافی
     extra_indicators:
       - cci(20)@{tf}
@@ -957,4 +936,4 @@ per_symbol_overrides:
     data_quality:
       spike_threshold: 0.01  # جفت‌ارز اصلی، نوسان کمتر
 
-# === -- ============================================================
+# === END ===========================================================

@@ -3,7 +3,7 @@
 # Run: python -m f02_data.test_datahandler_marketdataengine
 
 from __future__ import annotations
-from f02_data.market_data_engine.market_data_engine_2 import MarketDataEngine
+from f02_data.live_market_engine import MarketDataEngine
 from f02_data.data_handler_F_3 import DataHandler
 import threading
 import logging
@@ -70,7 +70,7 @@ def my_test():
     threading.Thread(target=engine.start, args=(symbol, timeframes, 2.0), daemon=True).start()
 
     #✅  4. اجرای حلقه‌ی مصرف DataHandler در یک Thread جداگانه
-    threading.Thread(target=data_handler.start_consuming2, daemon=True).start()
+    threading.Thread(target=data_handler.start_consuming, daemon=True).start()
 
     #✅  5. حالا استراتژی خود را به DataHandler متصل کنید (Callback)
     # my_strategy = MyTradingStrategy()

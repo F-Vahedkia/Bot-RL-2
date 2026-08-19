@@ -1,3 +1,7 @@
+# f02_data/mtf_dataset_tester.py
+# Date reviewed:
+#    1405/05/24- 20:45 --> run result if OK for 5 tests
+
 # Run: pytest -v -s f02_data/mtf_dataset_tester.py
 
 import pandas as pd
@@ -15,6 +19,7 @@ def make_df(start="2026-01-01", rows=5):
         },
         index=idx,
     )
+
 
 # ---------------------------------------------------------
 def test_add_and_get():
@@ -86,6 +91,7 @@ def test_apply():
     assert "x" in ds["M1"].columns
     assert "x" in ds["H1"].columns
 
+
 # ---------------------------------------------------------
 def test_apply_each():
 
@@ -106,5 +112,6 @@ def test_apply_each():
 
     assert (ds["M1"]["tf"] == "M1").all()
     assert (ds["H1"]["tf"] == "H1").all()
+
 
 # ---------------------------------------------------------

@@ -1,15 +1,14 @@
 # f02_data/data_handler_F_3.py
-# Last reviewed at 1405-04-12
+# Date reviewed: 1405-05-28
 
-r"""
+"""
 DataHandler (Bot-RL-2)
 ----------------------
 هدف:
 - دادهٔ خام هر تایم‌فریم را از data/raw/<SYMBOL>/<TF>.(csv|parquet) می‌خوانَد،
 - همه را روی یک شبکهٔ زمانی پایه (base_tf) هم‌خط می‌کند (با merge_asof/ffill)،
 - برای هر تایم‌فریم ستون‌ها را با پیشوندِ خودِ تایم‌فریم می‌سازد (مثلاً M5_close, H1_close)،
-- ویژگی‌های زمانی (hour/day/session + نسخهٔ نرمال/چرخه‌ای) را اضافه می‌کند
-      (طبق تنظیمات features.time_features در کانفیگ)،
+
 - خروجی را در data/processed/<SYMBOL>/<base_tf>.(csv|parquet) ذخیره می‌کند و متادیتا می‌نویسد،
 - CLI(Command Line Interface) دارد تا با یک فرمان اجرا شود.
 
@@ -24,14 +23,13 @@ DataHandler (Bot-RL-2)
 
 تنظیمات مورد استفاده از کانفیگ:
 - paths.raw_dir / paths.processed_dir (یا data/raw و data/processed پیش‌فرض)
-- features.time_features: add_hour_of_day, add_day_of_week, add_session_flags, normalize_time
 - sessions: {asia,london,newyork}.start_utc / end_utc  (برای ساخت فلگ‌های سشن)
 - project.timezone (پیش‌فرض UTC)
 - download_defaults.timeframes  (در صورت ندادن timeframes به CLI)
 
 - فرمان اجرای قدیمی برنامه
 python -m f02_data.data_handler_E `
-    -c .\f01_config\config.yaml `
+    -c ./f01_config/config.yaml `
     --symbol XAUUSD_i           `
     --base-tf M1                `
     --timeframes M1 M5 M30 H1  H4 D1    `
@@ -40,7 +38,7 @@ python -m f02_data.data_handler_E `
 - فرمان اجرا جدید برنامه 
 -  بدون base_tf ، یعنی براساس آنچه در کانفیگ داده شده:
 python -m f02_data.data_handler_E  `
-    -c .\f01_config\config_0_1.yaml  `
+    -c ./f01_config/config_0_1.yaml  `
     --symbol XAUUSD_i            `
     --timeframes M10 M30 H1      `
     --format parquet
@@ -48,7 +46,7 @@ python -m f02_data.data_handler_E  `
 - فرمان اجرای جدید برنامه
 -  همراه با base_tf
 python -m f02_data.data_handler_E    `
-    -c .\f01_config\config.yaml    `
+    -c ./f01_config/config.yaml    `
     --symbol XAUUSD_i              `
     --base-tf M1                   `
     --timeframes H1 H4 D1 W1      `
@@ -56,38 +54,33 @@ python -m f02_data.data_handler_E    `
 
 - فرمان اجرای جدید برنامه
 -  همراه با base_tf
-python -m f02_data.data_handler_E    `
-    -c .\f01_config\config.yaml    `
-    --symbol XAUUSD_i              `
-    --base-tf H4                   `
-    --timeframes H4 D1             `
-    --format csv
+python -m f02_data.data_handler_F_3    `
+    --symbol BITCOIN              `
+    --save_format parquet
 """
 
 # f02_data/data_handler_F_3.py
 # =======================================================================================
 # Imports & Logger
 # ======================================================================================= OK=
-# f02_data/data_handler_F_2_3.py
 from __future__ import annotations
-# from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, TYPE_CHECKING   # , Iterable
 
 from pathlib import Path
-from datetime import datetime, time, timezone
+from datetime import datetime, timezone
 import logging
-# import numpy as np
 import pandas as pd
-# import pyarrow.parquet as pq
 
 # ------------------ Importing Internal Modules -----------------------------------------
 from f02_data.data_handler_Helpers import check_tfs    #, prefix_columns
 
 from f02_data.mt5_data_loader_E import normalize_df
-from f02_data.market_data_engine.event_bus_2 import EventBus          # ➕ Version-D
 from f10_utils.config_path_funcs import project_root, resolve_raw_dir, resolve_process_dir, full_file_path
 from f10_utils.constants import _TF_MINUTES, _TF_MAP
 from f02_data.mtf_dataset import MTFDataset
+
+if TYPE_CHECKING:
+    from f02_data.live_market_engine import EventBus
 
 # -------------------- Logger for this module -------------------------------------------
 logger = logging.getLogger(__name__)
@@ -106,14 +99,14 @@ def _read_raw_df(
     columns: Optional[List[str]] = None,
     broker_timezone: str = "UTC",
 ) -> pd.DataFrame:
-    logger.debug("==== start _read_raw_df ========================")  # for debug
-    logger.debug(f"path = {path}")                                    # for debug
-    logger.debug(f"mode = {mode}")                                    # for debug
-    logger.debug(f"start_lastrows = {start_lastrows}")                # for debug
-    logger.debug(f"end_lastrows = {end_lastrows}")                    # for debug
-    logger.debug(f"start_time = {start_time}")                        # for debug
-    logger.debug(f"end_time = {end_time}")                            # for debug
-    logger.debug("==== end _read_raw_df ==========================")  # for debug
+    # logger.debug("==== start _read_raw_df ========================")  # for debug
+    # logger.debug(f"path = {path}")                                    # for debug
+    # logger.debug(f"mode = {mode}")                                    # for debug
+    # logger.debug(f"start_lastrows = {start_lastrows}")                # for debug
+    # logger.debug(f"end_lastrows = {end_lastrows}")                    # for debug
+    # logger.debug(f"start_time = {start_time}")                        # for debug
+    # logger.debug(f"end_time = {end_time}")                            # for debug
+
     """
     *** تا قبل از این تابع تمام داده های ذخیره شده روی هارد naive هستند.
     *** در انتهای این تابع ابتدا منطقه زمانی بروکر به داده ها نسبت داده میشود،
@@ -140,9 +133,15 @@ def _read_raw_df(
     # ===============================================================
     readparquet = False
     if path.suffix.lower() == ".parquet" and path.exists():
+        logger.debug(f" ====> {path} is exist and found.")
         try:
             df = pd.read_parquet(path)
-            logger.debug(f" -----> type of index = {type(df.index[0])}")
+            # logger.debug(f" ====> after read parquet: type of index = {type(df.index[0])}")  # for debug
+            # logger.debug(f" ====> after read parquet: len of DF is {len(df)}")               # for debug
+            # logger.debug(f" ====> after read parquet: columns of DF is {df.columns}")        # for debug
+            # logger.debug(f" ====> after read parquet: 1st row index is {df.index[0]}")       # for debug
+            # logger.debug(f" ====> after read parquet: last row index is {df.index[-1]}")     # for debug
+
             readparquet = True 
         except Exception as ex:
             logger.warning("Failed to read Parquet (%s). Switching to CSV.", ex)
@@ -155,6 +154,11 @@ def _read_raw_df(
         if csv_path.exists():
             try:
                 df = pd.read_csv(csv_path, parse_dates=["time"], index_col="time")
+                # logger.debug(f" ====> after read csv: type of index = {type(df.index[0])}")  # for debug
+                # logger.debug(f" ====> after read csv: len of DF is {len(df)}")               # for debug
+                # logger.debug(f" ====> after read csv: columns of DF is {df.columns}")        # for debug
+                # logger.debug(f" ====> after read csv: 1st row index is {df.index[0]}")       # for debug
+                # logger.debug(f" ====> after read csv: last row index is {df.index[-1]}")     # for debug
             except Exception as ex:
                 logger.warning("Failed to read CSV (%s). Return None", ex)
 
@@ -180,7 +184,13 @@ def _read_raw_df(
             df.index = df.index.tz_convert('UTC')  # منطقه زمانی را به UTC تبدیل کن 
         else:                                      # اگر ستون time وجود ندارد، خطا بده
             raise ValueError("DataFrame index is not DatetimeIndex and no 'time' column found.")    
-    
+
+    # logger.debug(f" ====> after check timezones: type of index = {type(df.index[0])}")  # for debug
+    # logger.debug(f" ====> after check timezones: len of DF is {len(df)}")               # for debug
+    # logger.debug(f" ====> after check timezones: columns of DF is {df.columns}")        # for debug
+    # logger.debug(f" ====> after check timezones: 1st row index is {df.index[0]}")       # for debug
+    # logger.debug(f" ====> after check timezones: last row index is {df.index[-1]}")     # for debug
+
     # ===============================================================
     # Check & outputs
     # ===============================================================
@@ -207,22 +217,58 @@ def _read_raw_df(
                 raise ValueError("'start_lastrows'/'end_lastrows' cannot be negative")
         
         elif mode == "time":
+            # logger.debug("=============== > up to here.")  # for debug
             first_time = df.index[0] if start_time is None else pd.to_datetime(start_time, utc=True) # old time
             last_time =  pd.Timestamp.now(tz='UTC') if end_time is None else pd.to_datetime(end_time, utc=True)  # new time
-            
+
+            # logger.debug(f" ===== > first_time = {first_time}")  # for debug
+            # logger.debug(f" ===== > last_time = {last_time}")  # for debug
+
             if first_time < last_time:
-                start = max(first_time, df.index[0])
-                # end = min(last_time, df.index[-1])
-                end = last_time
-                # ---/-start-----------
-                if end_time_is_none:
-                    myfilter = (df.index >= start)
+
+                # start = max(first_time, df.index[0])
+                # # end = min(last_time, df.index[-1])
+                # end = last_time
+
+
+                data_start_time = df.index[0]   # ---------------- new part1 start
+                data_end_time = df.index[-1]
+
+                # Requested interval and available-data interval do not overlap.
+                if last_time <= data_start_time or first_time > data_end_time:
+                    logger.info(
+                        "Requested time range has no overlap with available data. "
+                        "requested=[%s, %s), available=[%s, %s]. "
+                        "Returning empty DataFrame.",
+                        first_time,
+                        last_time,
+                        data_start_time,
+                        data_end_time,
+                    )
+                    selected_rows = pd.DataFrame()
                 else:
-                    myfilter = (df.index >= start) & (df.index < end)   # <<<<<<<<<<==========
-                # ---/-end-------------
-                selected_rows = df[myfilter]
+                    start = max(first_time, data_start_time)
+                    end = last_time          # ---------------- new part1 end
+
+
+                    # ---/-start-----------
+                    if end_time_is_none:
+                        myfilter = (df.index >= start)
+                    else:
+                        myfilter = (df.index >= start) & (df.index < end)   # <<<<<<<<<<==========
+                    # ---/-end-------------
+                    selected_rows = df[myfilter]
+                logger.debug(f" =====> len(selected_rows) = {selected_rows}")
             else:
-                logger.warning("Start_time is bigger than end_time! Return empty dataframe")
+                # logger.warning("Start_time is bigger than end_time! Return empty dataframe")
+
+                logger.info(                          # ---------------- new part2 start
+                    "Invalid/empty requested time range: "
+                    "start_time=%s, end_time=%s. Returning empty DataFrame.",
+                    first_time,
+                    last_time,
+                )                                     # ---------------- new part2 end
+
                 selected_rows = pd.DataFrame()
                 
         else:  # mode not in ["number", "time"]
@@ -241,6 +287,7 @@ def _read_raw_df(
     logger.debug(f"len of result of _read_raw_df = {len(result)}")
 
     # --- output ----------------------------------------------------
+    # logger.debug("==== end _read_raw_df ==========================")  # for debug
     return result
 
 # =======================================================================================
@@ -288,18 +335,18 @@ def _get_range_by_timeframe(
     ts = pd.Timestamp(dt)  # تبدیل می‌شود
     # ---------------------------------------------------------"""        
 
-    # =======================================
+    # ===============================================================
     # Internal Func-1
-    # ======================================= OK
+    # =============================================================== OK
     def _get_candle_start_base(time: pd.Timestamp, minutes: int) -> pd.Timestamp:
         """محاسبه زمان شروع کندل برای تایم‌فریم‌های دقیقه‌ای و ساعتی."""
         total_minutes = time.hour * 60 + time.minute
         adjusted_minutes = (total_minutes // minutes) * minutes
         return time.floor('D') + pd.Timedelta(minutes=adjusted_minutes)
 
-    # =======================================
+    # ===============================================================
     # Internal Func-2
-    # ======================================= OK
+    # =============================================================== OK
     def _last_closedcandle_time(
         timeframe: str,
         steps: int,
@@ -317,19 +364,20 @@ def _get_range_by_timeframe(
             زمان شروع کندل (pd.Timestamp با timezone UTC)
         """
 
-        # ================================================================
+        # =======================================
         # 1) اعتبار سنجی timeframe
-        # ================================================================
-        tf_key = _TF_MAP.get(timeframe.upper(), timeframe.upper())
+        # =======================================
+        temp_tf = timeframe.upper().replace(" ", "")
+        tf_key = _TF_MAP.get(temp_tf, temp_tf)
         minutes = _TF_MINUTES.get(tf_key)
         if minutes is None:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
 
         offset = pd.Timedelta(minutes=minutes)
 
-        # ================================================================
+        # =======================================
         # 2) محاسبه زمان شروع آخرین کندل کامل قبل از base_time
-        # ================================================================
+        # =======================================
         if tf_key == 'W1':
             # start_of_period = base_time - pd.Timedelta(days=base_time.weekday())            # ابتدای هفته (دوشنبه 00:00:00)
             start_of_period = base_time - pd.Timedelta(days=(base_time.weekday() + 1) % 7)  # ابتدای هفته (یکشنبه 00:00:00)
@@ -363,9 +411,9 @@ def _get_range_by_timeframe(
         else:
             return last_complete_start - offset * (steps - 2)
 
-    # =======================================
+    # ===============================================================
     # 1) اعتبارسنجی ها
-    # =======================================
+    # ===============================================================
     from_none = from_last_n is None
     to_none = to_last_n is None
 
@@ -377,17 +425,17 @@ def _get_range_by_timeframe(
             raise ValueError("'from_last_n' must be greater than 'to_last_n'.")
         if from_last_n < 0 or to_last_n < 0:
             raise ValueError("'from_last_n' and 'to_last_n' must be positive.")
-    # =======================================
+    # ===============================================================
     # 2) تنظیم base_time به UTC
-    # =======================================
+    # ===============================================================
     if base_time is None:
         base_time = pd.Timestamp.now(tz='UTC')
         logger.debug(f"new base_time is {base_time}")
     else:
         base_time = pd.to_datetime(base_time, utc=True)
-    # =======================================
+    # ===============================================================
     # 3) یکسان‌سازی نام تایم‌فریم‌ها
-    # =======================================
+    # ===============================================================
     if from_last_n is None:
         start = None
     else:
@@ -477,7 +525,7 @@ class BuildParams:
             raise ValueError("Must define 'symbol'")
         
         # -----
-        # وقتی که در مصرف کننده این کلاس از config_completer استفاده شده باشد،
+        # وقتی که مصرف کننده این کلاس از config_completer استفاده کرده باشد،
         # در بخش زیر، دیگر نیازی به check_tfs نیست.
         _base_tf, _other_tfs, all_tfs = check_tfs(base_tf, timeframes)
         if _base_tf != base_tf:
@@ -492,7 +540,7 @@ class BuildParams:
         #     raise ValueError(f"selected_tf: {selected_tf} is invalid.")
             
         if period_size is not None:
-            period_size = _TF_MAP.get(period_size)
+            period_size = _TF_MAP.get(period_size.upper().replace(" ", ""))
 
         # --- Initial mountings -------------------------------------
         self.symbol = symbol
@@ -525,6 +573,30 @@ class BuildParams:
                 self.end_time = end
                 self.base_time = now_time
 
+        self.output_dict = {
+            "symbol": self.symbol,
+            "base_tf" : self.base_tf,
+            "_other_tfs" : self.timeframes,
+            "selected_tf" : self.selected_tf,
+            "load_format" : self.load_format,
+            "mode" : self.mode,
+            "start_lastrows" : self.start_lastrows,
+            "end_lastrows" : self.end_lastrows,
+            "start_time" : self.start_time,
+            "end_time" : self.end_time,
+            "from_last_n" : self.from_last_n,
+            "to_last_n" : self.to_last_n,
+            "period_size" : self.period_size,
+            "base_time" : self.base_time,
+        }
+    
+    def print_params(self) -> None:
+        for item in self.output_dict:
+            # print(item)
+            print(f" {item}", " "*(17-len(item)) , ":", f" {self.output_dict[item]}")
+        print("\n")
+
+
 # =======================================================================================
 # کلاس اصلی DataHandler 
 # =======================================================================================
@@ -538,28 +610,34 @@ class DataHandler:
     def __init__(self, 
                  cfg: Dict[str, Any],
                  symbol: str,
-                 event_bus: Optional[EventBus] = None,
+                 event_bus: Optional[EventBus] = None,              # Deleted at 1405/05/21-14:42
                  ) -> None:
         
         # -1-- Setting config ---------------------------------------
         self.cfg: Dict[str, Any] = cfg
         self.symbol: str = symbol
+        # print(f" === 1 === self.symbol ===> {self.symbol}")   # for debug
 
         # -2-- Setting directories ----------------------------------
         self.raw_dir: Path = resolve_raw_dir(self.cfg)
         self.proc_dir: Path = resolve_process_dir(self.cfg)
+        # print(f" === 2 === self.raw_dir ===> {self.raw_dir}")   # for debug
+        # print(f" === 3 === self.proc_dir ===> {self.proc_dir}")   # for debug
 
         # -3-- Saving format ----------------------------------------
-        dl = (self.cfg.get("download_defaults") or {})  #  از همان فرمت دیتا-لودر استفاده میکند
+        dl = (self.cfg.get("features") or {})
         self.save_format: str = str(dl.get("save_format", "parquet")).lower()
         if self.save_format not in ("csv", "parquet"):
             self.save_format = "parquet"
-        
+        # print(f" === 4 === self.save_format ===> {self.save_format}")   # for debug
+
         # -4-- Default timeframes -------------- --------------------
         self.timeframes = cfg["__timeframes_dict"][symbol]
+        # print(f" === 5 === self.timeframes ===> {self.timeframes}")   # for debug
 
         # -5-- base_tf ----------------------------------------------
         self._base_tf = cfg["__base_tfs_dict"][symbol]
+        # print(f" === 6 === self._base_tf ===> {self._base_tf}")   # for debug
 
         # -6-- broker_timezone --------------------------------------
         project_cfg = self.cfg.get("project")
@@ -569,31 +647,30 @@ class DataHandler:
         self.broker_timezone = project_cfg.get("broker_timezone")
         if not self.broker_timezone:
             raise ValueError("'broker_timezone' key not found in 'project' key !")
+        # print(f" === 7 === self.broker_timezone ===> {self.broker_timezone}")   # for debug
         
         # -7-- Connection to MarketDataEngine -----------------------
-        self.event_bus = event_bus                 # ➕ Version-D
-        self._subscriber_id: Optional[str] = None  # ➕ Version-D
-        self._running = False                      # ➕ Version-D
+        # self.event_bus = event_bus                          # Deleted at 1405/05/21-14:42
+        self._subscription_key: Optional[str] = None
+        self._running = False
     
         self._data_callback = None
 
         # -8-- Cache for live mode ----------------------------------
         # یک دیکشنری برای یک نماد. شامل دیتافریمهای مختلف متناظر با تایمفریمهای متفاوت
         self._cache_dict: dict[str, pd.DataFrame] = {}
+        self._cache_dict_extra_length: int = 0  # طول اضافه بر وارم-آپ، برای دیتافریم ها
 
-        self._cached_df: Optional[pd.DataFrame] = None             # not used # ➕ Version-E
-        self._lookback: int = 100  # تعداد ردیف‌های نگهداری شده   # not used # ➕ Version-E
-        self._cached_tfs: List[str] = []                           # not used # ➕ Version-E
-        
         # -9-- Warmup dict for every TF -----------------------------
-        self._warmup_dict: Dict[str, int] = cfg["__warmups_dicts"][symbol]
-        # _warmup_dict = {'M1': 26, 'M5': 14, 'H4': 14, ...}
+        self._warmup_dict: Dict[str, int] = cfg["__warmups_dicts"][symbol]    # _warmup_dict = {'M1': 26, 'M5': 14, 'H4': 14, ...}
         
         self._latest_dataset: Optional[MTFDataset] = None
 
+        # print(f" === 8 === self._warmup_dict ===> {self._warmup_dict}")   # for debug
+
     # -------------------------------------------------------------------------
-    # 2- بارگذاری یک تایم‌فریم خام برای حالت batch
-    # ------------------------------------------------------------------------- OK ===> FOR BATCH
+    # BATCH-1- بارگذاری یک تایم‌فریم خام برای حالت batch
+    # -------------------------------------------------------------------------
     def _load_raw(self, params: BuildParams) -> pd.DataFrame:
         symbol: str = params.symbol
         timeframe: str = params.selected_tf
@@ -604,21 +681,22 @@ class DataHandler:
         start_time: datetime | None = params.start_time
         end_time: datetime | None = params.end_time
 
-        logger.debug("==== start _load_raw =================")  # for debug
-        logger.debug(f"symbol = {symbol}")                      # for debug
-        logger.debug(f"timeframe = {timeframe}")                # for debug
-        logger.debug(f"fmt = {fmt}")                            # for debug
-        logger.debug(f"mode = {mode}")                          # for debug
-        logger.debug(f"start_lastrows = {start_lastrows}")      # for debug
-        logger.debug(f"end_lastrows = {end_lastrows}")          # for debug
-        logger.debug(f"start_time = {start_time}")              # for debug
-        logger.debug(f"end_time = {end_time}")                  # for debug
+        # logger.debug("==== start _load_raw =================")  # for debug
+        # logger.debug(f"symbol = {symbol}")                      # for debug
+        # logger.debug(f"timeframe = {timeframe}")                # for debug
+        # logger.debug(f"fmt = {fmt}")                            # for debug
+        # logger.debug(f"mode = {mode}")                          # for debug
+        # logger.debug(f"start_lastrows = {start_lastrows}")      # for debug
+        # logger.debug(f"end_lastrows = {end_lastrows}")          # for debug
+        # logger.debug(f"start_time = {start_time}")              # for debug
+        # logger.debug(f"end_time = {end_time}")                  # for debug
 
         """
         *** تمام تایم فریمهای دریافتی از کلاس BuildParams استاندارد پروژه را دارا میباشند
             و نیازی به کنترل مجدد ندارند
-        1) مسیر کامل دسترسی به فایل را بوسیله نماد، تایمفریم و فرمت میسازد
-        2) فایل داده را با توجه به مد و تعداد کندلها یا زمان ابتدا و انتها، میخواند
+        1) مقادیر مورد نیاز را از متغیرهای شیء params که از کلاس BuildParams است استخراج میکند.
+        2) مسیر کامل دسترسی به فایل را بوسیله نماد، تایمفریم و فرمت میسازد.
+        3) با استفاده از فراخوانی تابع _read_raw_df دیتافریم مورد نظر را بدست می آورد.
         """
         path = full_file_path(self.raw_dir, symbol, timeframe, fmt=fmt)
         # logger.debug(f"path = {path}")                 # for debug
@@ -631,13 +709,13 @@ class DataHandler:
             logger.warning("Raw data %s/%s not found or empty: %s", symbol, timeframe, path)
             return df
 
-        logger.debug(f"Len(df) = {len(df)}")                    # for debug   
-        logger.debug("====  end  _load_raw =================")  # for debug
+        # logger.debug(f"Len(df) = {len(df)}")                    # for debug   
+        # logger.debug("====  end  _load_raw =================")  # for debug
         return df
     
     # -------------------------------------------------------------------------
-    # 3- ساخت دیتاست برای حالت batch
-    # ------------------------------------------------------------------------- ===> FOR BATCH
+    # BATCH-2- ساخت دیتاست برای حالت batch
+    # -------------------------------------------------------------------------
     def build(self, params: BuildParams) -> MTFDataset:
 
         dropna_permit = True
@@ -646,70 +724,87 @@ class DataHandler:
         _tfs: List[str] = list(params.timeframes) if params.timeframes else self.timeframes
     
         # -----1: set timeframes --------------------------
-        base_tf, other_tf, all_tfs = check_tfs(_base_tf, _tfs)
+        base_tf, other_tfs, all_tfs = check_tfs(_base_tf, _tfs)
 
-        # -----2: loading df of base_tf -------------------
+        # -----2: making an object of MTFDataset ----------
+        dataset = MTFDataset(symbol=symbol, base_tf=base_tf)
+
+        # -----3: load df of base_tf ----------------------
         params.selected_tf = base_tf
         base_raw = self._load_raw(params)
-
         if base_raw.empty:
             # در اینجا سیاست این است که قبلاً تمام فایلهای مورد نیاز
             # دانلود شده باشند، تا سرعت اجرای این کلاس پایین نیاید
-            raise FileNotFoundError(f"Raw data for {symbol}/{base_tf} is not available. Please download first.")
+            raise FileNotFoundError(
+                f"Raw data for {symbol}/{base_tf} is not available"
+                f" or there is no overlap between exist and requested time windows."
+                f" Please download first."
+            )
         
-        # ----- 3:
-        dataset = MTFDataset(symbol=symbol, base_tf=base_tf)
+        # -----4: put base_raw in a new MTFDataset --------
         dataset.add(base_tf, base_raw)
-        for tf in other_tf:
+
+        # -----5: load & put other DFs in MTFDataset ------
+        for tf in other_tfs:
             params.selected_tf = tf
             odf = self._load_raw(params)
             if odf.empty:
+                logger.warning(f"Raw data for {symbol}/{tf} is not available. Loading related dataframe skipped.")
                 continue
             dataset.add(tf, odf)
-        
+
+        # -----6:   ---------------------------------------
         self._latest_dataset = dataset
+
         return dataset
 
     # -------------------------------------------------------------------------
-    # 4- ذخیره‌سازی دیتافریم batch
-    # ------------------------------------------------------------------------- ===> FOR BATCH
-    def save(self, dataset: MTFDataset, symbol: str, base_tf: str, fmt: Optional[str] = None):
-        df = dataset.frames[base_tf]
-
-        base_tf = _TF_MAP[base_tf.replace(" ","").upper()] if base_tf is not None else self._base_tf
+    # BATCH-3- ذخیره‌سازی دیتاست batch
+    # -------------------------------------------------------------------------
+    def save(self, dataset: MTFDataset, fmt: Optional[str] = None):
+        
+        symbol = dataset.symbol
+        base_tf = _TF_MAP.get(dataset.base_tf)
         fmt = (fmt or self.save_format or "parquet").lower()
 
-        out = full_file_path(self.proc_dir, symbol, base_tf, fmt)  # برای ذخیره فایل پروسس شده 
-        
-        # ---------- ذخیره فایل
-        if fmt == "parquet":
-            try:
-                df.to_parquet(out)
-            except Exception as ex:
-                logger.warning("Parquet save failed (%s). Reverting to CSV.", ex)
-                out = out.with_suffix(".csv")
+        df_metadata = {}
+        for tf in list(dataset.frames.keys()):
+
+            df = dataset.frames[tf]
+            out = full_file_path(self.proc_dir, symbol, tf, fmt)  # برای ذخیره فایل پروسس شده 
+            meta = {
+                "start_time": df.index[0],
+                "end_time": df.index[-1],
+                "rows": int(len(df)),
+            }
+            # --- save to file ------------------
+            if fmt == "parquet":
+                try:
+                    df.to_parquet(out)
+                except Exception as ex:
+                    logger.warning("Parquet save failed (%s). Reverting to CSV.", ex)
+                    out = out.with_suffix(".csv")
+                    df.to_csv(out)
+                    fmt = "csv"
+            else: 
                 df.to_csv(out)
                 fmt = "csv"
-        else: 
-            df.to_csv(out)
-            fmt = "csv"
+            # ----------------------------------- 
+            df_metadata[tf] = meta
+
 
         # ---------- Manifest برای تکرارپذیری
         manifest = {
             "symbol": symbol,
-            "base_timeframe": base_tf.upper(),
-            "start_time": df.index[0],
-            "end_time": df["closed_time"].iloc[-1],
-            "rows": int(len(df)),
-            "columns": list(df.columns),
+            "base_timeframe": base_tf,
             "format": fmt.lower(),
             "created_at_utc": datetime.now(timezone.utc).isoformat(),
             "config_version": (self.cfg.get("version") or "unknown"),
-            "timeframes_used": (self._last_build_context or {}).get("timeframes", []),
-            "features": {
-                "time_features": (self.cfg.get("features", {}) or {}).get("time_features", {}),
-            },
+            "timeframes_used": list(dataset.frames.keys()),
+            "other_metadata": df_metadata,
+            "columns": list(df.columns),
         }
+        out = full_file_path(self.proc_dir, symbol, symbol, fmt)
         manifest_path = out.with_suffix(".manifest.json")
         manifest_path.write_text(
             pd.Series(manifest).to_json(force_ascii=False, indent=2),
@@ -717,97 +812,79 @@ class DataHandler:
         )
         # ---------- Manifest انتهای بلوک
 
-        logger.info("Processed data saved: %s (rows=%d, cols=%d)", out, len(df), len(df.columns))
+        logger.info(
+            "Processed data saved: %s (rows=%d, cols=%d)",
+            Path(self.proc_dir / symbol), len(df), len(df.columns)
+        )
         return out
 
+
+    #//////////////////////////////////////////////////////////////////////////////////////////////
     # -------------------------------------------------------------------------
-    # 5- ➕ اتصال EventBus به کلاس DataHandler
-    # ------------------------------------------------------------------------- ////// FOR LIVE (1)
+    # LIVE-1- اتصال EventBus به کلاس DataHandler
+    # -------------------------------------------------------------------------
     def subscribe_to_event_bus(self, event_bus: EventBus) -> None:
         self.event_bus = event_bus
-        self._subscriber_id = event_bus.subscribe(self.symbol)
-        logger.info("DataHandler connected to EventBus with id=%s", self._subscriber_id)
+        self._subscription_key = event_bus.subscribe(self.symbol)
+        logger.info("DataHandler connected to EventBus with id=%s", self._subscription_key)
 
     # -------------------------------------------------------------------------
-    # 6- ➕ شروع مصرف خودکار
-    # ------------------------------------------------------------------------- ////// FOR LIVE (2)
-    def start_consuming2(self) -> None:
-        if not self.event_bus or not self._subscriber_id:
-            raise RuntimeError("EventBus not attached...")
+    # LIVE-2- شروع مصرف خودکار - NOT USED IN ANY PLACE
+    # -------------------------------------------------------------------------
+    def start_consuming(self) -> None:
+        logger.debug("consuming start.")
+
+        if not self.event_bus or not self._subscription_key: # اگر جدول اشتراکات وجود ندارد یا کلیدی موجود نیست،
+            raise RuntimeError("EventBus not attached...")   # خطا بده.
         
-        self._running = True
+        self._running = True              # مود را "در حالت اجرا" قرار بده.
         try:
-            while self._running:
-                event = self.event_bus.get_event(self._subscriber_id, timeout=1.0)
-                if event and event.get("event_type") == "NEW_CANDLE":
-                    self.on_new_candle2(event)
+            while self._running:                                       # تا زمانیکه مود "در حال اجرا" فعال است،
+                event = self.event_bus.get_event(self._subscription_key, timeout=1.0)  # رویداد را از EVENTBUS بگیر.
+                if event and event.get("event_type") == "NEW_CANDLE":  # اگر رویداد وجود داشت و از نوع "کندل جدید" بود،
+                    self.update_live(event)  # run update_live(): ابتدا کش را آپدیت میکند و فراخوانی تابع کال بک مصرف کنند
         finally:
-            if self._subscriber_id:
-                self.event_bus.unsubscribe(self._subscriber_id)
-                self._subscriber_id = None
+            if self._subscription_key:                              # اگر اشتراک در EVENTBUS وجود دارد
+                self.event_bus.unsubscribe(self._subscription_key)  # اشتراک را لغو کن
+                self._subscription_key = None                       # کلید اشتراک را از بین ببر
     
     # -------------------------------------------------------------------------
-    # 7- ➕ دریافت کندل جدید برای حالت live
-    # ------------------------------------------------------------------------- ////// FOR LIVE (3)
-    def on_new_candle2_old1(self, event: Dict[str, Any]) -> None:
-        """
-        مصرف رویداد NEW_CANDLE از EventBus برای آپدیت لحظه‌ای
-        """
-        symbol = event["symbol"]
-        timeframe = event["timeframe"]
-        all_dfs = event["all_dfs"]
-
-        # دریافت کندل جدید و به‌روزرسانی دیتاست
-        # چونکه قرار است در تمام تایمفریمها آپدیت انجام بشود، فقط سطر زیر باید حذف شود
-        if timeframe == self._base_tf:
-            # آپدیت دیتاست جاری
-            self.update_live2(symbol, timeframe, all_dfs)
-            logger.debug("Live update for %s/%s", symbol, timeframe)
-
-    def on_new_candle2(self, event: Dict[str, Any]) -> None:
-        """
-        مصرف رویداد NEW_CANDLE از EventBus برای آپدیت لحظه‌ای
-        """
-        symbol = event["symbol"]
-        timeframe = event["timeframe"]
-        all_dfs = event["all_dfs"]
-        self.update_live2(
-            symbol=symbol,
-            timeframe=timeframe,
-            all_dfs=all_dfs,
-        )
-        logger.debug("Live update for %s/%s", symbol, timeframe)
-
+    # LIVE-3- Live Update 2 - USED ONLY IN "on_new_candle2()"
     # -------------------------------------------------------------------------
-    # 8- ➕ Live Update 2
-    # ------------------------------------------------------------------------- ////// FOR LIVE (4)
-    def update_live2(self, symbol: str, timeframe: str, all_dfs: Dict[str, Any]) -> MTFDataset:
+    def update_live(self, event: Dict[str, Any]) -> MTFDataset:
         """
-        به‌روزرسانی کش برای یک کندل جدید و بازگرداندن cache_dict به لایه‌ی بالاتر.
+        به‌روزرسانی کش برای یک کندل جدید و بازگرداندن یک دیکشنری از نوع MTFDataset
         
-        پارامترها:
-            symbol: نماد (مثلاً XAUUSD)
-            timeframe: تایم‌فریم کندل جدید (مثلاً M1)
-            all_dfs: دیکشنری شامل دیتافریم‌های جدید برای تمام تایم‌فریم‌ها
+        پارامتر ورودی:
+            event = {
+                "event_type": event_type,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "all_dfs": all_dfs
+            }
             
         خروجی:
-            cache_dict به‌روز شده (دیکشنری شامل دیتافریم‌های فشرده برای هر تایم‌فریم)
+            MTFDataset
         """
-        logger.debug("update_live2 start.")
-        timeframe = timeframe.upper()
+
+        logger.debug("update_live start.")
+
+        symbol = event["symbol"]
+        timeframe = event["timeframe"]
+        all_dfs = event["all_dfs"]
         
-        # اگر لیست تایم‌فریم‌های مورد نیاز هنوز مشخص نشده، ابتدا باید set_warmup_lengths صدا زده شود
         if not self._warmup_dict:
-            logger.warning("Required timeframes not set. Call set_warmup_lengths() first.")
-            return pd.DataFrame()   #### ایراد دارد. باید دیتاست برگرداند
+            logger.warning("Required timeframes not set. Load config by config_completer, first.")
+            return MTFDataset(symbol=symbol, base_tf=self._base_tf, frames={})
         
         # اگر تایم‌فریم دریافتی در لیست مورد نیاز نیست، نادیده بگیر
         if timeframe not in self._warmup_dict.keys():
             logger.debug(f"Ignoring {timeframe} (not required)")
-            return pd.DataFrame()   #### ایراد دارد. باید دیتاست برگرداند
+            return MTFDataset(symbol=symbol, base_tf=self._base_tf, frames={})
         
         # به‌روزرسانی کش
-        dataset = self._update_cache(symbol, timeframe, all_dfs)
+        # dataset = self._update_cache(symbol, timeframe, all_dfs)
+        dataset = self._update_cache(event)
         
         # ----- روش اول برای اجرای تابع کال بک ----------------------
         self._notify_new_data(dataset)
@@ -816,18 +893,31 @@ class DataHandler:
         # if self._data_callback is not None:
         #     self._data_callback(dataset)
 
+        
         return dataset       
 
     # -------------------------------------------------------------------------
-    # 9- ➕ Helpers for Live Update
-    # ------------------------------------------------------------------------- ////// FOR LIVE (5)
-    def _update_cache(self, symbol: str, timeframe: str, all_dfs: Dict[str, pd.DataFrame]) -> MTFDataset:
+    # LIVE-4- Helpers for Live Update
+    # -------------------------------------------------------------------------
+    # def _update_cache(self, symbol: str, timeframe: str, all_dfs: Dict[str, pd.DataFrame]) -> MTFDataset:
+    def _update_cache(self, event: Dict[str, Any]) -> MTFDataset:
         """
-        به‌روزرسانی کش دیکشنری ها برای یک نماد و تایم‌فریم های موجود در warmup_dict.
-        all_dfs داده های کندلی نماد مربوطه در تایمفریمهای مختلف است.
-
         این تابع دیکشنری _cache_dict را بروزرسانی میکند
-        """       
+        ساختار دیکشنری _cache_dict مشابه با ساختار دیکشنری all_fds است:
+        _cache_dict = {
+            "XAUUSD:M1" : DataFrame of "XAUUSD", at "M1" , contains (self.warmups_dicts["XAUUSD"]["M1" ]) closed candles
+            "XAUUSD:M15": DataFrame of "XAUUSD", at "M15", contains (self.warmups_dicts["XAUUSD"]["M15"]) closed candles
+            "XAUUSD:H1" : DataFrame of "XAUUSD", at "H1" , contains (self.warmups_dicts["XAUUSD"]["H1" ]) closed candles
+            "XAUUSD:H4" : DataFrame of "XAUUSD", at "H4" , contains (self.warmups_dicts["XAUUSD"]["H4" ]) closed candles
+        }
+        """
+
+        symbol = event["symbol"]
+        # timeframe = event["timeframe"]
+        all_dfs = event["all_dfs"]
+
+        extra = self._cache_dict_extra_length
+
         for tf in self._warmup_dict.keys():
             key = f"{symbol}:{tf.upper()}"
             if key not in self._cache_dict:
@@ -836,37 +926,41 @@ class DataHandler:
                 combined = pd.concat([self._cache_dict[key], all_dfs[key]], axis=0)
                 combined = combined[~combined.index.duplicated(keep='last')]
                 
-                warmup = self._warmup_dict.get(tf)  # تعداد کندلهای مورد نیاز برای وارم آپ
-                # if warmup and len(combined) > warmup:
-                #     combined = combined.iloc[-warmup:]
-                if warmup and len(combined) > (warmup + 1):
-                    combined = combined.iloc[-(warmup + 1):]
-                self._cache_dict[key] = combined
-        logger.debug(f"_cache_dict was updated: {self._warmup_dict}")
+                warmup = self._warmup_dict.get(tf) + extra  # تعداد کندلهای مورد نیاز برای وارم-آپ
+                if warmup and len(combined) > warmup:
+                    combined = combined.iloc[-warmup:]
+
+                self._cache_dict[key] = combined                   #     <<=== ***** آپدیت شدن _cache_dict *****
+
+            logger.info(f"_cache_dict for {symbol}/{tf} was updated. rows = {len(self._cache_dict[key])}")
+        logger.info("_cache_dict was updated")
 
         # --------- new added
         dataset = MTFDataset(symbol=symbol, base_tf=self._base_tf)
         for tf in self._warmup_dict:
-            key = f"{symbol}:{tf}"
+            key = f"{symbol}:{tf.upper()}"
             if key in self._cache_dict:
                 dataset.add(tf, self._cache_dict[key])
        
         self._latest_dataset = dataset
+        # dataset._print("mtfdataset_debug.md", n_rows=5)        # ///////////////////////////// برای تست است فقط
         return dataset
            
+    # -------------------------------------------------------------------------
+    # LIVE-5- گرفتن آخرین/جدیدترین دیتاست این کلاس
     # -------------------------------------------------------------------------
     def get_latest_dataset(self) -> Optional[MTFDataset]:
         return self._latest_dataset
 
     # -------------------------------------------------------------------------
-    # 10- ➕ ثبت تابع کال بک مصرف کننده در این کلاس
-    # ------------------------------------------------------------------------- ////// FOR LIVE (6)
+    # LIVE-6- ثبت تابع کال بک مصرف کننده در این کلاس
+    # -------------------------------------------------------------------------
     def set_data_callback(self, callback):
         """ثبت تابع callback برای دریافت دیتافریم جدید"""
         self._data_callback = callback
 
     # -------------------------------------------------------------------------
-    # 11- ➕ فراخوانی تابع کال بک مصرف کننده از این کلاس
+    # LIVE-7- فراخوانی تابع کال بک مصرف کننده از این کلاس
     # ------------------------------------------------------------------------- ////// FOR LIVE (7)
     def _notify_new_data(self, dataset: MTFDataset):
         """هر جا که دیتافریم جدید ساخته شد (مثلاً در متد update یا در consumer)، این متد را صدا بزنید"""
@@ -874,12 +968,12 @@ class DataHandler:
             self._data_callback(dataset)
 
     # -------------------------------------------------------------------------
-    # 12- ➕ متد جدید: توقف مصرف
-    # ------------------------------------------------------------------------- ////// FOR LIVE (8)
+    # LIVE-8- متد جدید: توقف مصرف NOT USED IN ANY PLACE
+    # -------------------------------------------------------------------------
     def stop_consuming(self) -> None:
         self._running = False
-        if self.event_bus and self._subscriber_id:
-            self.event_bus.unsubscribe(self._subscriber_id)
+        if self.event_bus and self._subscription_key:
+            self.event_bus.unsubscribe(self._subscription_key)
 
 
 # =======================================================================================
@@ -890,7 +984,7 @@ def _setup_logging(level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
         # format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        format="%(asctime)s | %(levelname)-6s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s",
+        format="%(asctime)s | %(levelname)-7s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s",
         datefmt="%H:%M:%S",
     )
 
@@ -907,12 +1001,13 @@ def _parse_args():
     p.add_argument("--timeframes", nargs="*", default=None,     help="Timeframes to use. If not provided, config.download_defaults.timeframes will be used.")
     p.add_argument("--load_format", type=str, default=None, choices=["csv", "parquet"], help="Raw Data format (default: from config)")
     p.add_argument("--save_format", type=str, default=None, choices=["csv", "parquet"], help="Output format (default: from config)")
-    p.add_argument("--log-level", type=str, default="INFO", help="Log level: DEBUG/INFO/WARN/ERROR")
+    p.add_argument("--log-level", type=str, default="info", help="Log level: DEBUG/INFO/WARN/ERROR")
     return p.parse_args()
 
 # ------------------------------------------------------------------- OK
-def main() -> int:
+def main_old1() -> int:
     from f10_utils.config_loader import load_config
+    from f10_utils.config_completer import config_completer
 
     # --- 1 --- استخراج مقادیر از خط فرمان 
     args = _parse_args()
@@ -921,14 +1016,13 @@ def main() -> int:
     _setup_logging(args.log_level)
 
     # --- 3 --- بارگذاری کانفیگ با ENV Override
-    cfg = load_config(args.config, enable_env_override=True)
+    cfg = config_completer(args.config, enable_env_override=True)
 
     # --- 4 --- ساخت هندلر
     handler = DataHandler(cfg=cfg, symbol=args.symbol)
 
     # --- 5.1 --- ساخت دیتاست
     base_tf = (args.base_tf or handler._base_tf or "M1").upper()
-    base_tf = "4m"
     save_format = (args.save_format or handler.save_format or "parquet").lower()
     
     # --- 5.2 پارامترهای ساخت
@@ -952,7 +1046,7 @@ def main() -> int:
         to_last_n = 4,
         base_time = pd.to_datetime("2026-06-02 20:00:00").tz_localize(handler.broker_timezone),
     )
-
+    
     # --- 5.4 ساخت دیتاست
     df = handler.build(params)
 
@@ -962,12 +1056,198 @@ def main() -> int:
     logger.info("Done. Output: %s", out)
     return 0
 
+
+
+def main() -> int:
+    from f10_utils.config_completer import config_completer
+
+    # ================================================================
+    # 1. دریافت آرگومان‌های CLI
+    # ================================================================
+    args = _parse_args()
+
+    # ================================================================
+    # 2. راه‌اندازی logging
+    # ================================================================
+    _setup_logging(args.log_level)
+
+    # ================================================================
+    # 3. بارگذاری و تکمیل config
+    # ================================================================
+    cfg = config_completer(args.config, enable_env_override=True)
+
+    # ================================================================
+    # 4. symbol
+    # ================================================================
+    symbol = args.symbol.upper()
+
+    # ================================================================
+    # 5. اگر symbol در config وجود ندارد، باید اطلاعات لازم
+    #    برای ساخت DataHandler از CLI گرفته شود.
+    #
+    #    DataHandler.__init__() مستقیماً این سه دیکشنری را می‌خواند:
+    #       __timeframes_dict
+    #       __base_tfs_dict
+    #       __warmups_dicts
+    #
+    #    *** ==>   بنابراین قبل از ساخت DataHandler باید آنها آماده باشند.
+    # ================================================================
+    if symbol not in cfg["__timeframes_dict"]:
+        # print('======== symbol not in cfg["__timeframes_dict"] =============')    # for debug
+        if args.base_tf is None:
+            raise ValueError(
+                f"Symbol '{symbol}' is not defined in config. "
+                f"Please specify --base-tf."
+            )
+
+        if args.timeframes is None:
+            raise ValueError(
+                f"Symbol '{symbol}' is not defined in config. "
+                f"Please specify --timeframes."
+            )
+
+        # BuildParams مسئول check_tfs و استانداردسازی TFها است.
+        temp_params = BuildParams(
+            symbol=symbol,
+            base_tf=args.base_tf,
+            timeframes=args.timeframes,
+            selected_tf=None,
+        )
+
+        cfg["__timeframes_dict"][symbol] = list(temp_params.timeframes)
+        cfg["__base_tfs_dict"][symbol] = temp_params.base_tf
+
+        # DataHandler در __init__ به warmup نیاز دارد.
+        cfg["__warmups_dicts"][symbol] = {
+            tf: 0
+            for tf in [
+                temp_params.base_tf,
+                *temp_params.timeframes,
+            ]
+        }
+
+    else:
+        # print('======== symbol is in cfg["__timeframes_dict"] =============')    # for debug
+        # ============================================================
+        # symbol در config وجود دارد.
+        # اگر CLI مقدار جدیدی داده باشد، همان مقدار استفاده می‌شود.
+        # ============================================================
+        base_tf = (
+            args.base_tf if args.base_tf is not None
+            else cfg["__base_tfs_dict"][symbol]
+        )
+        # print(f"====== base TF is {base_tf} ======")
+        timeframes = (
+            args.timeframes if args.timeframes is not None
+            else cfg["__timeframes_dict"][symbol]
+        )
+
+        temp_params = BuildParams(
+            symbol=symbol,
+            base_tf=base_tf,
+            timeframes=timeframes,
+            selected_tf=None,
+        )
+
+        cfg["__timeframes_dict"][symbol] = list(temp_params.timeframes)
+        cfg["__base_tfs_dict"][symbol] = temp_params.base_tf
+
+    # ================================================================
+    # 6. ساخت DataHandler
+    # ================================================================
+    handler = DataHandler(cfg=cfg, symbol=symbol)
+
+    # ================================================================
+    # 7. تنظیمات نهایی BuildParams
+    # ================================================================
+    base_tf = handler._base_tf
+    timeframes = list(handler.timeframes)
+
+    # ================================================================
+    # 8. فرمت خواندن و ذخیره
+    # ================================================================
+    load_format = (
+        args.load_format
+        or handler.save_format
+        or "parquet"
+    ).lower()
+
+    save_format = (
+        args.save_format
+        or handler.save_format
+        or "parquet"
+    ).lower()
+
+    # ================================================================
+    # 9. BuildParams
+    #
+    # چون CLI فعلی فقط برای انتخاب symbol / TF / format است،
+    # mode پیش‌فرض number استفاده می‌شود.
+    # ================================================================
+    params = BuildParams(
+        symbol=args.symbol,         # اجباری است
+        base_tf=base_tf,            # base_tf,
+        timeframes=timeframes,
+        selected_tf=None,
+        load_format=load_format,    # فرمت داده های خام که باید خوانده شوند.
+
+        mode = "time",           # "number", "time", "periods"
+        # --- مربوط به مد number:
+        start_lastrows=500,
+        end_lastrows=200,
+        # --- مربوط به مد time:
+        start_time=pd.to_datetime("2026-08-01 00:00:00+00:00", utc=True),
+        end_time=pd.to_datetime("2026-08-10 00:00:00+00:00", utc=True),
+        # --- مربوط به مد periods:
+        period_size = "20m",
+        from_last_n = 8,
+        to_last_n = 4,
+        base_time = pd.to_datetime("2026-06-02 20:00:00").tz_localize(handler.broker_timezone),
+    )
+    params.print_params()   # =====>>>>>   تا اینجا درست است  <<<<<======
+
+    # ================================================================
+    # 10. ساخت MTFDataset
+    # ================================================================
+    dataset = handler.build(params)
+    print(" //////     every thing is ok upto here ////////////////////////")
+    print(dataset.symbol)
+    print(dataset.base_tf)
+    print(dataset.frames.keys())
+    for sym in dataset.frames.keys():
+        print("==========================")
+        print(f" symbol = {sym}")
+        print(dataset.frames[sym].head(5))
+        print(dataset.frames[sym].tail(5))
+        print("==========================")
+
+    # ================================================================
+    # 11. ذخیره
+    # ================================================================
+    print(symbol)
+    print(base_tf)
+    print(save_format)    
+    
+    out = handler.save(
+        dataset=dataset,
+        # symbol=symbol,
+        # base_tf=params.base_tf,
+        fmt=save_format,
+    )
+
+    # ================================================================
+    # 12. پایان
+    # ================================================================
+    logger.info("Done. Output: %s", out)
+
+    return 0    
+
 # ------------------------------------------------------------------- OK
 if __name__ == "__main__":
     raise SystemExit(main())
 
 r"""
-Run: python -m f02_data.data_handler_F_2  --symbol XAUUSD_i 
+Run: python -m f02_data.data_handler_F_3  --symbol BITCOIN
 """
 # =======================================================================================
 # تست پوشش کد (برای توسعه‌دهندگان) 
@@ -983,7 +1263,7 @@ Run: python -m f02_data.data_handler_F_2  --symbol XAUUSD_i
 7  _merge_on_base            --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
 8  _check_ohlc               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --  --
 9  _normalize_ohlc_columns   --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  -- Not Used
-10  _add_time_features_to_df --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  ok  --  --  --  --
+10                           --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  ok  --  --  --  --
 11 _add_qc_flags_to_df       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  ok  --  --  --  --
 12 _finalize_dataframe       --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  ok  --  --  --  --
 

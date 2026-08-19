@@ -34,8 +34,11 @@ def test_builder_basic_column_extraction():
 
 def test_builder_whitelist_filter():
     cfg = {
-        "env": {"features_whitelist": ["sma"]},
-        "features": {}
+        "features": {
+            "observation": {
+                "features_whitelist": ["sma"]
+            }
+        },
     }
     builder = ObservationBuilder(cfg)
 
@@ -54,8 +57,11 @@ def test_builder_whitelist_filter():
 
 def test_builder_blacklist_filter():
     cfg = {
-        "env": {"features_blacklist": ["ema*"]},
-        "features": {}
+        "features": {
+            "observation": {
+                "features_blacklist": ["ema*"],
+            }
+        }
     }
     builder = ObservationBuilder(cfg)
 
@@ -74,7 +80,12 @@ def test_builder_blacklist_filter():
 def test_builder_shift_prevents_leakage():
     cfg = {
         "env": {},
-        "features": {"shift_features_by": 1, "drop_na_head": True}
+        "features": {
+            "observation": {
+                "shift_features_by": 1,
+                "drop_na_head": True,
+            },
+        },
     }
     builder = ObservationBuilder(cfg)
 

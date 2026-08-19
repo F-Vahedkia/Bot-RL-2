@@ -1110,7 +1110,7 @@ def _adv_adr_distance_to_open(df, **cfg) -> Dict[str, pd.Series]:
 
     # --- خواندن تنظیمات از کانفیگ
     # params = (_deep_get(_CONFIG_CACHE, "features.adr_distance_to_open", {}) or {})
-    params = (_deep_get(cfg, "features.adr_distance_to_open", {}) or {})
+    params = (_deep_get(cfg, "features.adr.distance_to_open", {}) or {})
     enabled     = bool(params.get("enabled", False))
     window      = int(params.get("window", 14))
     tz          = params.get("tz", "UTC")

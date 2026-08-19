@@ -1,21 +1,103 @@
+# f99_main / main_6_4_orch_feat_comp.py
+# Date Reviewed:
+#     1405-05-22-22:00
+
+
 """
-Run: python -m main_6_3_orch
-
-Bot-RL-2: Main Orchestrator - Unified with Mode Support (Listener-based, No Polling)
-ارکستراتور اصلی ربات معاملاتی با پشتیبانی از حالت‌های مختلف و معماری رویدادمحور بدون polling
-
-نحوه استفاده:
-    python main_3_orch.py --mode live --symbols EURUSD --timeframes M5
-    python main_3_orch.py --mode backtest --symbols EURUSD --base_tf M1 --start 2024-01-01 --end 2024-12-31
-    python main_3_orch.py --download --symbols EURUSD --lookback 5000
-    python main_3_orch.py --health
+Main Orchestrator of Bot-RL-2
 """
-# Run: python -m main_6_2_orch --mode `train` --symbols XAUUSD_I --base_tf H1 --timeframes H1 H4 D1
-# Run: python -m main_6_2_orch --mode train --symbols XAUUSD_I --base_tf H1 --timeframes H1 H4 D1
+def docstring():
 
-# Run: python -m main_6_2_orch --download --symbols XAUUSD_I --timeframes M1 M2 M4 M20 H1 H4
+    """
+    نقش تا الان:
+        ارکستراتور اصلی ربات معاملاتی که اجزای لایه‌های Data و Features
+        و سپس مسیرهای بالاتر سیستم را بر اساس mode هماهنگ می‌کند.
 
-# main_6_3_orch.py
+    معماری Feature:
+        برای هر Symbol یک مسیر مستقل ایجاد می‌شود:
+
+            DataHandler(symbol)
+                ↓
+            MTFDataset(symbol)
+                ↓
+            FeaturePipeline(symbol)
+                ↓
+            FeatureEngine(symbol)
+                ↓
+            FeatureStore
+                ↓
+            ObservationBuilder
+                ↓
+            Symbol-Agent
+
+        در سطح بالاتر:
+            Symbol-Agentها
+                ↓
+            Meta-Agent
+
+    حالت‌های اجرایی:
+        live / paper / shadow
+        train / backtest / optimize / evaluate
+        download / health
+
+    اصول مهم:
+        - هر Symbol دارای DataHandler مستقل است.
+        - هر Symbol دارای FeaturePipeline مستقل است.
+        - هر FeaturePipeline از FeatureEngine مستقل همان Symbol استفاده می‌کند.
+        - FeaturePipeline، MTFDataset را از لایه Data دریافت می‌کند و خودش مسئول
+        دریافت داده از DataHandler یا MarketDataEngine نیست.
+        - FeaturePipeline مسئول هماهنگ‌سازی FeatureEngine، FeatureStore و
+        ObservationBuilder برای همان Symbol است.
+        - در حالت Live، داده‌ها از MarketDataEngine و EventBus به DataHandler
+        همان Symbol می‌رسند و سپس به FeaturePipeline همان Symbol منتقل می‌شوند.
+        - mode و feature specifications در سطح orchestrator / pipeline تعیین
+        شده و به FeatureEngine منتقل می‌شوند.
+        - FeatureEngine مسئول اجرای محاسبات Feature و نگهداری stateهای
+        incremental مربوط به Live است.
+        - این فایل مسئول orchestration است و نباید منطق محاسبات اندیکاتورها
+        یا ساخت Featureهای هر Symbol را در خود پیاده‌سازی کند.
+
+    روش های اجرا:
+    - MODE = live / paper / shadow
+        python -m main_6_4_orch_feat_comp --mode MODE --symbols EURUSD --timeframes M5
+        python -m main_6_4_orch_feat_comp --mode MODE --symbols EURUSD XAUUSD BITCOIN --timeframes M1 M5 H1
+    
+    - MODE = train  / backtest / optimize / evaluate
+        python -m main_6_4_orch_feat_comp --mode train    --symbols XAUUSD --base_tf H1 --timeframes H1 H4 D1
+        python -m main_6_4_orch_feat_comp --mode backtest --symbols EURUSD --base_tf M1 --timeframes M1 M5 H1 --start 2024-01-01 --end 2024-12-31
+    
+    -Download
+        python -m main_6_4_orch_feat_comp --download --symbols EURUSD --timeframes M1 M5 --lookback 5000
+    - Health check
+        python -m main_6_4_orch_feat_comp --health
+
+    اجرا همراه با آدرس دهی فایل کانفیگ:
+        python -m main_6_4_orch_feat_comp --config [path to config.yaml] --mode live --symbols EURUSD --timeframes M5
+        python -m main_6_4_orch_feat_comp --config [path to config.yaml] --mode live --symbols EURUSD XAUUSD BITCOIN --timeframes M1 M5 H1
+    
+    ===========================================================================
+    برای آینده:
+    -----------
+    Main / Root Orchestrator
+        │
+        ├── Config
+        ├── Data
+        ├── Features
+        ├── Observation
+        ├── Machine Learning / Symbol-Agent
+        ├── Meta-Agent
+        ├── Risk Management
+        ├── Order / Execution
+        ├── Position Management
+        ├── Broker / MT5
+        └── Monitoring / Lifecycle
+        نسخه‌ای که الان در اختیار داریم فقط Data و Feature و Observation را دارد.
+        در فایل فعلی نیز خروجی Observation هنوز به listener ها تحویل می‌شود و
+        بعد از آن subsystem های معاملاتی در این فایل هنوز وجود ندارند.
+    """
+    pass
+
+# main_6_4_orchestrator_feature_compatible.py
 # =============================================================================
 #    IMPORTS
 # =============================================================================
@@ -42,7 +124,7 @@ from f02_data.mtf_dataset import MTFDataset
 from f03_features.feature_B_bootstrap import build_feature_system
 from f03_features.feature_B_graph import FeatureGraph
 from f03_features.observation_B_builder import ObservationBuilder
-from f03_features.feature_pipeline import DataPipeline
+from f03_features.feature_pipeline import FeaturePipeline
 
 from f10_utils.logging_utils import setup_logging
 
@@ -54,8 +136,10 @@ class DataSource:
     def get_next_candle(self) -> Optional[Dict[str, Any]]:
         raise NotImplementedError
 
+
     def has_next(self) -> bool:
         raise NotImplementedError
+
 
     def close(self):
         pass
@@ -68,14 +152,29 @@ class LiveDataSource(DataSource):
         self.data_handler = data_handler
         self._running = True
 
-    def get_next_candle(self) -> Optional[Dict[str, Any]]:   ###   <<<===   Changed
-        if self.data_handler._cached_df is not None and not self.data_handler._cached_df.empty:
-            latest = self.data_handler._cached_df.iloc[-1].to_dict()
-            return latest
-        return None
+
+    def get_next_candle(self) -> Optional[Dict[str, Any]]:
+        dataset = self.data_handler.get_latest_dataset()
+        if dataset is None:
+            return None
+
+        try:
+            df = dataset.get(self.data_handler._base_tf)
+        except KeyError:
+            return None
+
+        if df.empty:
+            return None
+
+        row = df.iloc[-1]
+        latest = row.to_dict()
+        latest["time"] = row.name
+        return latest
+
 
     def has_next(self) -> bool:
         return self._running
+
 
     def close(self):
         self.engine.stop()
@@ -93,6 +192,7 @@ class BatchDataSource(DataSource):
         self._index = 0
         self.dataset = None
         self._load_data(start_date, end_date)
+
 
     def _load_data(self, start_date: Optional[str], end_date: Optional[str]):
         params = BuildParams(
@@ -113,6 +213,7 @@ class BatchDataSource(DataSource):
         # print(f" ====> shape of df is ===== {self.df.shape}")     # for debug
         # print(list(self.df.columns))                              # for debug
 
+
     def get_next_candle(self) -> Optional[Dict[str, Any]]:
         if self._index >= len(self.df):
             return None
@@ -122,8 +223,10 @@ class BatchDataSource(DataSource):
         result['time'] = row.name   # ایندکس را به عنوان ستون 'time' اضافه میکند
         return result
 
+
     def has_next(self) -> bool:
         return self._index < len(self.df)
+
 
     def close(self):
         pass
@@ -144,21 +247,29 @@ class BotOrchestrator:
         self._components: Dict[str, Any] = {}
 
         # ✅ listener system (جدید)
-        self._data_listeners: List[Callable[[pd.DataFrame], None]] = []   ###   <<<===   Changed pd.DataFrame to Any
+        self._data_listeners: List[Callable[[Any], None]] = []
         self._stop_event = threading.Event()   # برای نگه‌داشتن نخ اصلی بدون polling
 
         # مؤلفه‌های اصلی
         self.engine: Optional[MarketDataEngine] = None
+        self.data_handlers: Dict[str, DataHandler] = {}
+        self.feature_pipelines: Dict[str, FeaturePipeline] = {}
+        self.feature_engines: Dict[str, Any] = {}
+        self.feature_stores: Dict[str, Any] = {}
+        self.data_sources: Dict[str, DataSource] = {}
+
+        # Backward-compatible aliases for single-symbol paths.
         self.data_handler: Optional[DataHandler] = None
-        self.downloader: Optional[MT5DataLoader_batch] = None
         self.data_source: Optional[DataSource] = None
+        self.downloader: Optional[MT5DataLoader_batch] = None
 
         self.logger = logging.getLogger(__name__)
 
         self.feature_engine = None
+        self.feature_store = None
         self.feature_graph = None
         self.obs_builder = None
-        self.feature_specs = []
+        self.feature_specs: List[str] = []
         self.pipeline = None
 
         # ---------- batch streaming state ----------
@@ -168,54 +279,64 @@ class BotOrchestrator:
     # ---------------------------------------------------------------
     def load_configuration(self) -> None:
         try:
-            symbol = self.cfg["__symbols"][0]  
-
-            self.cfg = load_config(self.config_path) if self.config_path else load_config()
+            self.cfg = (
+                load_config(self.config_path)
+                if self.config_path
+                else load_config()
+            )
             self.logger.info("Configuration loaded successfully")
-            
-            # مقداردهی feature system
-            feature_system = build_feature_system(self.config_path)
-            self.feature_engine = feature_system.get_engine()
-            self.feature_store = feature_system.get_store()
-            self.feature_cache = feature_system.get_cache()
-            
-            # ==========================================================
-            # Symbol-aware feature specs
-            # ==========================================================
-            self.feature_specs = self.cfg.get("features", {}).get("indicators", [])
-            # symbol = self.cfg.get("__active_symbol") #                          <=> ??????????????
 
-            # if symbol is None:
-            #     self.logger.warning("No active symbol defined. Feature specs are empty.")
-            #     self.feature_specs = []
-            # else:
-            #     self.feature_specs = (
-            #         self.cfg
-            #         .get("features", {})
-            #         .get("symbols", {})
-            #         .get(symbol, {})
-            #         .get("indicators", [])
-            #     )
+            self.feature_specs = list(
+                self.cfg.get("features", {}).get("indicators", [])
+            )
 
             if not self.feature_specs:
                 self.logger.warning("No feature specs found in config")
-            self.feature_graph = FeatureGraph(self.feature_specs)
-            self.obs_builder = ObservationBuilder(self.cfg)
-            
-            self.pipeline = DataPipeline(
-                feature_engine=self.feature_engine,
-                feature_store=self.feature_store,
-                observation_builder=self.obs_builder,
-                feature_graph=self.graph,
-                feature_specs=self.specs,
-                symbol=self.symbol,
-                config=self.cfg,
-            )
+
         except Exception as e:
             self.logger.error(f"Failed to load configuration: {e}")
             raise
-    
-    # ---------------------------------------------------------------
+
+
+    def _build_feature_pipeline(self, symbol: str) -> FeaturePipeline:
+        """Build one independent FeaturePipeline for one Symbol."""
+        feature_system = build_feature_system(self.config_path)
+
+        feature_engine = feature_system.get_engine()
+        feature_store = feature_system.get_store()
+        feature_graph = FeatureGraph(self.feature_specs)
+        observation_builder = ObservationBuilder(self.cfg)
+
+        pipeline = FeaturePipeline(
+            symbol=symbol,
+            feature_engine=feature_engine,
+            feature_store=feature_store,
+            observation_builder=observation_builder,
+            feature_graph=feature_graph,
+            feature_specs=self.feature_specs,
+            config=self.cfg,
+        )
+
+        self.feature_engines[symbol] = feature_engine
+        self.feature_stores[symbol] = feature_store
+        self.feature_pipelines[symbol] = pipeline
+
+        if self.feature_engine is None:
+            self.feature_engine = feature_engine
+            self.feature_store = feature_store
+            self.feature_graph = feature_graph
+            self.obs_builder = observation_builder
+            self.pipeline = pipeline
+
+        return pipeline
+
+
+    def _ensure_feature_pipelines(self, symbols: List[str]) -> None:
+        for symbol in symbols:
+            if symbol not in self.feature_pipelines:
+                self._build_feature_pipeline(symbol)
+
+
     def _setup_signal_handlers(self) -> None:
         def signal_handler(signum, frame):
             self.logger.info(f"Received signal {signum}, shutting down...")
@@ -225,19 +346,20 @@ class BotOrchestrator:
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
 
+
     # ---------------------------------------------------------------
     # ✅ Listener management (جدید)
     # ---------------------------------------------------------------
-    def register_data_listener(self, callback: Callable[[pd.DataFrame], None]) -> None:
+    def register_data_listener(self, callback: Callable[[Any], None]) -> None:
         """ثبت شنونده برای دریافت داده‌های جدید (لایه features, risk, ...)"""
         self._data_listeners.append(callback)
         self.logger.debug(f"Data listener registered. Total: {len(self._data_listeners)}")
 
 
-    def _notify_data_listeners(self, df: pd.DataFrame) -> None:
+    def _notify_data_listeners(self, value: Any) -> None:
         for cb in self._data_listeners:
             try:
-                cb(df)
+                cb(value)
             except Exception as e:
                 self.logger.exception(f"Listener callback error: {e}")
 
@@ -256,8 +378,20 @@ class BotOrchestrator:
     # FEATURE -> OBSERVATION
     # ===============================================================
     def _process_pipeline(self, dataset: MTFDataset):
-        observation, _ = self.pipeline.run_dataset(dataset, mode=self.mode)
-        return observation
+        if dataset is None:
+            raise ValueError("dataset is required")
+
+        symbol = dataset.symbol
+        pipeline = self.feature_pipelines.get(symbol)
+
+        if pipeline is None:
+            pipeline = self._build_feature_pipeline(symbol)
+
+        if self.mode in {"live", "paper", "shadow"}:
+            return pipeline.process_live(dataset)
+
+        result = pipeline.run(dataset, mode=self.mode)
+        return result["observation"]
 
     # ===============================================================
     # PIPELINE ENTRY
@@ -270,67 +404,148 @@ class BotOrchestrator:
         if not self._running:
             return
         observation = self._process_pipeline(dataset)
-        
+
+        if observation is None:
+            return
+
         self._notify_data_listeners(observation)
-        self.logger.debug("Observation ready : %s", observation.shape)
+        self.logger.debug(
+            "Observation ready : shape=%s",
+            getattr(observation, "shape", None),
+        )
         
     # ---------------------------------------------------------------
-    def _init_components(self) -> None:
-        """ایجاد مؤلفه‌ها بر اساس mode"""
-        # برای حالت‌های زنده (live, paper, shadow) نیاز به MarketDataEngine داریم
+    def _init_components(self, symbols: Optional[List[str]] = None) -> None:
+        """ایجاد مؤلفه‌ها بر اساس mode."""
+        if symbols is None:
+            symbols = list(self.cfg.get("__warmups_dicts", {}).keys())
+
+        symbols = list(symbols)
+
         if self.mode in ["live", "paper", "shadow"]:
             self.engine = MarketDataEngine(cfg=self.cfg)
             self._components["engine"] = self.engine
             self.logger.info("MarketDataEngine initialized (live mode)")
 
-            self.data_handler = DataHandler(
-                cfg=self.cfg,
-                event_bus=self.engine.get_event_bus()
-            )
-            self._components["data_handler"] = self.data_handler
-            self.logger.info("DataHandler initialized and attached to EventBus")
+            self._ensure_feature_pipelines(symbols)
 
-            # ✅======== اتصال callback برای دریافت داده جدید (بدون polling)
-            if hasattr(self.data_handler, 'set_data_callback'):
-                self.data_handler.set_data_callback(self._on_data_updated)
-                self.logger.info("DataHandler callback registered (listener mode)")
-            else:
-                self.logger.warning("DataHandler has no set_data_callback. Please add it to enable listener mode.")
-            # ==========
-            self.data_source = LiveDataSource(self.engine, self.data_handler)
+            for symbol in symbols:
+                handler = DataHandler(
+                    cfg=self.cfg,
+                    symbol=symbol,
+                    event_bus=None,
+                )
+                self.engine.attach_data_handler(handler)
+                handler.set_data_callback(self._on_data_updated)
 
-        # برای حالت‌های بچ (backtest, train, optimize, evaluate)
+                self.data_handlers[symbol] = handler
+                self.data_sources[symbol] = LiveDataSource(
+                    self.engine,
+                    handler,
+                )
+
+            if len(symbols) == 1:
+                self.data_handler = self.data_handlers[symbols[0]]
+                self.data_source = self.data_sources[symbols[0]]
+
+            self._components["data_handlers"] = self.data_handlers
+
         elif self.mode in ["train", "backtest", "optimize", "evaluate"]:
-            # نیازی به MarketDataEngine نیست، مستقیماً از DataHandler بچ استفاده می‌کنیم
-            self.data_handler = DataHandler(cfg=self.cfg, event_bus=None)
-            self._components["data_handler"] = self.data_handler
-            # بعداً در اجرا، پارامترهای build از خط فرمان گرفته می‌شود
-            self.logger.info(f"DataHandler initialized in batch mode for {self.mode}")
+            if len(symbols) != 1:
+                raise ValueError(
+                    "Batch mode currently requires exactly one symbol."
+                )
 
-        # برای دانلود (دستور جداگانه)
-        # اگر در کانفیگ symbols و timeframes تعریف شده باشند، دانلودر را فعال کن
+            symbol = symbols[0]
+            self._ensure_feature_pipelines(symbols)
+
+            handler = DataHandler(
+                cfg=self.cfg,
+                symbol=symbol,
+                event_bus=None,
+            )
+            self.data_handlers[symbol] = handler
+            self.data_handler = handler
+            self._components["data_handler"] = handler
+
         dl_cfg = self.cfg.get("download_defaults", {})
         if dl_cfg.get("symbols") and dl_cfg.get("timeframes"):
-            self.downloader = MT5DataLoader_batch(
-                cfg=self.cfg,
-            )
+            self.downloader = MT5DataLoader_batch(cfg=self.cfg)
             self._components["downloader"] = self.downloader
             self.logger.info("MT5DataLoader initialized")
 
-    # ---------------------------------------------------------------
-    def start_live(self, symbols: List[str], timeframes: List[str], poll_interval: float = 2.0):
-        """شروع حالت live/paper/shadow"""
-        self.engine.start(symbols=symbols, timeframes=timeframes, poll_interval_sec=poll_interval)
-        self.data_handler.start_consuming()  # شروع مصرف رویدادها (نخ خودش را دارد)
+
+    def start_live(
+        self,
+        symbols: List[str],
+        timeframes: List[str],
+        poll_interval: float = 2.0,
+    ) -> None:
+        """شروع حالت live/paper/shadow."""
+        symbols = list(symbols)
+        self._ensure_feature_pipelines(symbols)
+
+        warmups_dicts = self.cfg.get("__warmups_dicts", {})
+        missing = [s for s in symbols if s not in warmups_dicts]
+        if missing:
+            raise ValueError(
+                f"No warmup configuration found for symbols: {missing}"
+            )
+
         self._running = True
 
+        threading.Thread(
+            target=self.engine.start,
+            args=(warmups_dicts, poll_interval),
+            daemon=True,
+            name="MarketDataEngine",
+        ).start()
 
-    def start_batch(self, symbol: str, base_tf: str, timeframes: List[str], start_date: Optional[str] = None, end_date: Optional[str] = None):
-        self.data_source = BatchDataSource(self.data_handler, symbol, base_tf, timeframes, start_date, end_date)
-        # self._batch_dataset = self.data_source.data_handler.get_latest_dataset()
+        for symbol, handler in self.data_handlers.items():
+            threading.Thread(
+                target=handler.start_consuming,
+                daemon=True,
+                name=f"DataHandler-{symbol}",
+            ).start()
+
+        self.logger.info(
+            "Live started for symbols=%s, timeframes=%s",
+            symbols,
+            timeframes,
+        )
+
+
+    def start_batch(
+        self,
+        symbol: str,
+        base_tf: str,
+        timeframes: List[str],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> None:
+        self._ensure_feature_pipelines([symbol])
+
+        handler = self.data_handlers.get(symbol)
+        if handler is None:
+            raise RuntimeError(
+                f"No DataHandler initialized for symbol={symbol}"
+            )
+
+        self.data_source = BatchDataSource(
+            handler,
+            symbol,
+            base_tf,
+            timeframes,
+            start_date,
+            end_date,
+        )
         self._batch_dataset = self.data_source.dataset
         self._running = True
-        self.logger.info(f"Batch mode started: {len(self.data_source.df)} rows")
+
+        self.logger.info(
+            "Batch mode started: %d rows",
+            len(self.data_source.df),
+        )
 
 
     def run_batch_loop(self):
@@ -342,50 +557,102 @@ class BotOrchestrator:
 
         self._running = False
 
+
     # ---------------------------------------------------------------
     def start(self, cli_args: argparse.Namespace) -> None:
-        """شروع بر اساس mode و پارامترهای خط فرمان"""
+        """شروع بر اساس mode و پارامترهای خط فرمان."""
         if self._running:
             self.logger.warning("Bot is already running")
             return
 
         self.load_configuration()
-        
         self._setup_signal_handlers()
-        self._init_components()
 
         try:
             if self.mode in ["live", "paper", "shadow"]:
-                
-                symbols = cli_args.symbols or self.cfg.get("download_defaults", {}).get("symbols", ["EURUSD"])
-                
-                timeframes = cli_args.timeframes or self.cfg.get("download_defaults", {}).get("timeframes", ["M5"])
-                
-                poll_interval = self.cfg.get("executor", {}).get("poll_interval_sec", 2.0)
-                self.start_live(symbols, timeframes, poll_interval)
 
-                # ✅ به جای حلقه polling، نخ اصلی منتظر سیگنال می‌ماند (بدون مصرف CPU)
-                self.logger.info("Entering listener-based wait (no polling). Press Ctrl+C to stop.")
+                symbols = cli_args.symbols or list(
+                    self.cfg.get("__warmups_dicts", {}).keys()
+                )
+                if not symbols:
+                    symbols = self.cfg.get(
+                        "download_defaults", {}
+                    ).get("symbols", ["EURUSD"])
+
+                timeframes = cli_args.timeframes or list(
+                    self.cfg.get("__timeframes_dict", {}).get(
+                        symbols[0], []
+                    )
+                )
+                if not timeframes:
+                    timeframes = self.cfg.get(
+                        "download_defaults", {}
+                    ).get("timeframes", ["M5"])
+
+                self._init_components(symbols)
+
+                poll_interval = self.cfg.get(
+                    "executor", {}
+                ).get("poll_interval_sec", 2.0)
+
+                self.start_live(
+                    symbols,
+                    timeframes,
+                    poll_interval,
+                )
+
+                self.logger.info(
+                    "Entering listener-based wait (no polling). "
+                    "Press Ctrl+C to stop."
+                )
                 self._stop_event.wait()
 
             elif self.mode in ["train", "backtest", "optimize", "evaluate"]:
 
-                symbol = (cli_args.symbols[0] if cli_args.symbols else "EURUSD")
+                configured_symbols = list(
+                    self.cfg.get("__warmups_dicts", {}).keys()
+                )
+                symbol = (
+                    cli_args.symbols[0]
+                    if cli_args.symbols
+                    else (
+                        configured_symbols[0]
+                        if configured_symbols
+                        else "EURUSD"
+                    )
+                )
 
-                base_tf = cli_args.base_tf or "M5"
-                timeframes = cli_args.timeframes or [base_tf, "H1"]
+                base_tf = cli_args.base_tf or self.cfg.get(
+                    "__base_tfs_dict", {}
+                ).get(symbol, "M5")
 
-                start_date = cli_args.start
-                end_date = cli_args.end
-                
-                self.start_batch(symbol, base_tf, timeframes, start_date, end_date)
+                timeframes = cli_args.timeframes or list(
+                    self.cfg.get("__timeframes_dict", {}).get(
+                        symbol,
+                        [base_tf, "H1"],
+                    )
+                )
+
+                self._init_components([symbol])
+
+                self.start_batch(
+                    symbol,
+                    base_tf,
+                    timeframes,
+                    cli_args.start,
+                    cli_args.end,
+                )
                 self.run_batch_loop()
 
             else:
-                raise ValueError(f"Unsupported mode: {self.mode}")
+                raise ValueError(
+                    f"Unsupported mode: {self.mode}"
+                )
 
         except Exception as e:
-            self.logger.exception(f"Failed to start bot: {e}")
+            self.logger.exception(
+                f"Failed to start bot: {e}"
+            )
             self.shutdown()
             raise
 
@@ -395,8 +662,24 @@ class BotOrchestrator:
         self.logger.info("Stopping Bot-RL-2...")
         if self.engine:
             self.engine.stop()
-        # if self.data_handler:
-        #     self.data_handler.stop_consuming()
+
+        for handler in self.data_handlers.values():
+            try:
+                handler.stop_consuming()
+            except Exception:
+                self.logger.exception(
+                    "Failed to stop DataHandler for %s",
+                    getattr(handler, "symbol", "unknown"),
+                )
+
+        for source in self.data_sources.values():
+            try:
+                source.close()
+            except Exception:
+                self.logger.exception(
+                    "Failed to close live data source"
+                )
+
         if self.data_source:
             self.data_source.close()
         self._stop_event.set()   # آزاد کردن نخ اصلی
@@ -483,9 +766,12 @@ class BotOrchestrator:
                 "running": self.engine._running,
                 "subscribers": self.engine.event_bus.subscriber_count()
             }
-        if self.data_handler:
-            status["components"]["data_handler"] = {
-                "subscribed": self.data_handler._subscriber_id is not None
+        if self.data_handlers:
+            status["components"]["data_handlers"] = {
+                symbol: {
+                    "subscribed": handler._subscription_key is not None
+                }
+                for symbol, handler in self.data_handlers.items()
             }
         return status
 
@@ -539,10 +825,10 @@ def main() -> None:
     if args.download:
         try:
             bot.load_configuration()
-            bot._init_components()
             symbols    = args.symbols    or cfg.get("download_defaults", {}).get("symbols")
             timeframes = args.timeframes or cfg.get("download_defaults", {}).get("timeframes")
             lookback   = args.lookback if hasattr(args, 'lookback') and args.lookback else None
+            bot._init_components(symbols or [])
             bot.download_historical_data(
                 symbols=symbols,
                 timeframes=timeframes,
@@ -556,7 +842,10 @@ def main() -> None:
     if args.health:
         try:
             bot.load_configuration()
-            bot._init_components()
+            symbols = args.symbols or list(
+                bot.cfg.get("__warmups_dicts", {}).keys()
+            )
+            bot._init_components(symbols)
             health = bot.health_check()
             print(health)
         except Exception as e:

@@ -1,4 +1,6 @@
 # f03_features/feature_C_engine_6.py
+# Date Reviewde:
+#   1405/05/22-22:09
 
 from __future__ import annotations
 from typing import List, Dict, Any, Optional
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 class FeatureEngine:
 
-    # ===================================================== 0 خوانده شد و فهمیده شد.
+    # ========================================================================= 0 خوانده شد و فهمیده شد.
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         این متد 5 کار انجام میدهد:
@@ -44,7 +46,9 @@ class FeatureEngine:
         self.config: Dict[str, Any] = config
         self.mode: Optional[str] = None     # تعیین واقعی این پارامتر در تابع execute() انجام میشود.
         self._run_id: int = 0               # این پارامتر در ابتدای هر execute() یک واحد زیاد میشود.
-        self._live_cache: Dict[str, Any] = {}
+
+        self._live_cache: Dict[Any, Dict[str, Any]] = {}
+
         self._contract = ExecutionContract(
             engine_version="1",
             resolver_version="1",
@@ -52,9 +56,23 @@ class FeatureEngine:
             registry_version="1",
         )
     
-    # ===================================================== 1 خوانده شد و تقریباً فهمیده شد.
+    # =========================================================================
+    def reset_live_state(self) -> None:
+        """
+        پاک‌سازی کامل stateهای runtime مربوط به اجرای Live.
+
+        این متد باید فقط در مرزهای اجرای مستقل Live فراخوانی شود،
+        نه بین snapshotهای متوالی بازار.
+        """
+        self._live_cache.clear()
+        self.mode = None
+
+        logger.info("FeatureEngine live state reset.")
+        
+    # ========================================================================= 1 خوانده شد و تقریباً فهمیده شد.
     def execute(self, dataset: MTFDataset, specs: List[str], mode: str = "train") -> MTFDataset:
         """
+        ---- old docstring---------------------------------
         این متد موتور اصلی اجرای FeatureEngine است.
         کار اصلی که این متد انجام میدهد:
             1) یک MTFDataset می‌گیرد.
@@ -62,52 +80,77 @@ class FeatureEngine:
             3) هر specification را توسط Parser تبدیل می‌کند.
             4) سپس هر feature را اجرا می‌کند (batch یا live).
             5) در نهایت همان MTFDataset را با ستون‌های feature جدید برمی‌گرداند.
+
+        ---- new docstring---------------------------------
+        اجرای FeatureEngine روی یک MTFDataset.
+        مراحل:
+            1) اعتبارسنجی Dataset
+            2) ثبت mode و run_id
+            3) Parse کردن feature specifications
+            4) اجرای featureها بر اساس mode
+            5) بازگرداندن MTFDataset به‌روزشده
+        در حالت Live:
+            - mode باید در تمام فراخوانی‌های یک session برابر "live" باشد.
+            - _live_cache بین فراخوانی‌های متوالی حفظ می‌شود.
+            - reset کردن stateهای Live وظیفه این متد نیست و باید
+            با reset_live_state() در مرز lifecycle انجام شود.
         """
-        # -- (1) -- کنترل داده های ورودی
+        # -------------------------------------------------
+        # 1. Validate input dataset
+        # -------------------------------------------------
         if dataset is None:
             raise ValueError("dataset is required")
+
+        if not isinstance(dataset, MTFDataset):
+            raise TypeError(
+                f"Expected MTFDataset, got {type(dataset).__name__}"
+            )
 
         if len(dataset.frames) == 0:
             logger.info("MTFDataset is empty.")
             return dataset
 
-        # ------------------- Daleted=1
-        # previous_mode = self.mode
-        # self.mode = mode
-        # self._run_id += 1
-        # if mode in {"train", "optimize"}:
-        #     self._live_cache.clear()
-        # elif previous_mode is not None and previous_mode != mode:
-        #     self._live_cache.clear()
-        # ------------------- Added=1
-        # -- (2) -- تنظیم مود و ران-آی دی
+        # -------------------------------------------------
+        # 2. Validate specs
+        # -------------------------------------------------
+        if specs is None:
+            raise ValueError("specs is required")
+
+        if not specs:     # بررسی وجود و اعنبار اسپکها. در واقع بررسی اینکه اصلاً چیزی برای محاسبه وجود دارد یا نه.
+            return dataset
+
+        # -------------------------------------------------
+        # 3. Set execution context
+        # -------------------------------------------------
         self.mode = mode
         self._run_id += 1
-        # ------------------- End=1
 
-        # -- (3) -- تبدیل اسپک های متنی به ساختار داخلی از نوع ParsedSpec
+
+        # -------------------------------------------------
+        # 4. Parse specifications
+        # -------------------------------------------------
         parsed_specs: List[ParsedSpec] = []
         for raw_spec in specs:
             try:
-                parsed_specs.append(parse_spec(raw_spec))
+                parsed_specs.append(parse_spec(spec=raw_spec, mode=mode))
             except Exception as exc:
                 logger.warning("Invalid feature spec skipped: %s | %s", raw_spec, exc)
-
-        # -- (4) -- بررسی وجود و اعنبار اسپکهای. در واقع بررسی اینکه اصلاً چیزی برای محاسبه وجود دارد یا نه.
-        if not specs:
-            return dataset
 
         if not parsed_specs:
             raise ValueError("No valid feature specifications were parsed.")
 
-        # -- (5) -- فرصتی برای مرتب سازی ترتیب اجرای فیچرها
+        # -------------------------------------------------
+        # 5. Execution order
+        # -------------------------------------------------
         """
         در اینجا میشود که مرتب‌سازی بر اساس dependency
         یا اجرای featureهای پایه قبل از feature های وابسته را گنجانید
         """
         ordered_specs = parsed_specs
 
-        # -- (6) -- حلقه اصلی
+        # -------------------------------------------------
+        # 6. Execute features
+        # -------------------------------------------------
         for ps in ordered_specs:
             if mode in {"train", "optimize"}:
                 dataset = cached_compute(
@@ -119,7 +162,7 @@ class FeatureEngine:
                     contract=self._contract,                                # type: ExecutionContract
                     # در سطر زیر محاسبات بچ انجام میشود
                     compute_fn=lambda ds=dataset, p=ps:                     # type: Callable[[], MTFDataset]
-                        self._apply_spec(dataset=ds, ps=p, mode=mode)
+                        self._apply_spec(dataset=ds, ps=p, mode=mode),
                 )
             else:
                 dataset = self._apply_spec(dataset=dataset, ps=ps, mode=mode)
@@ -127,10 +170,22 @@ class FeatureEngine:
         logger.info("Feature calculation completed on %d timeframes.", len(dataset.frames))
         return dataset
 
-    # ===================================================== 2
+    # ========================================================================= 2
     def _apply_spec(self, dataset: MTFDataset, ps: ParsedSpec, mode: str) -> MTFDataset:
         """
         Execute one feature according to the Registry contract.
+            ParsedSpec
+                ↓
+            get_indicator(name, mode)
+                ↓
+            IndicatorSpec
+                ↓
+            dataset.get(timeframe)
+                ↓
+            _validate_contract()
+                ↓
+            Batch → _call_batch()
+            Live  → _apply_live()
         """
 
         spec = get_indicator(ps.name, mode)
@@ -182,101 +237,7 @@ class FeatureEngine:
         logger.warning("Unsupported execution mode '%s' for indicator '%s'", mode, ps.name)
         return dataset
 
-    # ===================================================== 3
-    def _call_batch_old(self, spec: IndicatorSpec, dataset: MTFDataset, ps: ParsedSpec) -> MTFDataset:
-        """
-        Execute one Batch indicator using the Registry contract.
-        """
-        tf = ps.timeframe
-
-        if tf is None:
-            raise ValueError(f"Batch execution requires timeframe: {ps.raw}")
-
-        tf = tf.upper()
-        df = dataset.get(tf)
-
-        fn = spec.fn
-        sig = inspect.signature(fn)
-
-        parameters_spec = getattr(spec, "parameters", None)
-        alias_map: Dict[str, str] = {}
-
-        if parameters_spec:
-            for parameter in parameters_spec:
-                for alias in getattr(parameter, "aliases", ()):
-                    alias_map[alias] = parameter.name
-
-        kwargs: Dict[str, Any] = {}
-
-        for key, value in ps.kwargs.items():
-            canonical_key = alias_map.get(key, key)
-
-            if canonical_key in kwargs:
-                raise ValueError(
-                    f"Duplicate parameter for indicator "
-                    f"'{ps.name}': '{key}' conflicts with "
-                    f"'{canonical_key}'."
-                )
-
-            kwargs[canonical_key] = value
-
-        try:
-            bound = sig.bind(df, *ps.args, **kwargs)
-        except TypeError as exc:
-            raise TypeError(
-                f"Invalid arguments for Batch indicator "
-                f"'{ps.name}': {exc}"
-            ) from exc
-
-        out = fn(*bound.args, **bound.kwargs)
-
-        if out is None:
-            return dataset
-
-        if not isinstance(out, pd.DataFrame):
-            raise TypeError(
-                f"Batch indicator '{ps.name}' must return DataFrame, "
-                f"got {type(out).__name__}."
-            )
-
-        out = out.copy()
-
-        output_names = getattr(spec, "output_names", None)
-        canonical = ps.canonical
-
-        if output_names:
-            if len(output_names) != len(out.columns):
-                raise ValueError(
-                    f"Output count mismatch for '{ps.name}': "
-                    f"registry defines {len(output_names)} outputs, "
-                    f"function returned {len(out.columns)}."
-                )
-
-            if len(output_names) == 1:
-                out.columns = [canonical]
-            else:
-                out.columns = [
-                    f"{name}{canonical[len(ps.name):]}"
-                    for name in output_names
-                ]
-
-        elif len(out.columns) == 1:
-            out.columns = [canonical]
-
-        else:
-            out.columns = [
-                f"{canonical}::{column}"
-                for column in out.columns
-            ]
-
-        dataset.replace(
-            tf,
-            self._merge(df, out),
-        )
-
-        return dataset
-
-    # ------------------/////
+    # ========================================================================= 3
     def _call_batch(self, spec: IndicatorSpec, dataset: MTFDataset, ps: ParsedSpec) -> MTFDataset:
         """
         Execute one Batch indicator using the validated Registry contract.
@@ -326,24 +287,37 @@ class FeatureEngine:
 
         elif len(out.columns) == 1:
             out.columns = [canonical]
-
         else:
             out.columns = [
                 f"{canonical}::{column}"
                 for column in out.columns
             ]
-
-        dataset.replace(
-            tf,
-            self._merge(df, out),
-        )
-
+        dataset.replace(tf, self._merge(df, out))
         return dataset
 
-    # ===================================================== 4
-    def _apply_live(self, spec: IndicatorSpec, dataset: MTFDataset, df: pd.DataFrame, ps: ParsedSpec) -> pd.DataFrame:
+    # ========================================================================= 4
+    def _apply_live(
+        self,
+        spec: IndicatorSpec,
+        dataset: MTFDataset,
+        df: pd.DataFrame,
+        ps: ParsedSpec,
+    ) -> pd.DataFrame:
         """
-        Execute one stateful indicator over the current MTF frame.
+        اجرای incremental یک indicator stateful روی snapshot فعلی.
+
+        رفتار:
+            - اولین snapshot:
+                کل پنجره موجود به عنوان warmup پردازش می‌شود.
+            - snapshotهای بعدی:
+                فقط ردیف‌هایی که timestamp آنها از آخرین timestamp
+                پردازش‌شده جدیدتر است، به indicator داده می‌شوند.
+            - اگر آخرین timestamp پردازش‌شده دیگر در snapshot فعلی
+            وجود نداشته باشد، state از نو ساخته می‌شود و snapshot
+            فعلی دوباره به عنوان warmup پردازش می‌شود.
+
+        علاوه بر state خود indicator، خروجی‌های محاسبه‌شده نیز نگهداری
+        می‌شوند تا featureهای موجود در پنجره فعلی قابل بازسازی باشند.
         """
 
         tf = ps.timeframe.upper()
@@ -362,108 +336,108 @@ class FeatureEngine:
             self.mode,
         )
 
-        if key not in self._live_cache:
-            self._live_cache[key] = self._build_live_instance(
-                spec,
-                ps,
+        # -------------------------------------------------
+        # 1. Create runtime state on first use
+        # -------------------------------------------------
+        state = self._live_cache.get(key)
+
+        if state is None:
+            state = {
+                "instance": self._build_live_instance(spec, ps),
+                "initialized": False,
+                "last_timestamp": None,
+                "outputs": {},
+            }
+            self._live_cache[key] = state
+
+        obj = state["instance"]
+        last_timestamp = state["last_timestamp"]
+
+        # -------------------------------------------------
+        # 2. Ensure chronological order
+        # -------------------------------------------------
+        df = df.sort_index()
+
+        # -------------------------------------------------
+        # 3. Determine rows that must be fed to the indicator
+        # -------------------------------------------------
+        if not state["initialized"]:
+            rows_to_process = df
+
+        elif last_timestamp is None:
+            rows_to_process = df
+            state["initialized"] = False
+
+        elif last_timestamp not in df.index:
+            # The previously processed candle is no longer inside
+            # the available warmup window.
+            # Therefore incremental continuity cannot be proven.
+            logger.info(
+                "Live state continuity lost for %s. "
+                "Reinitializing from current snapshot.",
+                ps.canonical,
             )
 
-        obj = self._live_cache[key]
+            state["instance"] = self._build_live_instance(spec, ps)
+            state["outputs"] = {}
+            state["initialized"] = False
+            state["last_timestamp"] = None
 
-        outputs = []
+            obj = state["instance"]
+            rows_to_process = df
 
-        for _, row in df.iterrows():
+        else:
+            # Normal incremental case:
+            # only genuinely new candles are fed to the stateful indicator.
+            rows_to_process = df.loc[df.index > last_timestamp]
+
+        # -------------------------------------------------
+        # 4. Feed required rows to indicator
+        # -------------------------------------------------
+        for timestamp, row in rows_to_process.iterrows():
             try:
-                outputs.append(
-                    self._update_live(
-                        obj=obj,
-                        row=row,
-                        spec=spec,
-                        ps=ps,
-                    )
+                output = self._update_live(
+                    obj=obj,
+                    row=row,
+                    spec=spec,
+                    ps=ps,
                 )
+
+                if isinstance(output, dict):
+                    state["outputs"][timestamp] = output
+
+                state["last_timestamp"] = timestamp
+                state["initialized"] = True
+
             except Exception:
                 logger.exception(
-                    "Incremental update failed for %s",
+                    "Incremental update failed for %s at %s",
                     ps.raw,
+                    timestamp,
                 )
-                outputs.append(None)
 
+        # -------------------------------------------------
+        # 5. Keep only outputs that belong to the current snapshot
+        # -------------------------------------------------
+        current_index = set(df.index)
+
+        state["outputs"] = {
+            timestamp: output
+            for timestamp, output in state["outputs"].items()
+            if timestamp in current_index
+        }
+
+        # -------------------------------------------------
+        # 6. Reconstruct feature columns for the current snapshot
+        # -------------------------------------------------
         return self._attach_live_output(
             df=df,
             ps=ps,
             spec=spec,
-            outputs=outputs,
+            outputs_by_timestamp=state["outputs"],
         )
 
-    # ===================================================== 5
-    def _update_live_old(self, obj: Any, row: pd.Series, spec: IndicatorSpec, ps: ParsedSpec):
-        """
-        Feed one row into a stateful indicator.
-        """
-
-        sig = inspect.signature(obj.update)
-        values = []
-
-        column_aliases = {
-            "open_": "open",
-            "open": "open",
-            "high": "high",
-            "low": "low",
-            "close": "close",
-            "volume": "volume",
-        }
-
-        selected_column = ps.kwargs.get("column")
-
-        for parameter in sig.parameters.values():
-
-            if parameter.kind in (
-                inspect.Parameter.VAR_POSITIONAL,
-                inspect.Parameter.VAR_KEYWORD,
-            ):
-                continue
-
-            name = parameter.name
-
-            if name in {"value", "column"}:
-                source = selected_column or "close"
-            else:
-                source = name
-
-            source = column_aliases.get(source, source)
-
-            if source in row.index:
-                values.append(row[source])
-                continue
-
-            tf = ps.timeframe.upper()
-
-            prefixed = f"{tf}_{source}"
-
-            if prefixed in row.index:
-                values.append(row[prefixed])
-                continue
-
-            if parameter.default is not inspect.Parameter.empty:
-                values.append(parameter.default)
-                continue
-
-            logger.warning(
-                "Missing live input column '%s' for %s",
-                source,
-                spec.name,
-            )
-            return None
-
-        raw = obj.update(*values)
-
-        return self._normalize_output(
-            spec=spec,
-            output=raw,
-        )
-
-    # ------------------/////
+    # ========================================================================= 5
     def _update_live(self, obj: Any, row: pd.Series, spec: IndicatorSpec, ps: ParsedSpec):
         """
         Feed one row into a stateful indicator.
@@ -505,47 +479,7 @@ class FeatureEngine:
             output=raw,
         )
 
-    # ===================================================== 6
-    def _build_live_instance_old(self, spec: IndicatorSpec, ps: ParsedSpec) -> Any:
-        """
-        Build one stateful Live indicator instance.
-        """
-
-        sig = inspect.signature(spec.fn)
-
-        parameters_spec = getattr(spec, "parameters", None)
-        alias_map: Dict[str, str] = {}
-
-        if parameters_spec:
-            for parameter in parameters_spec:
-                for alias in getattr(parameter, "aliases", ()):
-                    alias_map[alias] = parameter.name
-
-        kwargs: Dict[str, Any] = {}
-
-        for key, value in ps.kwargs.items():
-            canonical_key = alias_map.get(key, key)
-
-            if canonical_key in kwargs:
-                raise ValueError(
-                    f"Duplicate parameter for indicator "
-                    f"'{ps.name}': '{key}' conflicts with "
-                    f"'{canonical_key}'."
-                )
-
-            kwargs[canonical_key] = value
-
-        try:
-            bound = sig.bind(*ps.args, **kwargs)
-        except TypeError as exc:
-            raise TypeError(
-                f"Invalid constructor arguments for "
-                f"Live indicator '{ps.name}': {exc}"
-            ) from exc
-
-        return spec.fn(*bound.args, **bound.kwargs)
-
-    # ------------------/////
+    # ========================================================================= 6
     def _build_live_instance(self, spec: IndicatorSpec, ps: ParsedSpec) -> Any:
         """
         Build one stateful Live indicator instance.
@@ -558,7 +492,7 @@ class FeatureEngine:
 
         return spec.fn(**kwargs)
 
-    # ===================================================== 7
+    # ========================================================================= 7
     def _merge(self, df: pd.DataFrame, out: pd.DataFrame) -> pd.DataFrame:
         """
         Merge feature columns without modifying the input frame.
@@ -583,40 +517,45 @@ class FeatureEngine:
 
         return result
 
-    # ===================================================== 8
-    def _attach_live_output(self, df: pd.DataFrame, ps: ParsedSpec, spec: IndicatorSpec, outputs) -> pd.DataFrame:
+    # ========================================================================= 8
+    def _attach_live_output(
+        self,
+        df: pd.DataFrame,
+        ps: ParsedSpec,
+        spec: IndicatorSpec,
+        outputs_by_timestamp: Dict[Any, Dict[str, Any]],
+    ) -> pd.DataFrame:
+        """
+        اتصال خروجی‌های محاسبه‌شده‌ی Live Indicator به snapshot فعلی.
 
-        if not outputs:
+        خروجی‌های indicator بر اساس timestamp به DataFrame متصل می‌شوند
+        و سپس از قرارداد عمومی _merge برای مدیریت collision عبور می‌کنند.
+        """
+
+        if not outputs_by_timestamp:
             return df
 
-        result = df.copy()
-        n = len(result)
+        feature_data: Dict[str, Dict[Any, Any]] = {}
 
-        columns_map: Dict[str, List[Any]] = {}
-
-        for idx in range(n):
-            out = outputs[idx]
-
-            if not isinstance(out, dict):
+        for timestamp, outputs in outputs_by_timestamp.items():
+            if not isinstance(outputs, dict):
                 continue
-
-            for name, value in out.items():
-                col = self._build_live_column_name(
-                    output_name=name,
+            for output_name, value in outputs.items():
+                column_name = self._build_live_column_name(
+                    output_name=output_name,
                     ps=ps,
                 )
+                if column_name not in feature_data:
+                    feature_data[column_name] = {}
+                feature_data[column_name][timestamp] = value
 
-                if col not in columns_map:
-                    columns_map[col] = [None] * n
+        if not feature_data:
+            return df
 
-                columns_map[col][idx] = value
+        out = pd.DataFrame(feature_data, index=df.index)
+        return self._merge(df, out)
 
-        for col, values in columns_map.items():
-            result[col] = values
-
-        return result
-
-    # ===================================================== 9
+    # ========================================================================= 9
     def _build_live_column_name(self, output_name: str, ps: ParsedSpec) -> str:
         canonical = ps.canonical
 
@@ -627,7 +566,7 @@ class FeatureEngine:
 
         return f"{output_name}{params_part}"
 
-    # ===================================================== 10
+    # ========================================================================= 10
     def _normalize_output(self, spec: IndicatorSpec, output: Any) -> Dict[str, Any]:
 
         if isinstance(output, dict):
@@ -656,7 +595,7 @@ class FeatureEngine:
             f"but defines multiple output_names."
         )
 
-    # ===================================================== 11
+    # ========================================================================= 11
     def _validate_contract(self, spec: IndicatorSpec, df: pd.DataFrame, mode: str, timeframe: str) -> bool:
         if not spec.supports(mode):
             logger.warning(
@@ -689,102 +628,6 @@ class FeatureEngine:
 
         return True
 
-    # ===================================================== 12
-    def process_live_data(self, dataset: MTFDataset) -> Optional[MTFDataset]:
-        """
-        اجرای FeatureEngine روی MTFDataset زنده.
-        """
-        if dataset is None:
-            return None
-
-        if len(dataset.frames) == 0:
-            return dataset
-
-        feature_specs = (self.config.get("features", {}).get("live_specs", []))
-
-        if not feature_specs:
-            return dataset
-
-        try:
-            return self.execute(dataset=dataset, specs=feature_specs, mode="live")
-        except Exception:
-            logger.exception("FeatureEngine live execution failed.")
-            return None
-
-    # ===================================================== END
+    # ========================================================================= END
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-    # ===================================================== 12
-    def _build_graph(self, parsed_specs):
-        graph = {}
-        valid_nodes = {ps.canonical for ps in parsed_specs}
-        for ps in parsed_specs:
-            spec = get_indicator(ps.name, self.mode)
-            if spec is None:
-                continue
-
-            node = ps.canonical
-            graph[node] = []
-
-            deps = getattr(spec, "depends_on", None)
-
-            # STRICT DEPENDENCY VALIDATION
-            if isinstance(deps, (list, tuple, set)):
-                for dep in deps:
-                    # Dependencyها نیز باید Canonical باشند.
-                    dep = dep.replace("'", '"')
-                    if dep in valid_nodes:
-                        graph[node].append(dep)
-                    else:
-                        logger.warning("Unknown dependency ignored [%s -> %s]", node, dep)
-
-        return graph
-    
-    # ===================================================== 13
-    def _resolve_order(self, graph):
-        resolved = []
-        visited = set()
-        visiting = set()
-        def visit(node: str):
-            if node in visited:
-                return
-            if node in visiting:
-                raise RuntimeError(f"Circular feature dependency detected: {node}")
-
-            visiting.add(node)
-
-            for dep in graph.get(node, []):
-                if dep in graph:
-                    visit(dep)
-            
-            visiting.remove(node)
-            visited.add(node)
-            resolved.append(node)
-
-        # DETERMINISTIC ORDERING (critical for reproducibility)
-        for n in sorted(graph.keys()):
-            visit(n)
-
-        return resolved
-
-
-"""

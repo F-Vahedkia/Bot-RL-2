@@ -2,7 +2,7 @@
 # Run: pytest -v -s f03_features/feature_B_cache_6_tester_A.py
 
 """ Date Reviewed:
-    1405/05/19-09:07 ==> run result is: OK
+    1405/05/24-15:02 ==> run result is OK for 19 tests
 """
 # ===================================================================
 # Imports

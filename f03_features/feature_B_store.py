@@ -1,13 +1,14 @@
 # f03_features/feature_B_store.py
+# Date reviewed:
+#    1405/05/23-16:00 ==> test by testet ver _A is ok for 22 tests
 
 from __future__ import annotations
 
 import json
 import logging
-import re
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Any
 
 import numpy as np
 import pandas as pd
@@ -19,455 +20,316 @@ from f10_utils.constants import _TF_MINUTES
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-# =============================================================================
-# Feature Naming Schema (Future-Proof)
-# =============================================================================
-_FEATURE_COL_RE = re.compile(
-    r"^__(?P<domain>[a-zA-Z0-9_]+)\.(?P<ind>[a-zA-Z0-9_]+)@(?P<tf>[A-Z]\d+)__(?P<key>[a-zA-Z0-9_]+)$"
-)
-
-_LEGACY_COL_RE = re.compile(
-    r"^__(?P<ind>[a-zA-Z0-9_]+)@(?P<tf>[A-Z]\d+)__(?P<key>[a-zA-Z0-9_]+)$"
-)
-
 
 # =============================================================================
 # Metadata
 # =============================================================================
-@dataclass  # <= قدیمی
+@dataclass(frozen=True, slots=True)
 class FeatureMeta:
+    """Metadata for one stored feature column."""
+
+    timeframe: str
     column: str
-    domain: str
-    indicator: str
-    tf: str
-    key: str
     dtype: str
     first_valid_ts: Optional[str]
-    warmup: int
+    nan_count: int
     coverage_ratio: float
 
 
 # =============================================================================
-# Schema Normalization
+# Timeframe alignment utility
 # =============================================================================
-def _normalize_column(col: str) -> str:
-    """
-    Convert legacy schema → new schema
-    __macd@M1__x → __indicator.macd@M1__x
-    """
-    m = _LEGACY_COL_RE.match(col)
-    if not m:
-        return col
-
-    ind = m.group("ind")
-    tf = m.group("tf")
-    key = m.group("key")
-
-    return f"__indicator.{ind}@{tf}__{key}"
-
-
-def _parse_column(col: str) -> Optional[Tuple[str, str, str, str]]:
-    """
-    Returns: (domain, indicator, tf, key)
-    """
-    m = _FEATURE_COL_RE.match(col)
-    if not m:
-        return None
-
-    return (
-        m.group("domain"),
-        m.group("ind"),
-        m.group("tf"),
-        m.group("key"),
-    )
-
-# =============================================================================
-# Merging
-# =============================================================================
-def align_to_base_old1(
-    dataset: MTFDataset,
-    *,
-    candles: list[str]
-) -> pd.DataFrame:
-    """
-    تمام تایم‌فریم‌ها را بدون Look-Ahead
-    روی تایم‌فریم پایه همتراز می‌کند.
-
-    Alignment بر اساس close_time انجام می‌شود.
-    """
-    symbol = dataset.symbol
-    base_tf = dataset.base_tf
-
-    base = dataset.get(base_tf).copy()
-
-    candles = {tf.upper() for tf in candles}
-
-    # -------------------------------------------
-    # آماده سازی تایم‌فریم پایه
-    # -------------------------------------------
-
-    base["__open_time__"] = base.index
-
-    base["__close_time__"] = (base.index + pd.Timedelta(_TF_MINUTES[base_tf], unit="min"))
-
-    base = base.set_index("__close_time__")
-    base.index.name = "__close_time__"
-
-    merged = base
-
-    # -------------------------------------------
-    # Merge سایر تایم‌فریم‌ها
-    # -------------------------------------------
-
-    ordered = sorted(
-        dataset.timeframes,
-        key=lambda tf: _TF_MINUTES[tf],
-    )
-
-    for tf in ordered:
-        if tf == base_tf:
-            continue
-        df = dataset.get(tf).copy()
-        # --------------------------- patch-3
-        price_cols = []
-        feature_cols = []
-        for c in df.columns:
-            prefix = f"{symbol}_{tf}_"
-            if c.startswith(prefix):
-                
-                suffix = c[len(prefix):]
-                if suffix in {"open", "high", "low", "close", "volume", "spread", "open_time"}:
-                    price_cols.append(c)
-                else:
-                    feature_cols.append(c)
-
-            else:
-                feature_cols.append(c)
-        #---------------------------- patch-3
-        #---------------------------- patch-4
-        cols_to_merge = feature_cols.copy()
-
-        if tf in candles:
-            cols_to_merge.extend(price_cols)
-        #---------------------------- patch-4
-        if not cols_to_merge:
-            continue
-        
-        # -------------------------------------------
-        # آماده سازی دیتافریم کمکی
-        # -------------------------------------------
-
-        df["__open_time__"] = df.index
-        df["__close_time__"] = (df.index + pd.Timedelta(_TF_MINUTES[tf], unit="min"))
-
-        df = df.set_index("__close_time__")
-        df.index.name = "__close_time__"
-
-        # فقط ستون‌هایی که واقعاً باید مرج شوند
-        right = df[cols_to_merge].reset_index()
-
-        left = merged.reset_index()
-
-        merged = pd.merge_asof(
-            left.sort_values("__close_time__"),
-            right.sort_values("__close_time__"),
-            on="__close_time__",
-            direction="backward",
-        )
-
-        merged = merged.set_index("__close_time__")
-
-    return merged
-
-
 def align_to_base(
     dataset: MTFDataset,
     *,
-    candles: list[str] | None = None,
+    include_timeframes: Optional[List[str]] = None,
 ) -> pd.DataFrame:
     """
-    Align all timeframe dataframes onto the base timeframe.
+    Align all timeframe frames onto the base timeframe without look-ahead.
 
-    Rules
-    -----
-    - No look-ahead (merge_asof backward)
-    - Base index remains unchanged.
-    - Higher TF candle values remain constant until next candle closes.
-    - Feature columns are preserved.
+    This is a pure utility: it does not mutate ``dataset`` and does not attach
+    an ``aligned`` object to MTFDataset.  ObservationBuilder may use this
+    utility later if its final observation contract requires aligned data.
     """
+    if dataset is None:
+        raise ValueError("dataset is required")
 
-    symbol = dataset.symbol
-    base_tf = dataset.base_tf
-
-    base = dataset.get(base_tf).copy()
-
-    base = base.copy()
-    base["__close_time__"] = (base.index + pd.Timedelta(minutes=_TF_MINUTES[base_tf]))
-    base = (
-        base
-        .reset_index(names="__open_time__")
-        .sort_values("__close_time__")
-    )
-
-    merged = base
-
-    ordered_tfs = sorted(
-        dataset.timeframes,
-        key=lambda tf: _TF_MINUTES[tf]
-    )
-
-    for tf in ordered_tfs:
-        if tf == base_tf:
-            continue
-        df = dataset.get(tf)
-        if df is None or df.empty:
-            continue
-
-        right = df.copy()
-        right["__close_time__"] = (right.index + pd.Timedelta(minutes=_TF_MINUTES[tf]))
-        right = (
-            right
-            .reset_index(names="__open_time__")
-            .sort_values("__close_time__")
+    if not isinstance(dataset, MTFDataset):
+        raise TypeError(
+            f"Expected MTFDataset, got {type(dataset).__name__}"
         )
 
-        merged = pd.merge_asof(
-            merged,
-            right,
+    if not dataset.frames:
+        return pd.DataFrame()
+
+    base_tf = dataset.base_tf.upper()
+    base_df = dataset.get(base_tf)
+
+    if base_df is None or base_df.empty:
+        return pd.DataFrame(index=base_df.index if base_df is not None else None)
+
+    selected = (
+        {tf.upper() for tf in include_timeframes}
+        if include_timeframes is not None
+        else set(dataset.timeframes)
+    )
+    selected.add(base_tf)
+
+    left = base_df.copy()
+    left["__close_time__"] = (
+        left.index + pd.Timedelta(minutes=_TF_MINUTES[base_tf])
+    )
+    base_index_name = left.index.name
+    left = left.reset_index(names="__open_time__").sort_values("__close_time__")
+
+    for tf in sorted(selected, key=lambda x: _TF_MINUTES[x]):
+        if tf == base_tf:
+            continue
+        if tf not in dataset.frames:
+            continue
+
+        right = dataset.get(tf)
+        if right is None or right.empty:
+            continue
+
+        right = right.copy()
+        right["__close_time__"] = (
+            right.index + pd.Timedelta(minutes=_TF_MINUTES[tf])
+        )
+        right = right.reset_index(names=f"__{tf}_open_time__")
+        right = right.sort_values("__close_time__")
+
+        # Keep only source columns; the alignment helper is intentionally
+        # generic and does not rename or reinterpret feature names.
+        merge_cols = [
+            c for c in right.columns
+            if c not in {"__close_time__"}
+        ]
+
+        # Avoid accidental duplicate helper columns when multiple TFs exist.
+        duplicate_cols = set(left.columns).intersection(merge_cols)
+        merge_cols = [c for c in merge_cols if c not in duplicate_cols]
+
+        right = right[["__close_time__", *merge_cols]]
+
+        left = pd.merge_asof(
+            left.sort_values("__close_time__"),
+            right.sort_values("__close_time__"),
             on="__close_time__",
             direction="backward",
             allow_exact_matches=True,
         )
 
-    merged = merged.set_index("__open_time__")
+    left = left.set_index("__open_time__")
+    left.index.name = base_index_name
 
-    merged.index.name = base.index.name
+    helper_cols = [
+        c for c in left.columns
+        if c == "__close_time__" or c.endswith("_open_time__")
+    ]
+    if helper_cols:
+        left = left.drop(columns=helper_cols)
 
-    if "__close_time__" in merged.columns:
-        merged.drop(columns="__close_time__", inplace=True)
+    return left
 
-    return merged
 
 # =============================================================================
-# Feature Store V2 (MTFDataset based)
+# FeatureStoreV2
 # =============================================================================
-
 class FeatureStoreV2:
     """
-    Persistence layer مخصوص MTFDataset.
+    Storage/merge boundary for MTFDataset feature results.
 
-    مسئولیت‌ها:
-        • استخراج Metadata
-        • ذخیره Dataset
-        • بارگذاری Dataset
-        • بدون هیچ وابستگی به Registry
-        • بدون وابستگی به FeatureEngine
+    Responsibilities
+    ----------------
+    1. Merge FeatureEngine output into a copy of the raw MTFDataset.
+    2. Produce per-timeframe metadata for the resulting feature dataset.
+    3. Persist each timeframe and its metadata.
+
+    Non-responsibilities
+    --------------------
+    - No Registry access.
+    - No FeatureEngine execution.
+    - No live state/cache management.
+    - No feature specification parsing.
+    - No Observation construction.
+    - No mutation of the source datasets.
     """
+    # ------------------------------------------------------------------------- 1
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        self.cfg: Dict[str, Any] = config if config is not None else load_config()
 
-    # ------------------------------------------------------------------
-    def __init__(self, config=None):
-        self.cfg = config or load_config()
-
-    # ------------------------------------------------------------------
-    def extract_metadata(
-        self,
-        dataset: MTFDataset,
-    ) -> pd.DataFrame:
-
-        rows: List[FeatureMeta] = []
-
-        for tf, df in dataset.frames.items():
-            if df is None or df.empty:
-                continue
-
-            for col in df.columns:
-                s = df[col]
-                fv = s.first_valid_index()
-                try:
-                    arr = s.to_numpy(dtype=float)
-                    valid = np.isfinite(arr)
-                    warmup = int((~valid).sum())
-                    coverage = float(valid.sum() / len(arr)) if len(arr) else 0.0
-                except Exception:
-                    warmup = int(s.isna().sum())
-                    coverage = float(s.notna().sum() / len(s)) if len(s) else 0.0
-
-                rows.append(
-                    FeatureMeta(
-                        timeframe=tf,
-                        column=col,
-                        dtype=str(s.dtype),
-                        first_valid_ts=None if fv is None else str(fv),
-                        warmup=warmup,
-                        coverage_ratio=coverage,
-                    )
-                )
-
-        return pd.DataFrame(asdict(r) for r in rows)
-
-    # -------------------------------------------------------------------------
-    def _rename_columns(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-    ) -> pd.DataFrame:
-        """
-        Rename all columns to a globally unique schema.
-
-        Result:
-            EURUSD_M1_open
-            EURUSD_M1_close
-            EURUSD_M1_sma(period=20)@M1
-            EURUSD_H1_macd(...)@H1::hist
-        """
-
-        df = df.copy()
-
-        prefix = f"{symbol}_{timeframe}_"
-
-        rename = {}
-
-        for col in df.columns:
-
-            if col.startswith(prefix):
-                continue
-
-            rename[col] = prefix + col
-
-        return df.rename(columns=rename)
-
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------------- 2
     def build(
         self,
         dataset: MTFDataset,
         features: MTFDataset,
     ) -> MTFDataset:
         """
-        Merge FeatureEngine output into raw dataset.
-        خروجی:
-            1) out.frames  -> دیتاست چندتایم‌فریمی (بدون همترازی)
-            2) out.aligned -> دیتافریم همتراز شده مخصوص RL
+        Merge FeatureEngine output into a copy of the raw MTFDataset.
+
+        Contract
+        --------
+        - Both inputs must be MTFDataset.
+        - Both datasets must belong to the same symbol.
+        - The timeframe sets must match.
+        - Raw frames are copied and never modified in place.
+        - Existing equal columns are preserved.
+        - A differing column with the same name is a collision and raises.
+        - New feature columns are appended to the corresponding timeframe.
         """
-        out = dataset.copy()
-        symbol = dataset.symbol
+        self._validate_datasets(dataset, features)
 
-        # -------------------------------------------------------
-        # مرحله اول:
-        # ساخت دیتاست چندتایم‌فریمی با ستون‌های یکتا
-        # -------------------------------------------------------
-        for tf in out.timeframes:
+        result = dataset.copy()
 
-            raw_df = self._rename_columns(out.get(tf), symbol, tf)
+        for tf in result.timeframes:
+            raw_df = result.get(tf)
+            feature_df = features.get(tf)
 
-            feature_df = self._rename_columns(features.get(tf), symbol,tf)
+            if feature_df is None or feature_df.empty:
+                continue
 
-            feature_cols = [
-                c for c in feature_df.columns
-                if c not in raw_df.columns
-            ]
-            raw_df = raw_df.join(feature_df[feature_cols], how="left")
+            merged_df = raw_df.copy()
 
-            out.replace(tf, raw_df)
+            for column in feature_df.columns:
+                incoming = feature_df[column]
 
-        # -------------------------------------------------------
-        # Debug
-        # -------------------------------------------------------
-        print("=" * 60)
-        for tf in out.timeframes:
-            df = out.get(tf)
-            print(tf)
-            print(df.columns.tolist())
-            print("-" * 60)
+                if column not in merged_df.columns:
+                    merged_df[column] = incoming
+                    continue
 
-        # -------------------------------------------------------
-        # مرحله دوم:
-        # ساخت دیتافریم همتراز شده
-        # -------------------------------------------------------
-        candles = self.cfg["features"]["symbols"][symbol]["candles"]
+                existing = merged_df[column]
+                if existing.equals(incoming):
+                    continue
 
-        aligned = align_to_base(
-            out,
-            candles=candles,
-        )
+                raise ValueError(
+                    f"FeatureStore column collision for symbol={dataset.symbol}, "
+                    f"timeframe={tf}, column={column!r}"
+                )
 
-        aligned.attrs["symbol"] = symbol
-        aligned.attrs["base_tf"] = out.base_tf
+            result.replace(tf, merged_df)
 
-        # دیتافریم نهایی مخصوص ObservationBuilder
-        out.aligned = aligned
+        return result
 
-        return out 
-    
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------------- 3
+    @staticmethod
+    def _validate_datasets(
+        dataset: MTFDataset,
+        features: MTFDataset,
+    ) -> None:
+        if dataset is None:
+            raise ValueError("dataset is required")
+        if features is None:
+            raise ValueError("features is required")
+
+        if not isinstance(dataset, MTFDataset):
+            raise TypeError(
+                f"Expected dataset to be MTFDataset, got {type(dataset).__name__}"
+            )
+        if not isinstance(features, MTFDataset):
+            raise TypeError(
+                f"Expected features to be MTFDataset, got {type(features).__name__}"
+            )
+
+        if dataset.symbol != features.symbol:
+            raise ValueError(
+                f"Dataset symbol mismatch: raw={dataset.symbol}, "
+                f"features={features.symbol}"
+            )
+
+        raw_tfs = {tf.upper() for tf in dataset.timeframes}
+        feature_tfs = {tf.upper() for tf in features.timeframes}
+
+        if raw_tfs != feature_tfs:
+            raise ValueError(
+                f"Timeframe mismatch for symbol={dataset.symbol}: "
+                f"raw={sorted(raw_tfs)}, features={sorted(feature_tfs)}"
+            )
+
+    # -------------------------------------------------------------------------4
     def extract_metadata(
         self,
         dataset: MTFDataset,
     ) -> Dict[str, pd.DataFrame]:
         """
-        Metadata هر تایم‌فریم را جداگانه استخراج می‌کند.
+        Extract per-timeframe metadata from an MTFDataset.
+
+        The store intentionally does not depend on Registry metadata.  Metadata
+        therefore describes the actual stored columns and their observed data
+        quality rather than reconstructing indicator parameters.
         """
+        if dataset is None:
+            raise ValueError("dataset is required")
+        if not isinstance(dataset, MTFDataset):
+            raise TypeError(
+                f"Expected MTFDataset, got {type(dataset).__name__}"
+            )
 
         result: Dict[str, pd.DataFrame] = {}
 
         for tf in dataset.timeframes:
-
             df = dataset.get(tf)
-
             rows: List[FeatureMeta] = []
 
-            for col in df.columns:
+            if df is None:
+                result[tf] = pd.DataFrame(columns=self._metadata_columns())
+                continue
 
-                if not col.startswith("__"):
-                    continue
+            for column in df.columns:
+                series = df[column]
+                first_valid = series.first_valid_index()
 
-                parsed = _parse_column(col)
-
-                if parsed is None:
-                    continue
-
-                domain, ind, _, key = parsed
-
-                s = df[col]
-
-                fv = s.first_valid_index()
-
-                warmup = int(
-                    (~np.isfinite(s.to_numpy(dtype=float))).sum()
-                )
-
-                coverage = (
-                    float(
-                        np.isfinite(
-                            s.to_numpy(dtype=float)
-                        ).sum()
-                        / len(s)
+                try:
+                    numeric = pd.to_numeric(series, errors="coerce")
+                    valid_mask = np.isfinite(numeric.to_numpy(dtype=float))
+                    nan_count = int((~valid_mask).sum())
+                    coverage = (
+                        float(valid_mask.sum() / len(valid_mask))
+                        if len(valid_mask)
+                        else 0.0
                     )
-                    if len(s)
-                    else 0.0
-                )
+                except (TypeError, ValueError):
+                    valid_mask = series.notna().to_numpy()
+                    nan_count = int((~valid_mask).sum())
+                    coverage = (
+                        float(valid_mask.sum() / len(valid_mask))
+                        if len(valid_mask)
+                        else 0.0
+                    )
 
                 rows.append(
                     FeatureMeta(
-                        column=col,
-                        domain=domain,
-                        indicator=ind,
-                        tf=tf,
-                        key=key,
-                        dtype=str(s.dtype),
-                        first_valid_ts=None if fv is None else str(fv),
-                        warmup=warmup,
+                        timeframe=tf,
+                        column=str(column),
+                        dtype=str(series.dtype),
+                        first_valid_ts=(
+                            None if first_valid is None else str(first_valid)
+                        ),
+                        nan_count=nan_count,
                         coverage_ratio=coverage,
                     )
                 )
 
             result[tf] = pd.DataFrame(
-                [asdict(r) for r in rows]
+                [asdict(row) for row in rows],
+                columns=self._metadata_columns(),
             )
 
         return result
 
-    # -------------------------------------------------------------------------
+    # ------------------------------------------------------------------------- 5
+    @staticmethod
+    def _metadata_columns() -> List[str]:
+        return [
+            "timeframe",
+            "column",
+            "dtype",
+            "first_valid_ts",
+            "nan_count",
+            "coverage_ratio",
+        ]
+
+    # ------------------------------------------------------------------------- 6
     def save(
         self,
         dataset: MTFDataset,
@@ -477,194 +339,86 @@ class FeatureStoreV2:
         fmt: str = "parquet",
     ) -> Dict[str, Dict[str, str]]:
         """
-        ذخیره مستقل هر تایم‌فریم.
+        Persist each timeframe and its metadata independently.
         """
+        if dataset is None:
+            raise ValueError("dataset is required")
+        if not isinstance(dataset, MTFDataset):
+            raise TypeError(
+                f"Expected MTFDataset, got {type(dataset).__name__}"
+            )
+        if not name:
+            raise ValueError("name is required")
+
+        fmt = fmt.lower()
+        if fmt not in {"parquet", "csv"}:
+            raise ValueError("Unsupported format. Use 'parquet' or 'csv'.")
 
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
 
-        paths: Dict[str, Dict[str, str]] = {}
+        result: Dict[str, Dict[str, str]] = {}
 
         for tf in dataset.timeframes:
-
             tf_dir = out / tf
-            tf_dir.mkdir(exist_ok=True)
+            tf_dir.mkdir(parents=True, exist_ok=True)
 
             df = dataset.get(tf)
-            meta = metadata.get(tf, pd.DataFrame())
+            if df is None:
+                continue
 
-            tf_paths: Dict[str, str] = {}
+            metadata_df = metadata.get(tf, pd.DataFrame())
 
             if fmt == "parquet":
-
                 data_path = tf_dir / f"{name}.parquet"
                 df.to_parquet(data_path, index=True)
-
-            elif fmt == "csv":
-
-                data_path = tf_dir / f"{name}.csv"
-                df.to_csv(data_path)
-
             else:
-                raise ValueError("Unsupported format")
-
-            tf_paths["data"] = str(data_path)
+                data_path = tf_dir / f"{name}.csv"
+                df.to_csv(data_path, index=True)
 
             meta_csv = tf_dir / f"{name}.meta.csv"
             meta_json = tf_dir / f"{name}.meta.json"
 
-            meta.to_csv(meta_csv, index=False)
-
-            with meta_json.open("w", encoding="utf-8") as f:
+            metadata_df.to_csv(meta_csv, index=False)
+            with meta_json.open("w", encoding="utf-8") as handle:
                 json.dump(
-                    meta.to_dict(orient="records"),
-                    f,
+                    metadata_df.to_dict(orient="records"),
+                    handle,
+                    ensure_ascii=False,
                     indent=2,
+                    default=str,
                 )
 
-            tf_paths["meta_csv"] = str(meta_csv)
-            tf_paths["meta_json"] = str(meta_json)
+            result[tf] = {
+                "data": str(data_path),
+                "meta_csv": str(meta_csv),
+                "meta_json": str(meta_json),
+            }
 
-            paths[tf] = tf_paths
-
-        return paths
+        return result
 
 
 # =============================================================================
 # Functional API
-# =============================================================================
+# ============================================================================= 7
 def build_feature_store(
     dataset: MTFDataset,
     features: MTFDataset,
     out_dir: str | Path,
     name: str,
     fmt: str = "parquet",
-    config=None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Dict[str, str]]:
-
-    store = FeatureStoreV2(config)
-
+    """Build the merged FeatureStore dataset and persist it."""
+    store = FeatureStoreV2(config=config)
     merged = store.build(dataset, features)
-
-    meta = store.extract_metadata(merged)
-
+    metadata = store.extract_metadata(merged)
     return store.save(
-        merged,
-        meta,
-        out_dir,
-        name,
-        fmt,
+        dataset=merged,
+        metadata=metadata,
+        out_dir=out_dir,
+        name=name,
+        fmt=fmt,
     )
 
-
-
-
-
-
-'''
-    def _rename_columns_old1(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-    ) -> pd.DataFrame:
-
-        df = df.copy()
-
-        prefix = f"{symbol}_{timeframe}_"
-
-        rename = {}
-        for col in df.columns:
-            rename[col] = prefix + col
-
-        df.rename(columns=rename, inplace=True)
-
-        return df
-    
-    # ---------------------------------
-    def _rename_columns_old2(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-    ) -> pd.DataFrame:
-
-        df = df.copy()
-
-        prefix = f"{symbol}_{timeframe}_"
-
-        PRICE_COLUMNS = {
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "spread",
-            "open_time",
-        }
-
-        rename = {}
-
-        for col in df.columns:
-
-            if col in PRICE_COLUMNS:
-                rename[col] = prefix + col
-
-        df.rename(columns=rename, inplace=True)
-
-        return df
-
-    # ---------------------------------
-    def _rename_columns_old3(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        timeframe: str,
-        mode: str = "none",
-    ) -> pd.DataFrame:
-        """
-        Rename dataframe columns.
-
-        mode
-        ----
-        none  : روی تمام ستون‌ها پیشوند می‌گذارد.
-        ohlc  : فقط روی OHLCV و open_time پیشوند می‌گذارد.
-        specs : فقط روی ستون‌های Feature (غیر OHLCV) پیشوند می‌گذارد.
-        """
-
-        df = df.copy()
-
-        prefix = f"{symbol}_{timeframe}_"
-
-        ohlc_cols = {
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "spread",
-            "open_time",
-        }
-
-        rename = {}
-
-        for col in df.columns:
-
-            if mode == "none":
-                rename[col] = prefix + col
-
-            elif mode == "ohlc":
-                if col in ohlc_cols:
-                    rename[col] = prefix + col
-
-            elif mode == "specs":
-                if col not in ohlc_cols:
-                    rename[col] = prefix + col
-
-            else:
-                raise ValueError(f"Unknown rename mode: {mode}")
-
-        return df.rename(columns=rename)
-
-'''
-
+# ============================================================================= END

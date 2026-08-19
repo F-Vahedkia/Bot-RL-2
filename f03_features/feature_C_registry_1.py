@@ -1010,6 +1010,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["close"],
+        output_names=["macd", "macd_signal", "macd_hist"],
         parameters=MACD_PARAMETERS,
         description="MACD (batch)"
     ),
@@ -1019,6 +1020,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["close"],
+        output_names=["bb_upper", "bb_middle", "bb_lower", "bb_width", "bb_percent"],
         parameters=BOLLINGER_BANDS_PARAMETERS,
         description="Bollinger Bands (batch)"
     ),
@@ -1028,6 +1030,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["high", "low", "close"],
+        output_names=["kc_upper", "kc_middle", "kc_lower", "kc_width", "kc_percent"],
         parameters=KELTNER_CHANNEL_PARAMETERS,
         description="Keltner Channel (batch)"
     ),
@@ -1037,6 +1040,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["high", "low", "close"],
+        output_names=["stoch_k", "stoch_d"],
         parameters=STOCHASTIC_PARAMETERS,
         description="Stochastic Oscillator (batch)"
     ),
@@ -1081,7 +1085,7 @@ _BATCH_INDICATORS = {
         fn=parabolicsar_batch_df,
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
-        required_cols=["high", "low", "close"],
+        required_cols=["high", "low"],
         parameters=PARABOLIC_SAR_PARAMETERS,
         description="Parabolic SAR (batch)"
     ),
@@ -1091,6 +1095,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["open", "high", "low", "close"],
+        output_names=["ha_open", "ha_high", "ha_low", "ha_close"],
         parameters=HEIKIN_ASHI_PARAMETERS,
         description="Heikin Ashi (batch)"
     ),
@@ -1100,6 +1105,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["high", "low", "close"],
+        output_names=["supertrend", "st_direction"],
         parameters=SUPERTREND_PARAMETERS,
         description="Supertrend (batch)"
     ),
@@ -1109,6 +1115,7 @@ _BATCH_INDICATORS = {
         modes=TRAIN_MODES.copy(),
         is_stateful=False,
         required_cols=["high", "low"],
+        output_names=["aroon_up", "aroon_down", "aroon_oscillator"],
         parameters=AROON_PARAMETERS,
         description="Aroon Oscillator (batch)"
     ),
@@ -1315,7 +1322,7 @@ _LIVE_INDICATORS = {
         warmup=1,
         modes=INCREMENTAL_MODES.copy(),
         is_stateful=True,
-        required_cols=["high", "low", "close"],
+        required_cols=["high", "low"],
         parameters=PARABOLIC_SAR_PARAMETERS,
         description="Parabolic SAR (stateful)"
     ),
@@ -1418,13 +1425,21 @@ def validate_registry() -> None:
         if batch_spec.parameters != live_spec.parameters:
             raise ValueError(f"parameters mismatch for indicator '{name}'")
 
+        # --- Validate output_names -----------------------
+        if batch_spec.output_names != live_spec.output_names:
+            raise ValueError(
+                f"output_names mismatch for indicator '{name}': "
+                f"batch={batch_spec.output_names!r}, "
+                f"live={live_spec.output_names!r}"
+            )
+
         # --- Validate is_stateful ------------------------
         if batch_spec.is_stateful is True:
             raise ValueError(f"batch indicator '{name}' must be non-stateful")
 
         if live_spec.is_stateful is False:
             raise ValueError(f"live indicator '{name}' must be stateful")
-
+        
 validate_registry()
 
 # =============================================================================
