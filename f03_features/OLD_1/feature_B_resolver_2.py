@@ -3,7 +3,7 @@
 from __future__ import annotations
 from typing import Dict, List
 import pandas as pd
-from ...f10_utils.parser import parse_spec
+from ...f10_utils.functions.parser import parse_spec
 from ..feature_B_registry_1 import get_indicator
 
 

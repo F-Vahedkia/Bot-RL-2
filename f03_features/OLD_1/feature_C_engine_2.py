@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 
 from f03_features.feature_B_registry_1 import get_indicator, IndicatorSpec
-from f10_utils.parser import parse_spec, ParsedSpec
+from f10_utils.functions.parser import parse_spec, ParsedSpec
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

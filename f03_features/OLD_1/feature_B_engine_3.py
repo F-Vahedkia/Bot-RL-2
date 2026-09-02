@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Dict, Any
 import pandas as pd
 
-from f10_utils.parser import parse_spec
+from f10_utils.functions.parser import parse_spec
 from f03_features.feature_B_registry_1 import get_indicator
 from f03_features.OLD.feature_B_resolver_1 import FeatureResolver
 from f03_features.OLD.feature_B_cache_1 import cached_compute

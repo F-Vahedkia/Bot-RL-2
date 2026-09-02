@@ -27,7 +27,7 @@ from ..indicators_new.indicators_B_class import Indicators
 from ..indicators_new.indicators_B_batch import IndicatorsBatch
 from f03_features.OLD.feature_engine import FeatureEngine
 from f03_features.OLD.feature_registry import FEATURE_REGISTRY
-from f10_utils.parser import parse_spec
+from f10_utils.functions.parser import parse_spec
 
 
 # ============================================================================

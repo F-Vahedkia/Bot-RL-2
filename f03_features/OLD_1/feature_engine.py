@@ -14,7 +14,7 @@ import re
 import logging
 
 # پارسر/رجیستری نسخهٔ جدید
-from ...f10_utils.parser import parse_spec, ParsedSpec
+from ...f10_utils.functions.parser import parse_spec, ParsedSpec
 from .feature_registry import get_indicator
 
 # ابزارهای عمومی موتور

@@ -9,7 +9,7 @@ Resolve layer → مسئول schema mapping
 from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 import pandas as pd
-from ...f10_utils.parser import parse_spec
+from ...f10_utils.functions.parser import parse_spec
 
 # =============================================================================
 # Resolver Core
