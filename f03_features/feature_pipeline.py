@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class FeaturePipeline:
     """ اتصال رسمی بین لایه Data و Features.
     جریان داده:
-        MTFDataset ->  FeatureEngine -> FeatureStore -> ObservationBuilder -> Observation
+        MTFDataset  ->  FeatureEngine  ->  FeatureStore  ->  ObservationBuilder  ->  Observation
     """
     # ========================================================================= 1 بررسی شد و فهمیده شد
     def __init__(
@@ -73,6 +73,9 @@ class FeaturePipeline:
         """
         self.feature_engine.reset_live_state()
 
+        # -----------------------------------------------------------
+        # reset live runtime state
+        # -----------------------------------------------------------
         self._dataset = None
         self._features = None
         self._observation = None
@@ -123,10 +126,19 @@ class FeaturePipeline:
                 features
                 metadata
                 observation
+        
+        کارهایی که این متد انجام میدهد:
+            0) اعتبار سنجی دیتاست ورودی
+            1) انجام محاسبه فیچرها توسط feature_engine.execute()
+            2) ساخت فیچر استور توسط build_feature_store() که ان هم از متد feature_store.build() استفاده میکند
+               ساخت matadata
+            3) 
+            4) 
+            5) 
         """
 
         # -----------------------------------------------------------
-        # 0. Validation of input
+        # 0. Validation of input dataset
         # -----------------------------------------------------------
         if dataset is None:
             raise ValueError("dataset is None")
@@ -663,7 +675,7 @@ class FeaturePipeline:
             "timeframe_count": len(self.feature_graph.all_nodes()),
         }
 
-    # ========================================================================= 13 بررسی شد و فهمیده شد
+    # ========================================================================= 13
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}("
@@ -712,3 +724,20 @@ class FeaturePipeline:
         return self._observation
     
 # ============================================================================= END
+
+"""
+ 1. __init__                    --> constructor
+ 2. reset_live_store            --> external API
+ 3. run                         --> external API  used in main_6_5.py
+ 4. process_live                --> external API  used in main_6_5.py
+
+ 5. build_observation        --> internal method  usde in 3,4
+ 6. build_feature_store      --> internal method  usde in 3,8
+ 7. save_feature_store       --> internal method  usde in 3,8
+
+ 8. export                      --> external API
+ 9. build_numpy_observation     --> external API
+10. build_graph                 --> external API
+11. reload_config               --> external API
+12. info                        --> external API
+"""

@@ -1,8 +1,8 @@
 # فایل اصلی تستر پارسر
-# Run: pytest -v -s    f10_utils/parser_tester.py      برای اجرای تمام تست‌های Parser که در فایل هستند
-#      pytest -q       f10_utils/parser_tester.py         خلاصه نتیجه تستها را میدهد
-#      pytest -x -v -s f10_utils/parser_tester.py   برای آنکه در اولین خطا متوقف بشود
-#      pytest -v -s    f10_utils/parser_tester.py -k   test_parse_sma   برای اجرای فقط یک تست خاص (مثلاً تست test_parse_sma.)
+# Run: pytest -v -s    f10_utils/functions/parser_tester.py      برای اجرای تمام تست‌های Parser که در فایل هستند
+#      pytest -q       f10_utils/functions/parser_tester.py         خلاصه نتیجه تستها را میدهد
+#      pytest -x -v -s f10_utils/functions/parser_tester.py   برای آنکه در اولین خطا متوقف بشود
+#      pytest -v -s    f10_utils/functions/parser_tester.py -k   test_parse_sma   برای اجرای فقط یک تست خاص (مثلاً تست test_parse_sma.)
 """ Date revewed:
     1405/05/19-09:14 ==> run resulst is: OK
 """
@@ -14,7 +14,7 @@
 from __future__ import annotations
 import pytest
 
-from f10_utils.parser import parse_spec
+from f10_utils.functions.parser import parse_spec
 
 # ==========================================================
 # Basic Parsing

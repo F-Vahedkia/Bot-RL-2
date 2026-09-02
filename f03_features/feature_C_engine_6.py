@@ -10,7 +10,7 @@ import logging
 
 from f02_data.mtf_dataset import MTFDataset
 from f03_features.feature_C_registry_1 import get_indicator, IndicatorSpec
-from f10_utils.parser import parse_spec, ParsedSpec
+from f10_utils.functions.parser import parse_spec, ParsedSpec
 
 # این بخش برای train و optimize است.
 # هدف: اگر یک feature قبلاً محاسبه شده، دوباره محاسبه نشود.

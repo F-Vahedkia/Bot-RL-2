@@ -7,7 +7,8 @@
 3. بعد از جمع‌آوری تعداد کافی کندل، داده‌های batch را دانلود می‌کند
 4. خروجی update_live را با build() مقایسه می‌کند
 
-Run: python -m f02_data.test_live_datahandler_A
+
+Run: python -m f02_data.tests_data_handler.test_live_datahandler_A
 """
 from __future__ import annotations
 import sys, os, threading, logging # , time
@@ -22,12 +23,10 @@ sys.path.insert(0, os.path.dirname(__file__) + "/../..")
 from f02_data.data_handler_F_3 import DataHandler, BuildParams
 from f02_data.mt5_data_loader_E import MT5DataLoader_batch, DownloadPlan
 from f02_data.live_market_engine import EventBus, MT5StreamWorker
-# from f10_utils.config_loader import load_config
 from f10_utils.config_completer import config_completer
 
 logging.basicConfig(
     level=logging.INFO,
-    # format="%(asctime)s | %(levelname)-6s |  %(filename)s:%(funcname)-50s | %(message)s"
     format="%(asctime)s | %(levelname)-6s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s"
 )
 logger = logging.getLogger(__name__)
@@ -63,43 +62,49 @@ class LiveDataHandlerTester:
     def _on_candle(self, event: Dict) -> None:
         if event.get("event_type") != "NEW_CANDLE":
             return
-        
-        payload = event["payload"]
-        timeframe = payload.get("timeframe")
-        
+
+        timeframe = event["timeframe"]
         if timeframe != self.base_tf:
             return
-        
-        candle_time = payload.get("candle_time")
-        
+
+        all_dfs = event["all_dfs"]
+
+        base_key = f"{self.symbol}:{self.base_tf.upper()}"
+        base_df = all_dfs[base_key]
+
+        candle_time = base_df.index[-1]
+
         if self.last_candle_time == candle_time:
             return
-        
+
         self.last_candle_time = candle_time
         self.collected += 1
-        
-        logger.info(f"Candle {self.collected}/{self.num_live_candles} at {candle_time}")
-        
-        df = self.data_handler.update_live(
-            symbol=self.symbol,
-            timeframe=self.base_tf,
-            new_candle=payload
+        logger.info(
+            f"Candle {self.collected}/{self.num_live_candles} at {candle_time}"
         )
-        
-        if df is not None and not df.empty:
-            self.live_rows.append(df.iloc[-1:].copy())
-            logger.info(f"  -> Row shape: {df.iloc[-1:].shape[1]} columns, total rows: {len(df)}")
-        
+
+        dataset = self.data_handler.update_live(event)
+
+        if dataset is not None:
+            df = dataset.get(self.base_tf)
+
+            if df is not None and not df.empty:
+                self.live_rows.append(df.iloc[-1:].copy())
+                logger.info(
+                    f"  -> Row shape: {df.iloc[-1:].shape[1]} columns, "
+                    f"total rows: {len(df)}"
+                )
+
         if self.collected >= self.num_live_candles:
             logger.info("Enough candles collected, stopping...")
             self.running = False
             if self.worker:
                 self.worker.stop()
-    
+
     # =========================================================================
     def _consumer_loop(self):
         while self.running:
-            event = self.event_bus.get(self.sub_id, timeout=1.0)
+            event = self.event_bus.get_event(self.sub_id, timeout=1.0)
             if event:
                 self._on_candle(event)
     
@@ -118,11 +123,26 @@ class LiveDataHandlerTester:
         
         # اضافه کردن حاشیه امن (چند کندل قبل)
         margin = timedelta(minutes=30)
-        date_from = first_candle_time - margin
-        date_to = last_candle_time + margin
         
+        # live timestamps are UTC-aware.
+        # DownloadPlan expects broker-local naive datetimes.
+        broker_tz = self.data_handler.broker_timezone
+        date_from = (
+            first_candle_time
+            .tz_convert(broker_tz)
+            .tz_localize(None)
+            - margin
+        )
+        date_to = (
+            last_candle_time
+            .tz_convert(broker_tz)
+            .tz_localize(None)
+            + margin
+            )
+
         loader = MT5DataLoader_batch(cfg=self.cfg)
-        
+        loader.save_format = "parquet"
+
         plans = []
         for tf in self.timeframes:
             plans.append(DownloadPlan(
@@ -130,11 +150,13 @@ class LiveDataHandlerTester:
                 timeframe=tf,
                 date_from=date_from,
                 date_to=date_to,
+                date_tz=self.data_handler.broker_timezone,
+                result_tz="UTC",
                 lookback_bars=None,
                 range_policy="date"
             ))
         
-        results = loader.run(plans)
+        results = loader.run_plan(plans)
         
         for r in results:
             if "error" in r:
@@ -151,14 +173,15 @@ class LiveDataHandlerTester:
         logger.info("Comparing update_live vs build()")
         logger.info("=" * 60)
         
-        # ساخت دیتافریم کامل با build
-        build_df = self.data_handler.build(BuildParams(
+        build_dataset = self.data_handler.build(BuildParams(
             symbol=self.symbol,
             base_tf=self.base_tf,
             timeframes=self.timeframes,
-            format_="parquet"
+            load_format="parquet"
         ))
-        
+        build_df = build_dataset.get(self.base_tf)
+
+
         live_start = self.live_rows[0].index[0]
         live_end = self.live_rows[-1].index[0]
         build_df = build_df[(build_df.index >= live_start) & (build_df.index <= live_end)]
@@ -246,7 +269,7 @@ class LiveDataHandlerTester:
         self.worker = MT5StreamWorker(
             cfg=self.cfg,
             event_bus=self.event_bus,
-            warmups_dicts=self.cfg["__warmups_dicts"],
+            # warmups_dicts=self.cfg["__warmups_dicts"],
             poll_interval_sec=1.0
         )
         
@@ -254,7 +277,7 @@ class LiveDataHandlerTester:
             logger.error("MT5 connection failed")
             return False
         
-        self.sub_id = self.event_bus.subscribe()
+        self.sub_id = self.event_bus.subscribe(self.symbol)
         
         consumer_thread = threading.Thread(target=self._consumer_loop, daemon=True)
         consumer_thread.start()
@@ -283,7 +306,7 @@ def main():
     # cfg = load_config()
     cfg = config_completer()
 
-    tester = LiveDataHandlerTester(cfg, "EURUSD")
+    tester = LiveDataHandlerTester(cfg, "BITCOIN")
     success = tester.run()
     
     print("\n" + "=" * 60)

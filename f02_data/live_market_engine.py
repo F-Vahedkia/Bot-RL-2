@@ -39,9 +39,10 @@ from threading import Lock
 from typing import Any, Dict, Optional
 # ---------------------------
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 # ---------------------------
 from f02_data.mt5_connector import MT5Connector
+from f10_utils.functions._to_zoneinfo import _to_zoneinfo
 # from f02_data.data_handler_F_3 import DataHandler
 
 # =============================================================================
@@ -317,7 +318,8 @@ class CandleDetector:
                 last_time = pd.to_datetime(last_time_raw)
             else:
                 last_time = last_time_raw
-
+            # در مورخ 1405/06/02-11:40 بررسی کردم و دیدم که در این تقطه last_time is UTC and is aware
+            
             # اضافه کردن منطقه زمانی بروکر (اگر naive باشد)
             if last_time.tzinfo is None:
                 last_time = last_time.tz_localize(self.tzinfo)
@@ -383,17 +385,39 @@ class MT5StreamWorker:
         self.connector = MT5Connector(config=cfg)
 
         # --- broker_timezone ----------------------------- start
-        project_cfg = cfg.get("project")
-        if not project_cfg:
-            raise ValueError("'project' key not found in config!")
+        # project_cfg = self.cfg.get("project")
+        # if not project_cfg:
+        #     raise ValueError("'project' key not found in config !")
             
-        self.broker_timezone = project_cfg.get("broker_timezone")
-        if not self.broker_timezone:
-            raise ValueError("'broker_timezone' key not set in 'project' key!")
+        # self.broker_timezone = project_cfg.get("broker_timezone")
+        # if not self.broker_timezone:
+        #     raise ValueError("'broker_timezone' key not set in 'project' key!")
 
-        tzinfo = ZoneInfo(self.broker_timezone)
+        # اگر بلوک زیری جواب بدهد، باید بلوک بالایی را حذف کنم.
+        project_cfg = self.cfg.get("project")
+        if not project_cfg:
+            raise ValueError("'project' key not found in config !")
+
+        broker_timezone = project_cfg.get("broker_timezone")
+        if not broker_timezone:
+            raise ValueError("'broker_timezone' key not found or empty in 'project' config!")
+
+        try:
+            self.broker_timezone = ZoneInfo(broker_timezone)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Invalid broker_timezone: '{broker_timezone}'")
+        
+        # --- result_timezone -----------------------------------
+        dl = (self.cfg.get("download_defaults") or {})
+        temp = dl.get("result_timezone")
+
+        if temp is None:
+            self.result_timezone = None
+        else:
+            self.result_timezone = _to_zoneinfo(temp)
+
         # ------------------------------------------------- end
-        self.detector = CandleDetector(tzinfo)
+        self.detector = CandleDetector(self.broker_timezone)
         self._running = False
        
     # -------------------------------------------------------- OK
@@ -462,11 +486,13 @@ class MT5StreamWorker:
             symbol=symbol,
             timeframe=timeframe,
             num_candles=n+1,
+            result_tz=self.result_timezone
         )
         # سطر زیر کندل -1 را برنمی گرداند. چون هنوز بسته نشده است و کندل جاری است.
         result = df.iloc[-n-1:-1] if df is not None else pd.DataFrame()
         # logger.info(f"Candles for {symbol}/{timeframe} was lowmloaded. rows = {len(result)}")
         return result
+
     # -------------------------------------------------------- OK
     def _fetch_all_tfs(self, symbol: str) -> Dict[str, pd.DataFrame]:
         """
@@ -577,6 +603,4 @@ class MarketDataEngine:
     #     logger.info("DataHandler attached to MarketDataEngine")
 
     # --------------------------------------------------------
-
-
 # ============================================================================= END

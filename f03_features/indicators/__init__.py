@@ -14,7 +14,7 @@ import logging
 import pandas as pd
 import argparse
 
-from ...f10_utils.parser import parse_spec
+from ...f10_utils.functions.parser import parse_spec
 
 #from ..feature_engine import run_specs_v2
 def run_specs_v2(*args, **kwargs):

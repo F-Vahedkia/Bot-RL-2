@@ -62,11 +62,11 @@ class ObservationBuilder:
                 f"config must be dict, got {type(config).__name__}"
             )
 
-        self.cfg: Dict[str, Any] = config
+        # self.cfg: Dict[str, Any] = config
 
         features_cfg = config.get("features", {}) or {}
         observation_cfg = features_cfg.get("observation", {}) or {}
-        env_cfg = config.get("env", {}) or {}
+        # env_cfg = config.get("env", {}) or {}
 
         self.shift: int = int(observation_cfg.get("shift_features_by", 0) or 0)
         if self.shift < 0:

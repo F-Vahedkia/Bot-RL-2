@@ -3,7 +3,7 @@
 
 import pprint
 # from f10_utils.config_loader import load_config
-from f10_utils.parser import (
+from f10_utils.functions.parser import (
     _split_top_level_commas,
     _parse_value,
     _parse_args_kwargs,

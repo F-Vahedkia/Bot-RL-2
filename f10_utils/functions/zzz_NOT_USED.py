@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
-from f10_utils.parser import parse_spec
-from f10_utils.constants import _TF_MINUTES
+from f10_utils.functions.parser import parse_spec
+from f10_utils.functions.constants import _TF_MINUTES
 
 # ------------------------------------------------------------------- OK= new 050315
 def extract_indicator_timeframes(cfg: Dict[str, Any]) -> List[str]:

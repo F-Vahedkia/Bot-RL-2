@@ -15,7 +15,7 @@ import pandas as pd
 
 from f02_data.mtf_dataset import MTFDataset
 from f10_utils.config_loader import load_config
-from f10_utils.constants import _TF_MINUTES
+from f10_utils.functions.constants import _TF_MINUTES
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())

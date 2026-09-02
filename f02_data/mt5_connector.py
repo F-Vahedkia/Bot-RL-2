@@ -1,7 +1,8 @@
 # f02_data/mt5_connector.py
 # Date reviewed
-#    1405/05/25-16:19 --> run result is OK.
+#    1405/05/31-  --:-- --> run result is OK.
 
+# Run: python -m f02_data.mt5_connector
 # =======================================================================================
 """MT5Connector (نسخهٔ حرفه‌ای برای Bot-RL-2) 
 قابلیت‌ها:
@@ -13,6 +14,9 @@
 - گزارش سلامت (health_check) شامل: اتصال، مجازبودن معامله، ارز حساب، سرور، وضعیت نمادهای کلیدی.
 - سازگاری با DataLoader و DataHandler موجود پروژه (امضاها و خصوصیت‌های مورد انتظار).
 - Context manager برای استفادهٔ امن با with.
+
+*** این متد، دیتافریم را با اندکس زمانی zone-aware و با broker_timezone برمیگرداند ***
+***      این کار در انتهای متد _normalize_rates از کلاس MT5Connector انجام میشود     ***
 """
 
 # =======================================================================================
@@ -22,14 +26,15 @@ from __future__ import annotations
 
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo   ######################## for debug
+from datetime import datetime, timezone, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import time
 import pandas as pd
 import logging
 
-from f10_utils.constants import _TF_MAP
+from f10_utils.functions.normalize_datetime import normalize_datetime
+from f10_utils.functions.constants import _TF_MAP
 
 # ----------------- Logger for this module ---------------------------------------------- OK
 logger = logging.getLogger(__name__)
@@ -101,8 +106,8 @@ class MT5Connector:
     - خواص مورد نیاز سایر بخش‌ها:
         * self.connected  (bool)
         * initialize(), ensure_connection(), shutdown()
-        * get_candles_num(symbol, timeframe, num_candles_from, num_candles_to)
-        * get_candles_range(symbol, timeframe, date_from, date_to)
+        * get_candles_num(symbol, timeframe, num_candles, result_tz)
+        * get_candles_range(symbol, timeframe, date_from, date_to, date_tz, result_tz)
     """   
     # ---------------------------------------------------------------
     # متد سازنده
@@ -128,6 +133,20 @@ class MT5Connector:
         # -- 3 -- تعیین متغیرهای کنترلی برای وضعیتهای "اتصال" و "آخرین خطا" حادث شده
         self.connected: bool = False
         self._last_init_error: Optional[str] = None
+
+        # -- 4 -- broker_timezone -------------------------
+        project_cfg = self.cfg.get("project")
+        if not project_cfg:
+            raise ValueError("'project' key not found in config !")
+
+        broker_timezone = project_cfg.get("broker_timezone")
+        if not broker_timezone:
+            raise ValueError("'broker_timezone' key not found or empty in 'project' config!")
+
+        try:
+            self.broker_timezone = ZoneInfo(broker_timezone)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Invalid broker_timezone: '{broker_timezone}'")
         
     # ---------------------------------------------------------------
     # helpers برای ساخت تنظیمات  
@@ -355,7 +374,13 @@ class MT5Connector:
     # ---------------------------------------------------------------
     # دریافت کندل‌ها (آخرین/رنج) 
     # --------------------------------------------------------------- OK 3 func.s
-    def get_candles_num(self, symbol: str, timeframe: str, num_candles: int = 1000) -> "pd.DataFrame":
+    def get_candles_num(
+        self,
+        symbol: str,
+        timeframe: str,
+        num_candles: int = 1000,
+        result_tz: tzinfo | str | None = None,
+    ) -> "pd.DataFrame":
         """
         دریافت آخرین کندل‌ها برای یک نماد و تایم‌فریم مشخص.
 
@@ -363,9 +388,10 @@ class MT5Connector:
         - symbol: نام نماد (مثلاً "EURUSD")
         - timeframe: تایم‌فریم به صورت string (مثلاً "M1", "H1")
         - num_candles: تعداد آخرین کندل‌هایی که باید دریافت شوند (پیش‌فرض 1000)
-
+        - result_tz: منطقه زمانی برای دیتافریمی که حاصل این تابع است
+                     هرگاه این پارامتر نان باشد، اندکس دیتافریم خروجی naive خواهد بود.
         خروجی:
-        - DataFrame با index از نوع datetime (UTC)
+        - DataFrame با index از نوع datetime  (aware or naive)
         - ستون‌ها:
             - open, high, low, close
             - volume: ستون حجم، که می‌تواند از real_volume یا tick_volume استخراج شود
@@ -382,23 +408,61 @@ class MT5Connector:
             if not self.ensure_connection():
                 raise ConnectionError("Cannot connect to MT5")
 
-        # -- 2 -- تبدیل رشته تایمفریم به نوع مورد قبول متاتریدر و سپس دانلود کندلها
+        # -- 2 -- تبدیل رشته تایمفریم به نوع مورد قبول متاتریدر و سپس دانلود داده ها از متاتریدر
         tf = _to_mt5_timeframe(timeframe)
         rates = mt5.copy_rates_from_pos(symbol, tf, 0, int(num_candles))
-        return self._normalize_rates(rates, symbol, timeframe)
-    
-    def get_candles_range(self, symbol: str, timeframe: str, date_from: datetime, date_to: datetime) -> "pd.DataFrame":
+
+        logger.debug("=== After mt5.copy_rates_num ===============================")
+        logger.debug(f"Downloaded {len(rates)} candles for {symbol} {timeframe}")
+
+        # -- 3 -- نرمال سازی ستونهای داده های دریافتی از متاتریدر
+        df = self._normalize_rates(rates, symbol, timeframe)
+
+        logger.debug("=== After _normalize_rates() ===========")
+        logger.debug(f"type of df: {type(df)}")
+        logger.debug(f"columns of df: {df.columns}")
+        logger.debug(f"rows of df: {len(df)}")
+
+        # -- 4 -- نرمال سازی ستون زمان
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=False)   #.dt.tz_localize(self.broker_timezone)
+        df.set_index("time", inplace=True)
+        df.sort_index(inplace=True)
+        if result_tz is not None:
+            df = df.tz_localize(self.broker_timezone)
+            df = df.tz_convert(result_tz)
+
+        logger.debug("=== After normalize time column ========")
+        logger.debug(f"first row = {df.index[0]}")
+        logger.debug(f"last row = {df.index[-1]}")
+        logger.debug("============================================================\n")
+
+        return df
+
+    # -------------------------------------------
+    def get_candles_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        date_from: datetime,
+        date_to: datetime,
+        date_tz: tzinfo | None = None,
+        result_tz: tzinfo | str | None = None,
+    ) -> "pd.DataFrame":
+        # این تابع اصلاً تغییر نکند و بخصوص دو سطری که دارای کامنت ### *** ### هستند
+
         """
         دریافت کندل‌ها برای یک نماد و تایم‌فریم مشخص بین دو تاریخ مشخص [inclusive].
 
         پارامترها:
         - symbol: نام نماد (مثلاً "EURUSD")
         - timeframe: تایم‌فریم به صورت string (مثلاً "M1", "H1")
-        - date_from: تاریخ شروع (datetime، ترجیحاً timezone-aware در UTC)
-        - date_to: تاریخ پایان (datetime، ترجیحاً timezone-aware در UTC)
-
+        - date_from: تاریخ شروع
+        - date_to: تاریخ پایان
+        - date_tz: منطقه زمانی مربوط به دو پارامتر بالایی
+        - result_tz: منطقه زمانی برای دیتافریمی که حاصل این تابع است
+                    هرگاه این پارامتر نان باشد، اندکس دیتافریم خروجی naive خواهد بود.
         خروجی:
-        - DataFrame با index از نوع datetime (UTC)
+        - DataFrame با index از نوع datetime (aware or naive)
         - ستون‌ها:
             - open, high, low, close
             - volume: ستون حجم، که می‌تواند از real_volume یا tick_volume استخراج شود
@@ -410,31 +474,68 @@ class MT5Connector:
         - داده‌ها بر اساس زمان مرتب شده‌اند
         - اگر opts.ensure_on_each_call فعال باشد، قبل از دریافت داده، اتصال به MT5 بررسی می‌شود
         """
-        # -- 1 -- بررسی وضعیت اتصال به متاتریدر
-        if self.opts.ensure_on_each_call:  # اگر true باشد، یعنی باید قبل از هر fetch یکبار ensure_connection را اجرا کنیم 
+
+        # -- 1 -- بررسی اتصال MT5
+        if self.opts.ensure_on_each_call:
             if not self.ensure_connection():
                 raise ConnectionError("Cannot connect to MT5")
 
-        # -- 2 -- تبدیل رشته تایمفریم به نوع مورد قبول متاتریدر و سپس دانلود کندلها
-        tf = _to_mt5_timeframe(timeframe)
-        rates = mt5.copy_rates_range(symbol, tf, date_from, date_to)
-        return self._normalize_rates(rates, symbol, timeframe)       ########################  MAIN row
-        # result = self._normalize_rates(rates, symbol, timeframe)     ######################## for debug
-        # logger.info(f" date_from={date_from},  date_to={date_to}")   ######################## for debug
-        # logger.info(f" ====> date result = {result.tail(4)}")        ######################## for debug
-        # return result                                                ######################## for debug
+        # -- 2 -- نرمال سازی زمان‌ها به timezone بروکر
+        try:
+            dt_from = normalize_datetime(date_from, input_tz=date_tz, output_tz=self.broker_timezone)
+            dt_to = normalize_datetime(date_to, input_tz=date_tz, output_tz=self.broker_timezone)
+        except Exception as e:
+            raise ValueError(
+                f"Invalid datetime range: "
+                f"from={date_from}, to={date_to}"
+            ) from e
 
+        # -- 3 -- تبدیل رشته تایمفریم به نوع مورد قبول متاتریدر و سپس دانلود داده ها از متاتریدر
+        tf = _to_mt5_timeframe(timeframe)
+
+        dt_from = dt_from.replace(tzinfo=timezone.utc) ### *** ###
+        dt_to = dt_to.replace(tzinfo=timezone.utc)     ### *** ###
+
+        rates = mt5.copy_rates_range(symbol, tf, dt_from, dt_to)
+
+        logger.debug("=== After mt5.copy_rates_range =============================")
+        logger.debug(f"Downloaded {len(rates)} candles for {symbol} {timeframe}")
+
+        # -- 4 -- نرمال سازی ستونهای داده های دریافتی از متاتریدر
+        df = self._normalize_rates(rates, symbol, timeframe)
+
+        logger.debug("=== After _normalize_rates() ===========")
+        logger.debug(f"type of df: {type(df)}")
+        logger.debug(f"columns of df: {df.columns}")
+        logger.debug(f"rows of df: {len(df)}")
+
+        # -- 5 -- نرمال سازی ستون زمان
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=False)
+        df.set_index("time", inplace=True)
+        df.sort_index(inplace=True)
+        
+        if result_tz is not None:
+            df = df.tz_localize(self.broker_timezone)
+            df = df.tz_convert(result_tz)
+
+        logger.debug("=== After normalize time column ========")
+        logger.debug(f"first row = {df.index[0]}")
+        logger.debug(f"last row = {df.index[-1]}")
+        logger.debug("============================================================\n")
+
+        return df
+
+    # -------------------------------------------
     def _normalize_rates(self, rates, symbol: str, timeframe: str) -> pd.DataFrame:
         """
-        هسته پردازش کندلها: تعیین حجم، انتخاب ستونها، تبدیل زمان و ایندکس
-        - خروجی این تابع بر حسب زمان utc است. من این موضوع را بررسی نمودم و صحیح است.
-        - خروجی این تابع را naive قرار دادم
+        خروجی:
+            دیتافریم با اندکس زمانی در self.broker_timezone
         """
         
         # -- 2 -- کنترل دیتای ورودی به این تابع
         if rates is None or len(rates) == 0:
             logger.warning("No rates for %s %s", symbol, timeframe)
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["time", "open", "high", "low", "close", "volume", "spread"])
 
         df = pd.DataFrame(rates)
 
@@ -455,14 +556,17 @@ class MT5Connector:
         if volume_col is not None and volume_col != "volume":
             df.rename(columns={volume_col: "volume"}, inplace=True)
 
-        # -- 6 -- تنظیم ستون زمان به عنوان اندکس و سورت نمودن دیتافریم نهایی
-        df["time"] = pd.to_datetime(df["time"], unit="s")    #, utc=True)
+        """-- 6 -- تنظیم ستون زمان به عنوان اندکس و سورت نمودن دیتافریم نهایی
+        به دلیل تفاوتی که بین نرمال سازی ستونهای زمان در دو حالت دانلود از متاتریدر وجود داشت،
+        این بخش به داخل توابع copy_rates_... منتقل شد.
+
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=False).dt.tz_localize(self.broker_timezone)
         df.set_index("time", inplace=True)
         df.sort_index(inplace=True)
+        """
 
         return df
     
-
     # ---------------------------------------------------------------
     # Health & Diagnostics
     # --------------------------------------------------------------- OK
@@ -707,14 +811,25 @@ class MT5Connector:
 # نمونهٔ اجرا (اختیاری) 
 # =======================================================================================
 if __name__ == "__main__":  # pragma: no cover
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)-6s | %(filename)-18s | %(lineno)-4d : %(funcName)-24s | %(message)s",
+    )
     conn = MT5Connector()
+    
     if conn.initialize():
-        hc = conn.health_check(sample_symbol="XAUUSD")
+        hc = conn.health_check(sample_symbol="BITCOIN")
         logger.info("Health: %s", hc)
-        df = conn.get_candles_num("XAUUSD", "M5", 500)
-        logger.info("Fetched bars: %s", len(df))
+
+        df_by_num = conn.get_candles_num("BITCOIN", "M1", 5, "UTC")
+        df_by_range = conn.get_candles_range("BITCOIN", "M1", "2026-08-23 09:25:00", "noW", conn.broker_timezone, "UTC")
+
         conn.shutdown()
+
+        print(f"df_by_num = {df_by_num}")
+        print(f"df_by_range = {df_by_range}")
+    
+
 
 # =======================================================================================
 # تست پوشش کد (برای توسعه‌دهندگان) 

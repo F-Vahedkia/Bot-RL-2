@@ -14,7 +14,7 @@ import json
 import pandas as pd
 
 from f02_data.mtf_dataset import MTFDataset
-from f10_utils.parser import ParsedSpec
+from f10_utils.functions.parser import ParsedSpec
 
 # =============================================================================
 # HASH

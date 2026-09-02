@@ -19,7 +19,7 @@ import pandas as pd
 
 from f10_utils.config_loader import ConfigLoader
 from f03_features.indicators.patterns import registry as patterns_registry
-from f10_utils.parser import parse_spec_v2
+from f10_utils.functions.parser import parse_spec_v2
 
 #-------------------------------
 # خواندن فایل داده (Parquet/CSV)

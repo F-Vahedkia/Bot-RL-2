@@ -11,7 +11,7 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 from pathlib import Path
 from f10_utils.config_loader import load_config
-from f10_utils.parse_warmups import get_warmup_from_config_allsyms
+from f10_utils.functions.parse_warmups import get_warmup_from_config_allsyms
 import logging
 
 # =============================================================================

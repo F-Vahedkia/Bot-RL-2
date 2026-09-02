@@ -6,7 +6,6 @@ version: 1.0.0
 project:
   name: Bot-RL-2
   broker_timezone: "Europe/Athens"
-  # timezone: UTC
   base_currency: USD
   random_seed: 42
   enable_env_override: true
@@ -81,7 +80,7 @@ download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader /
   symbols:   # ----- Used in: mt5_connector.py / _auto_select_symbols()
   # - XAUUSD
   # - EURUSD
-  # - BITCOIN
+  - BITCOIN
   # - XAGUSD
   # - GBPUSD
   # - USDJPY
@@ -90,7 +89,7 @@ download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader /
   # - AUDUSD
   # - NZDUSD
   timeframes:
-  # - M1
+  - M1
   # - M2
   # - M4
   # - M5
@@ -102,11 +101,12 @@ download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader /
   # - D1
   # - W1
   # ----- below 4 keys, used in: mt5_data_loader/class DownloadPlan
-  lookback_bars: 1_000_000               # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
-  broker_date_from: 2024-01-01 03:00:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
-  broker_date_to:   now                  # مقدار date_to میتواند NOW یا now هم اختیار کند 
-  range_policy: date                     # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
-  
+  lookback_bars: 4              # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
+  broker_date_from: 2026-08-23 23:06:00+03:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+  broker_date_to:   2026-08-23 23:10:00+03:00  # مقدار date_to میتواند NOW یا now هم اختیار کند 
+  result_timezone: "UTC"
+  range_policy: date                    # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
+
   batch_size: 50                                   # NOT USED
   save_format: csv   # can be: csv | parquet   # Used many times in different files
   save_at_utc_time: true                           # Used in: mt5_data_loader/class MT5DataLoader_batch/__init__()
@@ -164,9 +164,10 @@ features:
       # base_timeframe: M5
       # candles: [M30, H1]
       indicators:
-        - macd(fast=12,slow=26,signal=9)@M2      # MACD
-        - macd(fast=12,slow=26,signal=9)@M1      # MACD
-        # - sma(column='close',period=19)@M1      # Simple Moving Average
+        # - macd(fast=12,slow=26,signal=9)@M2      # MACD
+        # - macd(fast=12,slow=26,signal=9)@M1      # MACD
+        - sma(column='close',period=8)@M1      # Simple Moving Average
+        - sma(column='close',period=4)@M2      # Simple Moving Average
   # ----------------------------------------
   observation:
     features_whitelist:

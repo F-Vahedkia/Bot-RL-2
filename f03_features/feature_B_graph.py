@@ -31,7 +31,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
-from f10_utils.parser import ParsedSpec, parse_spec
+from f10_utils.functions.parser import ParsedSpec, parse_spec
 
 
 # =============================================================================

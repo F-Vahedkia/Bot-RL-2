@@ -87,8 +87,6 @@ def main():
 
         # engine.attach_data_handler(data_handlers[sym])      # متد اتصال موتور به دیتا هندلر که در کلاس موتور بود را حذف کردم تا ایمپورت حلقه ای بوجود نیاید
         data_handlers[sym].subscribe_to_event_bus(event_bus)  # برای اتصال موتور و دیتاهندلر، باید از متد اتصالی که در دیتاهندلر است استفاده بشود
-        # data_handlers[sym].start_consuming()   ### <<<<< اجرای این سطر برنامه را در یک حلقه بینهایت قفل میکند
-
 
     # 8) --- Start Engine (یک بار برای همه نمادها)
     # threading.Thread(target=engine.start, args=(2.0), daemon=True).start()
@@ -118,13 +116,10 @@ def main():
                     if last_printed_time.get(f"{sym}_{tf}") != candle_time:
                         last_printed_time[f"{sym}_{tf}"] = candle_time
 
-                        # اصلاح زمان
-                        candle_time_naive = candle_time.tz_localize(None)  # حذف منطقه زمانی
-                        candle_time_broker = candle_time_naive.tz_localize(broker_timezone)  # تنظیم به بروکر
-                        candle_time_utc = candle_time_broker.tz_convert("UTC")  # تبدیل به UTC
+                        print(f"==========////=====> {candle_time}")  # for debug
 
-                        logger.info(f"\n📊 New Candle [{sym}/{tf}] at {candle_time_utc}")
-                        # print(f"   time : {last_row.get('candle_time', 'N/A')}") # در این سطر، اگر لازم است فرمت را اصلاح کن
+                        logger.info(f"\n📊 New Candle [{sym}/{tf}] at {candle_time}")
+
                         print(f"   time : {candle_time}")
 
                         print(f"   Open  : {last_row.get('open', 'N/A'):.5f}")

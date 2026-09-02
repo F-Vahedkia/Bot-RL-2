@@ -6,20 +6,9 @@ DataHandler (Bot-RL-2)
 ----------------------
 هدف:
 - دادهٔ خام هر تایم‌فریم را از data/raw/<SYMBOL>/<TF>.(csv|parquet) می‌خوانَد،
-- همه را روی یک شبکهٔ زمانی پایه (base_tf) هم‌خط می‌کند (با merge_asof/ffill)،
-- برای هر تایم‌فریم ستون‌ها را با پیشوندِ خودِ تایم‌فریم می‌سازد (مثلاً M5_close, H1_close)،
 
 - خروجی را در data/processed/<SYMBOL>/<base_tf>.(csv|parquet) ذخیره می‌کند و متادیتا می‌نویسد،
 - CLI(Command Line Interface) دارد تا با یک فرمان اجرا شود.
-
-نکته:
-- برای دقت بیشتر، بهتر است حداقل base_tf را از داده‌های خام دانلود کرده باشید (با check_quick_download.py).
-
-طراحی:
-- برای هر تایم‌فریم، ستون‌ها با پیشوند همان تایم‌فریم ساخته می‌شوند (مثال: M5_close, H1_close).
-- شبکه‌ی زمانی پایه از خودِ دیتای base_tf ساخته می‌شود (Index = زمانِ UTC).
-- ادغام سایر تایم‌فریم‌ها با merge_asof (جهت left) و روش ffill انجام می‌شود
-  تا در بازه‌ی بین کندل‌ها مقدار «آخرین کندل بسته‌شده» آن تایم‌فریم تکرار شود.
 
 تنظیمات مورد استفاده از کانفیگ:
 - paths.raw_dir / paths.processed_dir (یا data/raw و data/processed پیش‌فرض)
@@ -72,11 +61,12 @@ import logging
 import pandas as pd
 
 # ------------------ Importing Internal Modules -----------------------------------------
-from f02_data.data_handler_Helpers import check_tfs    #, prefix_columns
-
+from f02_data.mt5_data_loader_E import _setup_logging_funcname
+from f02_data.data_layer_functions import check_tfs    #, prefix_columns
 from f02_data.mt5_data_loader_E import normalize_df
+
 from f10_utils.config_path_funcs import project_root, resolve_raw_dir, resolve_process_dir, full_file_path
-from f10_utils.constants import _TF_MINUTES, _TF_MAP
+from f10_utils.functions.constants import _TF_MINUTES, _TF_MAP
 from f02_data.mtf_dataset import MTFDataset
 
 if TYPE_CHECKING:
@@ -431,8 +421,8 @@ def _get_range_by_timeframe(
     if base_time is None:
         base_time = pd.Timestamp.now(tz='UTC')
         logger.debug(f"new base_time is {base_time}")
-    else:
-        base_time = pd.to_datetime(base_time, utc=True)
+    # else:
+    #     base_time = pd.to_datetime(base_time, utc=True)
     # ===============================================================
     # 3) یکسان‌سازی نام تایم‌فریم‌ها
     # ===============================================================
@@ -786,7 +776,7 @@ class DataHandler:
                     out = out.with_suffix(".csv")
                     df.to_csv(out)
                     fmt = "csv"
-            else: 
+            else:     # if fmt == csv
                 df.to_csv(out)
                 fmt = "csv"
             # ----------------------------------- 
@@ -819,10 +809,11 @@ class DataHandler:
         return out
 
 
-    #//////////////////////////////////////////////////////////////////////////////////////////////
+    #//////////////////////////////////////////////////////////////////////////
     # -------------------------------------------------------------------------
     # LIVE-1- اتصال EventBus به کلاس DataHandler
     # -------------------------------------------------------------------------
+
     def subscribe_to_event_bus(self, event_bus: EventBus) -> None:
         self.event_bus = event_bus
         self._subscription_key = event_bus.subscribe(self.symbol)
@@ -849,12 +840,12 @@ class DataHandler:
                 self._subscription_key = None                       # کلید اشتراک را از بین ببر
     
     # -------------------------------------------------------------------------
-    # LIVE-3- Live Update 2 - USED ONLY IN "on_new_candle2()"
+    # LIVE-3- Live Update
     # -------------------------------------------------------------------------
+
     def update_live(self, event: Dict[str, Any]) -> MTFDataset:
         """
         به‌روزرسانی کش برای یک کندل جدید و بازگرداندن یک دیکشنری از نوع MTFDataset
-        
         پارامتر ورودی:
             event = {
                 "event_type": event_type,
@@ -862,7 +853,6 @@ class DataHandler:
                 "timeframe": timeframe,
                 "all_dfs": all_dfs
             }
-            
         خروجی:
             MTFDataset
         """
@@ -899,7 +889,7 @@ class DataHandler:
     # -------------------------------------------------------------------------
     # LIVE-4- Helpers for Live Update
     # -------------------------------------------------------------------------
-    # def _update_cache(self, symbol: str, timeframe: str, all_dfs: Dict[str, pd.DataFrame]) -> MTFDataset:
+
     def _update_cache(self, event: Dict[str, Any]) -> MTFDataset:
         """
         این تابع دیکشنری _cache_dict را بروزرسانی میکند
@@ -949,19 +939,21 @@ class DataHandler:
     # -------------------------------------------------------------------------
     # LIVE-5- گرفتن آخرین/جدیدترین دیتاست این کلاس
     # -------------------------------------------------------------------------
+
     def get_latest_dataset(self) -> Optional[MTFDataset]:
         return self._latest_dataset
 
     # -------------------------------------------------------------------------
     # LIVE-6- ثبت تابع کال بک مصرف کننده در این کلاس
     # -------------------------------------------------------------------------
+
     def set_data_callback(self, callback):
         """ثبت تابع callback برای دریافت دیتافریم جدید"""
         self._data_callback = callback
 
     # -------------------------------------------------------------------------
     # LIVE-7- فراخوانی تابع کال بک مصرف کننده از این کلاس
-    # ------------------------------------------------------------------------- ////// FOR LIVE (7)
+    # -------------------------------------------------------------------------
     def _notify_new_data(self, dataset: MTFDataset):
         """هر جا که دیتافریم جدید ساخته شد (مثلاً در متد update یا در consumer)، این متد را صدا بزنید"""
         if self._data_callback is not None:
@@ -983,7 +975,6 @@ class DataHandler:
 def _setup_logging(level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        # format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         format="%(asctime)s | %(levelname)-7s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s",
         datefmt="%H:%M:%S",
     )
@@ -1056,8 +1047,7 @@ def main_old1() -> int:
     logger.info("Done. Output: %s", out)
     return 0
 
-
-
+# -------------------------------------
 def main() -> int:
     from f10_utils.config_completer import config_completer
 
@@ -1069,8 +1059,20 @@ def main() -> int:
     # ================================================================
     # 2. راه‌اندازی logging
     # ================================================================
-    _setup_logging(args.log_level)
+    # _setup_logging(args.log_level)
 
+    _setup_logging_funcname(
+        "info",
+        allowed_functions=[
+            "build_plan",
+            "normalize_df",
+            "main",
+            "run_plan",
+            "_fetch_candles",
+            "get_candles_range",
+            "_normalize_date"
+        ]
+    )
     # ================================================================
     # 3. بارگذاری و تکمیل config
     # ================================================================
@@ -1079,79 +1081,18 @@ def main() -> int:
     # ================================================================
     # 4. symbol
     # ================================================================
-    symbol = args.symbol.upper()
+    symbol = args.symbol.upper() # بطور اجباری با ید نماد مشخص بشود. چون در کانفیگ میتواند همزمان چند نماد وجود داشته باشد.
+                                 # حال آنکه یک کلاس دیتا هندلر بر اساس یک نماد ساخته میشود.
 
-    # ================================================================
-    # 5. اگر symbol در config وجود ندارد، باید اطلاعات لازم
-    #    برای ساخت DataHandler از CLI گرفته شود.
-    #
-    #    DataHandler.__init__() مستقیماً این سه دیکشنری را می‌خواند:
-    #       __timeframes_dict
-    #       __base_tfs_dict
-    #       __warmups_dicts
-    #
-    #    *** ==>   بنابراین قبل از ساخت DataHandler باید آنها آماده باشند.
-    # ================================================================
-    if symbol not in cfg["__timeframes_dict"]:
-        # print('======== symbol not in cfg["__timeframes_dict"] =============')    # for debug
-        if args.base_tf is None:
-            raise ValueError(
-                f"Symbol '{symbol}' is not defined in config. "
-                f"Please specify --base-tf."
-            )
-
-        if args.timeframes is None:
-            raise ValueError(
-                f"Symbol '{symbol}' is not defined in config. "
-                f"Please specify --timeframes."
-            )
-
-        # BuildParams مسئول check_tfs و استانداردسازی TFها است.
-        temp_params = BuildParams(
-            symbol=symbol,
-            base_tf=args.base_tf,
-            timeframes=args.timeframes,
-            selected_tf=None,
-        )
-
-        cfg["__timeframes_dict"][symbol] = list(temp_params.timeframes)
-        cfg["__base_tfs_dict"][symbol] = temp_params.base_tf
-
-        # DataHandler در __init__ به warmup نیاز دارد.
-        cfg["__warmups_dicts"][symbol] = {
-            tf: 0
-            for tf in [
-                temp_params.base_tf,
-                *temp_params.timeframes,
-            ]
-        }
-
-    else:
-        # print('======== symbol is in cfg["__timeframes_dict"] =============')    # for debug
-        # ============================================================
-        # symbol در config وجود دارد.
-        # اگر CLI مقدار جدیدی داده باشد، همان مقدار استفاده می‌شود.
-        # ============================================================
-        base_tf = (
-            args.base_tf if args.base_tf is not None
-            else cfg["__base_tfs_dict"][symbol]
-        )
-        # print(f"====== base TF is {base_tf} ======")
-        timeframes = (
-            args.timeframes if args.timeframes is not None
-            else cfg["__timeframes_dict"][symbol]
-        )
-
-        temp_params = BuildParams(
-            symbol=symbol,
-            base_tf=base_tf,
-            timeframes=timeframes,
-            selected_tf=None,
-        )
-
-        cfg["__timeframes_dict"][symbol] = list(temp_params.timeframes)
-        cfg["__base_tfs_dict"][symbol] = temp_params.base_tf
-
+    base_tf = (
+        args.base_tf if args.base_tf is not None
+        else cfg["__base_tfs_dict"][symbol]
+    )
+    # print(f"====== base TF is {base_tf} ======")
+    timeframes = (
+        args.timeframes if args.timeframes is not None
+        else cfg["__timeframes_dict"][symbol]
+    )
     # ================================================================
     # 6. ساخت DataHandler
     # ================================================================
@@ -1160,8 +1101,8 @@ def main() -> int:
     # ================================================================
     # 7. تنظیمات نهایی BuildParams
     # ================================================================
-    base_tf = handler._base_tf
-    timeframes = list(handler.timeframes)
+    # base_tf = handler._base_tf
+    # timeframes = list(handler.timeframes)
 
     # ================================================================
     # 8. فرمت خواندن و ذخیره
@@ -1191,7 +1132,7 @@ def main() -> int:
         selected_tf=None,
         load_format=load_format,    # فرمت داده های خام که باید خوانده شوند.
 
-        mode = "time",           # "number", "time", "periods"
+        mode = "periods",           # "number", "time", "periods"
         # --- مربوط به مد number:
         start_lastrows=500,
         end_lastrows=200,
@@ -1202,7 +1143,8 @@ def main() -> int:
         period_size = "20m",
         from_last_n = 8,
         to_last_n = 4,
-        base_time = pd.to_datetime("2026-06-02 20:00:00").tz_localize(handler.broker_timezone),
+        base_time = "now",
+        # base_time = pd.to_datetime("2026-06-02 20:00:00").tz_localize(handler.broker_timezone),
     )
     params.print_params()   # =====>>>>>   تا اینجا درست است  <<<<<======
 
@@ -1214,11 +1156,11 @@ def main() -> int:
     print(dataset.symbol)
     print(dataset.base_tf)
     print(dataset.frames.keys())
-    for sym in dataset.frames.keys():
+    for tf in dataset.frames.keys():
         print("==========================")
-        print(f" symbol = {sym}")
-        print(dataset.frames[sym].head(5))
-        print(dataset.frames[sym].tail(5))
+        print(f" timeframe = {tf}")
+        print(dataset.frames[tf].head(5))
+        print(dataset.frames[tf].tail(5))
         print("==========================")
 
     # ================================================================
@@ -1235,9 +1177,6 @@ def main() -> int:
         fmt=save_format,
     )
 
-    # ================================================================
-    # 12. پایان
-    # ================================================================
     logger.info("Done. Output: %s", out)
 
     return 0    

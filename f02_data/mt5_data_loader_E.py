@@ -1,10 +1,8 @@
 # f02_data/mt5_data_loader_E.py
 # Date reviewed
-#    1405/05/25-16:08 --> run result is OK.
+#    1405/06/02-00:23 --> run result is OK.
 
 """
-Data Loader برای MT5 (Bot-RL-1)
-# =======================================================================================
 وظایف:
     - خواندن پیکربندی دانلود از config (symbols, timeframes, lookback_bars, batch_size, save_format)
     - دریافت داده‌ی OHLCV از MT5 از طریق MT5Connector
@@ -13,11 +11,12 @@ Data Loader برای MT5 (Bot-RL-1)
     - تکراری‌ها را حذف و ایندکس زمانی را مرتب می‌کند،
     - خلاصهٔ اجرای دانلود را گزارش می‌دهد و متادیتا می‌نویسد،
     - CLI دارد تا با یک فرمان اجرا شود.
-# =======================================================================================
+
 پیش‌نیاز:
     - pandas (اجباری)، (اختیاری) pyarrow یا fastparquet برای Parquet
-# =======================================================================================
-# اجرای از طریق فراخوانی مستقیم این فایل، سبب میشود که داده های جدید در ریشه پروژه ذخیره شوند
+
+اجرا:
+    اجرای از طریق فراخوانی مستقیم این فایل، سبب میشود که داده های جدید در ریشه پروژه ذخیره شوند
 
 نمونه اجرا (از ریشه‌ی ریپو):
 python -m f02_data.mt5_data_loader_E `
@@ -31,7 +30,7 @@ python -m f02_data.mt5_data_loader_E `
 python -m f02_data.mt5_data_loader_E `
     -c ./f01_config/config.yaml      `
     --symbols BITCOIN          `
-    --timeframes M1 M2 M5 M10 M30 H4 D1 W1  `
+    --timeframes M1  `
     --format csv
 
 python -m f02_data.mt5_data_loader_E
@@ -43,7 +42,7 @@ python -m f02_data.mt5_data_loader_E
     - اگر pyarrow/fastparquet نداشتی، format: csv بگذار یا اجازه بده به csv برگردد.
     - فایل متادیتای JSON کنار هر فایل داده نوشته می‌شود تا در گزارش/مانیتورینگ سریع به‌کار رود.
     - برای بازهٔ تاریخی از --date-from/--date-to استفاده کن؛
-        در غیر این صورت از lookback یا مقدار پیش‌فرض کانفیگ می‌گیرد.
+     در غیر این صورت از lookback یا مقدار پیش‌فرض کانفیگ می‌گیرد.
 """
 # =======================================================================================
 # Imports & Logger
@@ -51,9 +50,9 @@ python -m f02_data.mt5_data_loader_E
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple
 from pathlib import Path
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
@@ -62,9 +61,11 @@ import logging
 import argparse
 
 # ------------------ Importing Internal Modules -----------------------------------------
+from f02_data.mt5_connector import MT5Connector
+from f10_utils.functions.normalize_datetime import normalize_datetime
 from f10_utils.config_completer import config_completer
 from f10_utils.config_path_funcs import project_root, resolve_raw_dir, full_file_path
-from f02_data.mt5_connector import MT5Connector
+from f10_utils.functions._to_zoneinfo import _to_zoneinfo
 
 # -------------------- Logger for this module -------------------------------------------
 logger = logging.getLogger(__name__)
@@ -80,104 +81,14 @@ class DownloadPlan:
     """طرح دانلود برای یک جفت ارز (نماد/تایم‌فریم)."""
     symbol: str
     timeframe: str
-    # یکی از lookback_bars یا (date_from, date_to) باید مشخص باشد
+    # ----- یکی از lookback_bars یا (date_from, date_to) باید مشخص باشد
     lookback_bars: Optional[int] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime|str] = None
-    range_policy: Optional[str] = None  # could be one of:   "min" | "max" | "date" | "count"
-
-# ------------------------------------------------------------------- OK=
-def _parse_dt(value, input_tz, output_tz=None):
-    """
-    مقدار تاریخ/زمان را دریافت کرده و آن را به یک datetime دارای منطقهٔ زمانی تبدیل می‌کند.
-
-    پارامترها
-    ----------
-    value : datetime, date, int, float, str یا None
-        مقدار تاریخ/زمان ورودی.
-
-        - اگر None یا رشتهٔ خالی باشد، مقدار None برگردانده می‌شود.
-        - اگر datetime بدون منطقهٔ زمانی باشد، input_tz به آن نسبت داده می‌شود.
-        - اگر datetime دارای منطقهٔ زمانی باشد، به output_tz تبدیل می‌شود.
-        - اگر date باشد، زمان 00:00:00 به آن اضافه شده و در input_tz
-          تفسیر می‌شود، سپس به output_tz تبدیل می‌شود.
-        - اگر int یا float باشد، به‌عنوان Unix timestamp در نظر گرفته
-          شده و مستقیماً به datetime در output_tz تبدیل می‌شود.
-        - اگر رشته برابر با "now" باشد، زمان فعلی در output_tz برگردانده می‌شود.
-        - سایر رشته‌ها با datetime.fromisoformat() تجزیه می‌شوند.
-          اگر نتیجه بدون timezone باشد، input_tz به آن نسبت داده می‌شود؛
-          در غیر این صورت مستقیماً به output_tz تبدیل می‌شود.
-
-    input_tz : str یا tzinfo
-        منطقهٔ زمانی مورد استفاده برای تفسیر مقادیر فاقد timezone.
-        اگر رشته باشد، با ZoneInfo به منطقهٔ زمانی تبدیل می‌شود.
-
-    output_tz : str یا tzinfo، اختیاری
-        منطقهٔ زمانی datetime خروجی.
-        اگر None باشد، input_tz به‌عنوان output_tz نیز استفاده می‌شود.
-
-    خروجی
-    -------
-    datetime یا None
-        یک datetime دارای timezone در منطقهٔ زمانی output_tz،
-        یا None در صورتی که value برابر None یا رشتهٔ خالی باشد.
-
-    خطاها
-    ------
-    ValueError
-        اگر input_tz یا output_tz یک منطقهٔ زمانی معتبر نباشد.
-
-    TypeError
-        اگر نوع value توسط تابع پشتیبانی نشود.
-    """
-    # ---------- validations ----------
-    if value is None or value == "":
-        return None
-
-    if output_tz is None:
-        output_tz = input_tz
-
-    try:
-        if isinstance(input_tz, str):
-            input_tz = ZoneInfo(input_tz)
-
-        if isinstance(output_tz, str):
-            output_tz = ZoneInfo(output_tz)
-
-    except ZoneInfoNotFoundError as e:
-        raise ValueError(f"Invalid timezone: {e}")
-
-    # ---------- datetime -------------
-    if isinstance(value, datetime):
-
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=input_tz)
-
-        return value.astimezone(output_tz)
-
-    # ---------- date -----------------
-    if isinstance(value, date):
-
-        dt = datetime.combine(value, datetime.min.time())
-        dt = dt.replace(tzinfo=input_tz)
-        return dt.astimezone(output_tz)
-
-    # ---------- unix timestamp -------
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=output_tz)
-
-    # ---------- string ---------------
-    if isinstance(value, str):
-        value = value.strip()
-        if value.lower() == "now":
-            return datetime.now(output_tz)
-
-        dt = datetime.fromisoformat(value)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=input_tz)
-        return dt.astimezone(output_tz)
-
-    raise TypeError(f"Unsupported type: {type(value)}")
+    date_tz: Optional[tzinfo|None] = None
+    result_tz: tzinfo|str|None = None
+    # ----- 
+    range_policy: Literal["min", "max", "date", "count"] = "count"
 
 # ------------------------------------------------------------------- OK=
 def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -195,13 +106,13 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
                             index=pd.DatetimeIndex([], name="time")
                             )
     cols = list(df.columns)
-    logger.debug(f'columns of df at end of part 1 is : {cols}')
+    # logger.debug(f'columns of df at end of part 1 is : {cols}')   # save for debug
 
     # -- 2 -- معرفی ستون time به عنوان اندکس زمانی دیتافریم --------------------------
     if "time" in cols:
         df["time"] = pd.to_datetime(df["time"]) #, utc=True)
         df.set_index("time", inplace=True)
-    logger.debug(f'columns of df at end of part 2 is : {cols}')
+    # logger.debug(f'columns of df at end of part 2 is : {cols}')   # save for debug
 
     # -- 3 -- مرتب‌سازی بر اساس زمان ---------------------------------------------------
     df.sort_index(inplace=True)
@@ -290,13 +201,15 @@ def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[in
     return (before, len(df_all))
 
 # ------------------------------------------------------------------- OK=
-def _write_metadata(raw_dir: Path, symbol: str, timeframe: str, rows: int, columns: List, fmt: str) -> Path:
+def _write_metadata(df: pd.DataFrame, raw_dir: Path, symbol: str, timeframe: str, rows: int, columns: List, fmt: str) -> Path:
     """
     متادیتا (فایل JSON) را کنار داده ذخیره می‌کند تا برنامه‌های دیگر بتوانند سریع گزارش بگیرند.
     """
     meta = {
         "symbol": symbol,
         "timeframe": timeframe.upper(),
+        "first_index": df.index[0].isoformat(),
+        "last_index": df.index[-1].isoformat(),
         "rows": int(rows),
         "columns": list(columns),
         "format": fmt.lower(),
@@ -306,6 +219,9 @@ def _write_metadata(raw_dir: Path, symbol: str, timeframe: str, rows: int, colum
     
     with meta_path.open("w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
+
+    logger.info(f"metadata stored in {meta_path}")
+
     return meta_path
 
 # ------------------------------------------------------------------- OK= new 050315
@@ -313,55 +229,97 @@ def _fetch_candles(connector: MT5Connector, p: DownloadPlan) -> pd.DataFrame:
     """ دریافت داده‌های کندلی از متاتریدر بر اساس طرح دانلود (DownloadPlan) """
 
     df = pd.DataFrame()
+    _downloaded_by = ""
 
     if not p.symbol or not p.timeframe:
         raise ValueError("symbol and timeframe must be non-empty strings.")
     
-    # logger.debug(f"symbol        for _fetch_candles is {p.symbol}")
-    # logger.debug(f"timeframe     for _fetch_candles is {p.timeframe}")
-    # logger.debug(f"lookback_bars for _fetch_candles is {p.lookback_bars}")
-    # logger.debug(f"date_from     for _fetch_candles is {p.date_from}")
-    # logger.debug(f"date_to       for _fetch_candles is {p.date_to}")
-    # logger.debug(f"range_policy  for _fetch_candles is {p.range_policy}")
+    logger.debug("=== Before: connector.get_candles ==========================")  # save
+    logger.debug(f"symbol = {p.symbol}")                                          # save
+    logger.debug(f"timeframe = {p.timeframe}")                                    # save
+    logger.debug(f"lookback_bars = {p.lookback_bars}")                            # save
+    logger.debug(f"date_from = {p.date_from}")                                    # save
+    logger.debug(f"date_to = {p.date_to}")                                        # save
+    logger.debug(f"date_tz = {p.date_tz}")                                        # save
+    logger.debug(f"result_tz = {p.result_tz}")                                    # save
+    logger.debug(f"range_policy = {p.range_policy}")                              # save
+    logger.debug("============================================================\n")  # save
 
     if p.date_from and p.date_to and p.lookback_bars:
-        df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to)
+        df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to, p.date_tz, p.result_tz)
+        _downloaded_by = "date"
         
         policy = str(p.range_policy).lower()    
 
         if   policy=="min" and len(df)> p.lookback_bars:
-            df = df[:p.lookback_bars]
+            df = df[ - p.lookback_bars:]
         elif policy=="min" and len(df)<=p.lookback_bars:
             pass
         elif policy=="max" and len(df)>=p.lookback_bars:
             pass
         elif policy=="max" and len(df)< p.lookback_bars:
-            df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars)
+            df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars, p.result_tz)
+            _downloaded_by = "count"
         elif policy=="date":
-            # df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to)
+            # df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to, p.date_tz, p.result_tz)
+            # _downloaded_by = "date"
             pass
         elif policy=="count":
-            df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars)
+            df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars, p.result_tz)
+            _downloaded_by = "count"
+
         else:
             logger.warning("Check policy, date_from, date_to, lookback_bars.")
 
-    elif p.date_from and p.date_to and not p.lookback_bars:
-        df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to)
+    elif (p.date_from and p.date_to) and not p.lookback_bars:
+        df = connector.get_candles_range(p.symbol, p.timeframe, p.date_from, p.date_to, p.date_tz, p.result_tz)
+        _downloaded_by = "date"
 
-    elif not p.date_from and not p.date_to and p.lookback_bars:
-        df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars)
+    elif (not p.date_from or not p.date_to) and p.lookback_bars:
+        df = connector.get_candles_num(p.symbol, p.timeframe, p.lookback_bars, p.result_tz)
+        _downloaded_by = "count"
+
     
     else:  # if every 3 ones is None or empty
         logger.error(
             f"Invalid DownloadPlan for {p.symbol} {p.timeframe}: "
             "either (lookback_bars) or (date_from and date_to) must be provided. Skipping..."
         )
+
+    if _downloaded_by != "count" and _downloaded_by != "date":
+        logger.debug("Check '_download_by' at '_fetch_candles()' !!!")
+        return df, _downloaded_by
+
+    logger.debug(f"=== Result of get_candles ==================================")  # save for debug
+    logger.debug(f"symbol={p.symbol}")                                             # save for debug
+    logger.debug(f"timeframe={p.timeframe}")                                       # save for debug
+    if _downloaded_by == "count":                                                  # save for debug
+        logger.debug(f"fetched candles by 'count'")                                # save for debug
+        logger.debug(f"lookback_bars={p.lookback_bars}")                           # save for debug
+    elif _downloaded_by == "date":                                                 # save for debug
+        logger.debug(f"fetched candles by 'date'")                                 # save for debug
+        logger.debug(f"date_from={p.date_from}")                                   # save for debug
+        logger.debug(f"date_to={p.date_to}")                                       # save for debug
+        logger.debug(f"date_tz = {p.date_tz}")                                     # save for debug
+        logger.debug(f"result_tz = {p.result_tz}")                                 # save for debug
+    logger.debug(f"columns of df is: {list(df.columns)}")                          # save for debug
+    logger.debug(f"rows of df is: {len(df)}")                                      # save for debug
+    logger.debug(f"============================================================\n")  # save for debug
+
     
-    # logger.debug(f"type of DF is {type(df)}")
-    # logger.debug(f"Columns of DF are: {df.columns}")
-    # logger.debug(f"Len of DF is: {len(df)}")
-    # logger.debug(f"{df.head(5)}")
-    return df            
+    return df, _downloaded_by
+
+# -------------------------------------------------------------------
+# تبدیل datetime / str به datetime
+# -------------------------------------------------------------------
+def _to_datetime(value: datetime|str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+
+    if isinstance(value, str):
+        return datetime.fromisoformat(value)
+
+    raise TypeError("Datetime value must be datetime or str.")
 
 
 # =======================================================================================
@@ -376,123 +334,287 @@ class MT5DataLoader_batch:
                  cfg:       Optional[Dict[str, Any]] = None,
                  connector: Optional[MT5Connector]   = None,
                  ) -> None:
+        
         # -- 1 -- config, raw_dir -----------------------------------
+
+        logger.debug("=== start of init of MT5DataLoader_batch ===================")
+
         self.cfg: Dict[str, Any] = cfg or config_completer()
         self.raw_dir: Path = resolve_raw_dir(self.cfg)
 
-        # -- 2 -- download defaults ---------------------------------
+        # -- 2 -- broker_timezone -----------------------------------
+
+        project_cfg = self.cfg.get("project")
+        if not project_cfg:
+            raise ValueError("'project' key not found in config !")
+
+        broker_timezone = project_cfg.get("broker_timezone")
+        if not broker_timezone:
+            raise ValueError("'broker_timezone' key not found or empty in 'project' config!")
+
+        try:
+            self.broker_timezone = ZoneInfo(broker_timezone)
+        except ZoneInfoNotFoundError:
+            raise ValueError(f"Invalid broker_timezone: '{broker_timezone}'")
+
+        # -- 3 -- download defaults ---------------------------------
         # گزینه‌های دانلود از config.download_defaults خوانده میشود 
+
         dl = (self.cfg.get("download_defaults") or {})
 
         self.default_symbols:    List[str] = list(dl.get("symbols") or [])
         self.default_timeframes: List[str] = list(dl.get("timeframes") or [])
         self.default_lookback:   int       = int (dl.get("lookback_bars") or 5_000_000)
+                
+        # -- 4 -- result_timezone -----------------------------------
+        temp = dl.get("result_timezone")
 
-        # -- 3 -- broker_timezone -----------------------------------
-        project_cfg = self.cfg.get("project")
-        if not project_cfg:
-            raise ValueError("'project' key not found in config !")
-            
-        self.broker_timezone = project_cfg.get("broker_timezone")
-        if not self.broker_timezone:
-            raise ValueError("'broker_timezone' key not found in 'project' key !")
+        if temp is None:
+            self.result_timezone = None
+        else:
+            self.result_timezone = _to_zoneinfo(temp)
 
+        # -- 5 -- broker_date_from & broker_date_to -----------------   # <= گیت ورودی از config
 
-        # -- 4 -- broker_date_from & broker_date_to -----------------   # <= گیت ورودی از config
         temp = dl.get("broker_date_from")
-        self.date_from: datetime = _parse_dt(temp, self.broker_timezone, "UTC")
+        self.date_from: datetime = normalize_datetime(temp, self.broker_timezone, "UTC")
 
         temp = dl.get("broker_date_to")
-        self.date_to: datetime = _parse_dt(temp, self.broker_timezone, "UTC")
+        self.date_to: datetime = normalize_datetime(temp, self.broker_timezone, "UTC")
 
-        # logger.info(f"fake time: (1) broker_date_form = {self.date_from},   broker_date_to = {self.date_to}")   # for debug
+        # -- 6 -- policy, save_format -------------------------------
+        self.range_policy: str = str(dl.get("range_policy")).lower()
 
-
-        # -- 5 -- policy, save_format -------------------------------
-        self.range_policy:  str = str(dl.get("range_policy")).lower()
-
-        self.save_format:   str = str(dl.get("save_format", "csv")).lower()
+        self.save_format: str = str(dl.get("save_format", "csv")).lower()
         if self.save_format not in ("csv", "parquet"):
             logger.warning("save_format is unknown; falling back to csv.")
             self.save_format = "csv"
 
-        # -- 6 -- save_at_utc_time ----------------------------------
+        logger.debug(f"self.default_symbols = {self.default_symbols}")         # save for debug
+        logger.debug(f"self.default_timeframes = {self.default_timeframes}")   # save for debug
+        logger.debug(f"self.default_lookback = {self.default_lookback}")       # save for debug
+        logger.debug(f"self.date_from = {self.date_from}")                     # save for debug
+        logger.debug(f"self.date_to = {self.date_to}")                         # save for debug
+        logger.debug(f"self.broker_timezone = {self.broker_timezone}")         # save for debug
+        logger.debug(f"self.result_timezone = {self.result_timezone}")         # save for debug
+        logger.debug(f"self.range_policy = {self.range_policy}")               # save for debug
+        logger.debug(f"self.save_format = {self.save_format}")                 # save for debug
+
+        # -- 7 -- save_at_utc_time ----------------------------------
         self.save_at_utc_time = bool(dl["save_at_utc_time"])
         
-        # -- 7 -- connection to mt5 ---------------------------------
+        # -- 8 -- connection to mt5 ---------------------------------
         self.conn = connector or MT5Connector(config=self.cfg)
+        logger.debug("============================================================\n")
 
     # ---------------------------------------------------------------
-    # ساخت طرح دانلود
+    # ساخت طرح دانلود- متد کمکی
+    # ---------------------------------------------------------------
+    def _check_downloadplan_params(
+        self,
+        lookback_bars: Optional[int] = None,
+        date_from: Optional[datetime | str] = None,
+        date_to: Optional[datetime | str] = None,
+        date_tz: Optional[tzinfo | str] = None,
+        range_policy: Optional[str] = None,
+    ):
+
+        # ----- count -----------------------------------------------
+
+        if range_policy == "count":
+            if not isinstance(lookback_bars, int):
+                raise ValueError("Check 'lookback_bars', 'range_policy'.")
+
+            return (lookback_bars, None, None, None, range_policy)
+
+        # ----- normalize date_tz -----------------------------------
+
+        tz = _to_zoneinfo(date_tz)
+
+        # ----- normalize / validate dates --------------------------
+
+        if date_from is None or date_to is None:
+            raise ValueError("Check 'date_from', 'date_to'.")
+
+        if tz is not None:
+            dt_from = normalize_datetime(date_from, tz, tz)
+            dt_to = normalize_datetime(date_to, tz, tz)
+        else:
+            dt_from = _to_datetime(date_from)
+            dt_to = _to_datetime(date_to)
+            cond1 = (dt_from.tzinfo is None) or (dt_from.utcoffset() is None)
+            cond2 = (dt_to.tzinfo is None) or (dt_to.utcoffset() is None)
+            if cond1 or cond2:
+                raise ValueError("Check 'date_from', 'date_to', 'date_tz'.")
+
+        if dt_from is None or dt_to is None:
+            raise ValueError("Check 'date_from', 'date_to'.")
+
+        return (None, dt_from, dt_to, tz, range_policy)
+
+
+    # ---------------------------------------------------------------
+    # ساخت طرح دانلود- متد اصلی
     # --------------------------------------------------------------- OK=
-    def build_plan(self,
-                   symbols: Optional[Iterable[str]] = None,
-                   timeframes: Optional[Iterable[str]] = None,
-                   lookback_bars: Optional[int] = None,
-                   date_from: Optional[datetime] = None,    # <= گیت ورودی از متد عمومی بیلد
-                   date_to: Optional[datetime] = None,      # <= گیت ورودی از متد عمومی بیلد
-                   range_policy: Optional[str] = None,
-                   ) -> List[DownloadPlan]:
+    def build_plan(
+        self,
+        symbols: Optional[Iterable[str]] = None,
+        timeframes: Optional[Iterable[str]] = None,
+        lookback_bars: Optional[int] = None,
+        date_from: Optional[datetime | str] = None,
+        date_to: Optional[datetime | str] = None,
+        date_tz: Optional[tzinfo | str | None] = None,
+        result_tz: Optional[tzinfo | str | None] = None,
+        range_policy: Optional[str] = None,
+    ) -> List[DownloadPlan]:
+
         """
         این تابع بر اساس آرگومان‌ها یا پیش‌فرض‌های کانفیگ، لیست DownloadPlan تولید می‌کند.
         """
-        # -- 1 -- Standardize date_from & date_to -------------------
-        date_from = _parse_dt(date_from, "UTC")
-        date_to   = _parse_dt(date_to  , "UTC")
-        # logger.info(f"fake time: (2) date_form = {self.date_from},   date_to = {self.date_to}")   # for debug
+        date_tz = _to_zoneinfo(date_tz)
+        result_tz = _to_zoneinfo(result_tz)
+        
+        logger.debug("=== Class MT5DataLoader_batch: build_plan() is start =======")
+        logger.debug(f"symbols = {symbols}")
+        logger.debug(f"timeframes = {timeframes}")
+        logger.debug(f"lookback_bars = {lookback_bars}")
+        logger.debug(f"date_from = {date_from}")
+        logger.debug(f"date_to = {date_to}")
+        logger.debug(f"date_tz = {date_tz}") # فقط زمانی استفاده میشود که داده های ورودی منطقه زمانی نداشته باشند.
+        logger.debug(f"result_tz = {result_tz}")
+        logger.debug(f"range_policy = {range_policy}")
+        logger.debug("============================================================\n")
 
-        # -- 2 -- Assigning and fallbacks ---------------------------
-        syms     = list(symbols      ) if symbols                   else self.default_symbols
-        tfs      = list(timeframes   ) if timeframes                else self.default_timeframes
-        lb       = int (lookback_bars) if lookback_bars is not None else self.default_lookback
-        dt_from  =      date_from      if date_from     is not None else self.date_from
-        dt_to    =      date_to        if date_to       is not None else self.date_to
-        rng_plcy = str (range_policy ) if range_policy  is not None else self.range_policy
+        # -- 1 -- Assigning and fallbacks ---------------------------
 
+        syms = list(symbols) if symbols is not None else self.default_symbols
+        tfs = list(timeframes) if timeframes is not None else self.default_timeframes
+        lb = int(lookback_bars) if lookback_bars is not None else self.default_lookback
+        dt_from = date_from if date_from is not None else self.date_from
+        dt_to = date_to if date_to is not None else self.date_to
+        dt_tz = date_tz if date_tz is not None else self.broker_timezone
+        rs_tz =result_tz if result_tz is not None else self.result_timezone
+        rng_plcy = str(range_policy) if range_policy is not None else self.range_policy
+
+        logger.debug("=== After assigning and fallbacks ==========================")
+        logger.debug(f"symbols = {syms}")
+        logger.debug(f"timeframes = {tfs}")
+        logger.debug(f"lookback_bars = {lb}")
+        logger.debug(f"date_from = {dt_from}")
+        logger.debug(f"date_to = {dt_to}")
+        logger.debug(f"date_tz = {dt_tz}")
+        logger.debug(f"result_tz = {rs_tz}")
+        logger.debug(f"range_policy = {rng_plcy}")
+        logger.debug("============================================================\n")
+
+        # -- 2 -- Standardize date_from & date_to -------------------
+
+        if rng_plcy == "date":
+            dt_from = normalize_datetime(dt_from, dt_tz, dt_tz)
+            dt_to = normalize_datetime(dt_to, dt_tz, dt_tz)
+            logger.debug(f"After normalize_datetime: dt_from = {dt_from}, dt_to = {dt_to}")
+        
         # -- 3 -- Checking symbols & TFs ----------------------------
+
         if not syms or not tfs:
-            raise ValueError("symbols/timeframes are empty. Set them in config or arguments.")
-            
-        # -- 4 -- Checking dt_from, dt_to  --------------------------
+            raise ValueError(
+                "symbols/timeframes are empty. "
+                "Set them in config or arguments."
+            )
+
+        # -- 4 -- Validate range_policy -----------------------------
+
+        valid_policies = {"min", "max", "date", "count"}
+
+        if rng_plcy not in valid_policies:
+            raise ValueError(
+                f"Invalid range_policy: {rng_plcy!r}. "
+                f"Expected one of {sorted(valid_policies)}."
+            )
+
+        # -- 5 -- Checking range ------------------------------------
+
         if rng_plcy == "date":
             lb = None
-            if (dt_from >= dt_to) and dt_to.lower() != "now":
-                raise ValueError("check date_farom and date_to in config.")
+            if dt_from is None or dt_to is None:
+                raise ValueError(
+                    "date_from and date_to are required "
+                    "for range_policy='date'."
+                )
+            if dt_from >= dt_to:
+                raise ValueError("Check 'date_from' and 'date_to'.")
+
         elif rng_plcy == "count":
-            if (lb<= 0):
-                raise ValueError("check lookback_bars in config.")
-            dt_from = None; dt_to = None
-        elif rng_plcy == "max" or rng_plcy == "min":
+            if lb <= 0:
+                raise ValueError("Check 'lookback_bars'.")
+
+            dt_from = None
+            dt_to = None
+
+        elif rng_plcy in ("max", "min"):
             pass
 
-        # logger.info(f"fake time: (3) date_form = {self.date_from},   date_to = {self.date_to}")   # for debug
-    
-        # -- 5 -- Wrapping plans ------------------------------------
+        # -- 6 -- Wrapping plans ------------------------------------
+
         plans: List[DownloadPlan] = []
+
+        logger.debug("=== Before _check_downloadplan_params() ====================")
+        logger.debug(f"symbols = {syms}")
+        logger.debug(f"timeframes = {tfs}")
+        logger.debug(f"lookback_bars = {lb}")
+        logger.debug(f"date_from = {dt_from}")
+        logger.debug(f"date_to = {dt_to}")
+        logger.debug(f"date_tz = {dt_tz}")
+        logger.debug(f"result_tz = {rs_tz}")
+        logger.debug(f"range_policy = {rng_plcy}")
+        logger.debug("============================================================\n")
+
+        (
+            _lb,
+            _dt_from,
+            _dt_to,
+            _dt_tz,
+            _rng_plc,
+        ) = self._check_downloadplan_params(
+            lookback_bars=lb,
+            date_from=dt_from,
+            date_to=dt_to,
+            date_tz=dt_tz,
+            range_policy=rng_plcy,
+        )
+        logger.debug("=== After checking download plans ==========================")
+        logger.debug(f"_lb = {_lb}, _dt_from = {_dt_from}, _dt_to = {_dt_to}")
+        logger.debug(f"_tz = {_dt_tz}, result_tz = {rs_tz}, _rng_plc = {_rng_plc}")
+        
         for s in syms:
             for tf in tfs:
-                # if date_from and date_to:
-                #     plans.append(DownloadPlan(symbol=s, timeframe=tf, date_from=dt_from, date_to=dt_to))
-                # else:
-                #     plans.append(DownloadPlan(symbol=s, timeframe=tf, lookback_bars=lb))
-                plans.append(DownloadPlan(
-                    symbol=s, timeframe=tf, lookback_bars=lb,
-                    date_from=dt_from, date_to=dt_to,
-                    range_policy=rng_plcy)
+                plans.append(
+                    DownloadPlan(
+                        symbol=s,
+                        timeframe=tf,
+                        lookback_bars=_lb,
+                        date_from=_dt_from,
+                        date_to=_dt_to,
+                        date_tz=_dt_tz,
+                        result_tz=rs_tz,
+                        range_policy=_rng_plc,
+                    )
                 )
 
         return plans
 
+
     # ---------------------------------------------------------------
     # اجرای طرح دانلود برای حالت batch
     # --------------------------------------------------------------- OK=
-    def run(self,
+    def run_plan(self,
             plans: List[DownloadPlan],
             ) -> List[Dict[str, Any]]:
         """
         طرح را اجرا می‌کند و خلاصه‌ی هر کار را برمی‌گرداند.
         """
         # -- 1 -- اتصال به متاتریدر ---------------------------------
+
         if not self.conn.initialize():
             raise RuntimeError("Unable to connect to MT5. Check the credentials/terminal.")
 
@@ -501,39 +623,72 @@ class MT5DataLoader_batch:
         for p in plans:
             try:
                 # -- L1 -- fetching candles -------------------------
-                df = _fetch_candles(self.conn, p)
 
-                logger.debug(f'if df after "_fetch_candles" is a pd.DataFrame: {isinstance(df, pd.DataFrame)}')
+                logger.debug(f"=== Before _fetch_candles() ================================")   # save for debug
+                logger.debug(f"symbol = {p.symbol}")                                            # save for debug
+                logger.debug(f"timeframe = {p.timeframe}")                                      # save for debug
+                logger.debug(f"lookback_bars = {p.lookback_bars}")                              # save for debug
+                logger.debug(f"date_from = {p.date_from}")                                      # save for debug
+                logger.debug(f"date_to = {p.date_to}")                                          # save for debug
+                logger.debug(f"date_tz = {p.date_tz}")                                          # save for debug
+                logger.debug(f"result_tz = {p.result_tz}")                                      # save for debug
+                logger.debug(f"range_policy = {p.range_policy}")                                # save for debug
+                logger.debug(f"============================================================\n") # save for debug
 
-                df.index = df.index.tz_localize(None)                     # *** درست نمودن زمان داده های خام دانلود شده
-                df.index = df.index.tz_localize("UTC")                    # *** درست نمودن زمان داده های خام دانلود شده
+                df, _downloaded_by = _fetch_candles(self.conn, p)
+
+                logger.debug(f"=== Result of _fetch_candles() =============================")   # save for debug
+                logger.debug(f"is a pd.DataFrame: {isinstance(df, pd.DataFrame)}")              # save for debug
+                logger.debug(f"clomuns of df= {df.columns}")                                    # save for debug
+                logger.debug(f"rows of df= {len(df)}")                                          # save for debug
+                logger.debug(f"============================================================\n") # save for debug
+
+
                 if not self.save_at_utc_time:                             # *** درست نمودن زمان داده های خام دانلود شده
                     df.index = df.index.tz_convert(self.broker_timezone)  # *** درست نمودن زمان داده های خام دانلود شده
+                
 
                 # -- L2 -- Normalizing DataFrame --------------------
+
                 df = normalize_df(df)
-                logger.debug(f'if df after "normalize_df" is a pd.DataFrame: {isinstance(df, pd.DataFrame)}')
+                logger.debug(f"=== Result of normalize_df() ===============================")   # save for debug
+                logger.debug(f"Is a pd.DataFrame: {isinstance(df, pd.DataFrame)}")              # save for debug
 
                 # -- L3 -- Logging requested and returned candles ---
+
                 req = int(p.lookback_bars or self.default_lookback)
                 if df is None or df.empty:
-                    logger.info("TF=%s | requested=%d | returned=0",
-                                p.timeframe, req )
+                    if _downloaded_by == "count":
+                        logger.info("TF=%s | requested=%d | returned=0", p.timeframe, req )
+                    else:
+                        logger.info("TF=%s | date_from=%s | date_to=%s | returned=0",
+                            p.timeframe, p.date_from, p.date_to)
                 else:
-                    logger.info("TF=%s | requested=%d | returned=%d | range=%s → %s",
-                                p.timeframe, req, len(df), df.index.min(), df.index.max() )
-                
+                    if _downloaded_by == "count":
+                        logger.info("TF=%s | requested=%d | returned=%d | range=%s → %s",
+                            p.timeframe, req, len(df), df.index.min(), df.index.max() )
+                    else:
+                        logger.info("TF=%s | date_from=%s | date_to=%s", p.timeframe, p.date_from, p.date_to )
+                        logger.info("returned=%d | range=%s → %s", len(df), df.index.min(), df.index.max() )
+
+
                 # -- L4 -- Writing downloaded dataframes to files ---
+
                 out_path = full_file_path(self.raw_dir, p.symbol, p.timeframe, self.save_format)
                 before, after = _append_or_write(df, out_path, self.save_format)
 
-                _write_metadata(self.raw_dir, p.symbol, p.timeframe, after, df.columns, self.save_format)
-
                 # -- L5 -- Logging saved files & sizes --------------
+
                 logger.info("Saved: %s %s → %s (rows: +%d / total %d)",
                             p.symbol, p.timeframe, out_path, after - before, after)
 
+                # -- L6 -- Writing metadatas to files ---------------
+
+                _write_metadata(df, self.raw_dir, p.symbol, p.timeframe, after, df.columns, self.save_format)
+                # لاگر در داخل تابع لاگ را ثبت میکند
+
                 # -- L6 -- Wrapping list of dictionaries ------------
+
                 results.append({
                     "symbol": p.symbol,    #.upper(),
                     "timeframe": p.timeframe.upper(),
@@ -542,12 +697,17 @@ class MT5DataLoader_batch:
                     "file": str(out_path),
                     "dataframe": df,
                 })
+                logger.info(
+                    f"resulted dict appent to 'result list': " 
+                    f"symbol = {p.symbol}, timeframe = {p.timeframe}"
+                )
 
             except Exception as ex:
                 # -- L7 -- Exception handling -----------------------
+
                 logger.exception("Error downloading/saving %s %s: %s", p.symbol, p.timeframe, ex)
                 results.append({
-                    "symbol": p.symbol,     #.upper(),
+                    "symbol": p.symbol,
                     "timeframe": p.timeframe.upper(),
                     "error": str(ex),
                 })
@@ -565,13 +725,12 @@ class MT5DataLoader_batch:
 def _setup_logging_all(level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        # format="%(asctime)s | %(levelname)-8s | %(filename)s | %(lineno)d : %(funcName)s | %(message)s",
-        format="%(asctime)s | %(levelname)-6s | %(filename)-28s | %(lineno)-4d : %(funcName)-24s | %(message)s",
+        format="%(asctime)s | %(levelname)-6s | %(filename)-22s | %(lineno)-4d : %(funcName)-18s | %(message)s",
         datefmt="%H:%M:%S",
     )
 
 def _setup_logging_funcname(
-    level: str = "INFO",
+    level: str = "debug",
     allowed_functions: list[str] | None = None,
 ) -> None:
 
@@ -611,7 +770,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--lookback", type=int, default=None, help="Number of closing candles to receive") #تعداد کندلهای انتهایی
     parser.add_argument("--brk_date-from", type=str, default=None, help="Start of interval (ISO 8601 like 2024-01-01T00:00:00Z)")
     parser.add_argument("--brk_date-to", type=str, default=None, help="End of interval (ISO8601)")
-    parser.add_argument("--format", type=str, default=None, choices=["csv", "parquet"], help="Storage format")
+    parser.add_argument("--save_format", type=str, default=None, choices=["csv", "parquet"], help="Storage format")
     parser.add_argument("--log-level", type=str, default="INFO", help="Log level: DEBUG/INFO/WARN/ERROR")
     
     return parser.parse_args()
@@ -620,23 +779,31 @@ def _parse_args() -> argparse.Namespace:
 def main() -> int:
     # --1 -- استخراج مقادیر از خط فرمان 
     args = _parse_args()
-
+    
     # -- 2 -- ساخت لاگر و تعیین سطح آن، همراه با تعیین فرمت و فرمت زمان 
-    _setup_logging_all("info")
+    _setup_logging_all("debug")
+    
     # _setup_logging_funcname(
     #     "debug",
     #     allowed_functions=[
+    #         "main",
+    #         "build_plan",
+    #         "run_plan",
     #         "normalize_df",
+    #         "_fetch_candles",
+    #         "get_candles_num",
+    #         "get_candles_range",
+    #         "_normalize_date"
     #     ]
     # )
 
     # -- 3 -- بارگذاری کانفیگ (با ENV Override فعال)
     cfg = config_completer(args.config, enable_env_override=True)
-
+    
     # -- 4 -- اوور راید موقتی فرمت بر روی کانفیگ
     # اگر کاربر فرمت را در CLI تعیین کرد، آن را در cfg منعکس کنیم (Override موقتی) 
     #setdefault راه کوتاهی است برای «دریافت مقدار یا ایجاد/قرار دادن مقدار پیش‌فرض در صورت نبودن» — خواندن + نوشتن هم‌زمان 
-    if args.format:
+    if args.save_format:
         # cfg.setdefault("download_defaults", {})
         # cfg["download_defaults"]["save_format"] = args.format
         cfg.setdefault("download_defaults", {})["save_format"] = args.format
@@ -649,21 +816,23 @@ def main() -> int:
 
     # -- 7 -- ساخت پلان های دانلود
     # if args.brk_date_from is not None:
-    #     date_from = _parse_dt(args.brk_date_from, ZoneInfo("Europe/Athens"))   # <= گیت ورودی از CLI
+    #     date_from = normalize_datetime(args.brk_date_from, ZoneInfo("Europe/Athens"))   # <= گیت ورودی از CLI
     # if args.brk_date_to is not None:
-    #     date_to   = _parse_dt(args.brk_date_to  , ZoneInfo("Europe/Athens"))   # <= گیت ورودی از CLI
+    #     date_to   = normalize_datetime(args.brk_date_to  , ZoneInfo("Europe/Athens"))   # <= گیت ورودی از CLI
 
     plans = loader.build_plan(
-        symbols=args.symbols,
-        timeframes=args.timeframes,
-        lookback_bars=args.lookback,
-        date_from=args.brk_date_from,
-        date_to=args.brk_date_to,
+        symbols=None,            # args.symbols,
+        timeframes=None,         # args.timeframes,
+        # lookback_bars=7,       # args.lookback,
+        # date_from=None,            # args.brk_date_from,
+        # date_to=None,              # args.brk_date_to,
+        # date_tz=ZoneInfo("Asia/Tehran"),
+        result_tz="Asia/Tehran",
         # range_policy="count",
     )
 
     # -- 8 -- اجرای لودر و دریافت نتیجه دانلودها
-    results = loader.run(plans)
+    results = loader.run_plan(plans)
 
     # -- 9 -- نوشتن نام ستونهای محصول
     for res in results:
@@ -673,8 +842,8 @@ def main() -> int:
 
         if not isinstance(df, pd.DataFrame):
             df = pd.DataFrame(df)
-        df.to_csv(f"__{symbol}_{tf}.csv")
-
+        df.to_csv(f"___{symbol}_{tf}.csv")
+        logger.info(f"Df saved in root of project: ___{symbol}_{tf}.csv")
     # -- 10 -- گزارش خلاصه 
     ok  = [r for r in results if "error" not in r]
     bad = [r for r in results if "error"     in r]
@@ -711,7 +880,7 @@ if __name__ == "__main__":
 12 run                     --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
 13 _parse_args             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
 14 _setup_logging          --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-15 _parse_dt               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
+15 normalize_datetime               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
 16 main                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
 17 (Global code)           -/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
 """

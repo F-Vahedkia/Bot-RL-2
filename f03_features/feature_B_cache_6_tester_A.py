@@ -20,7 +20,7 @@ from f03_features.feature_B_cache_6 import (
     build_cache_key,
     cached_compute,
 )
-from f10_utils.parser import parse_spec, ParsedSpec
+from f10_utils.functions.parser import parse_spec, ParsedSpec
 
 # ===================================================================
 # _stable_hash

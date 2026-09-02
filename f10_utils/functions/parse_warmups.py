@@ -9,11 +9,11 @@ from typing import List, Dict, Optional
 from pathlib import Path
 
 # ------------------ Importing Internal Modules ---------------------
-from f02_data.data_handler_Helpers import check_tfs
-from f10_utils.parser import parse_spec
+from f02_data.data_layer_functions import check_tfs
+from f10_utils.functions.parser import parse_spec
 from f10_utils.config_loader import load_config
 from f10_utils.config_path_funcs import project_root
-from f10_utils.constants import mapping_tfs
+from f10_utils.functions.constants import mapping_tfs
 
 # -------------------- Logger for this module -----------------------
 logger = logging.getLogger(__name__)
