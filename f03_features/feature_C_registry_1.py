@@ -662,7 +662,7 @@ PARABOLIC_SAR_PARAMETERS = [
         description="Low price column",
     ),
     ParameterSpec(
-        name="acceleration_start",
+        name="af_start",  # acceleration factor _start
         aliases=("af_start"),
         dtype=(int, float),
         default=0.02,
@@ -671,7 +671,7 @@ PARABOLIC_SAR_PARAMETERS = [
         description="Initial acceleration factor",
     ),
     ParameterSpec(
-        name="acceleration_step",
+        name="af_step",  # acceleration factor _step
         aliases=("af_step", "step"),
         dtype=(int, float),
         default=0.02,
@@ -680,7 +680,7 @@ PARABOLIC_SAR_PARAMETERS = [
         description="Acceleration factor increment",
     ),
     ParameterSpec(
-        name="acceleration_max",
+        name="af_max",  # acceleration factor _max
         aliases=("af_max", "max_step"),
         dtype=(int, float),
         default=0.2,

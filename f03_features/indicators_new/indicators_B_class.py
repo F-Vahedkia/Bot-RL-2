@@ -1,3 +1,5 @@
+# Last revewed at 1405/06/17
+
 """
 Classic Technical Indicators - Wrapper Classes
 Stateful wrappers around indicators_maths state classes.
@@ -384,7 +386,14 @@ class ParabolicSAR:
 class HeikinAshi:
     """ Heikin-Ashi wrapper """
     
-    def __init__(self):
+    def __init__(
+        self,
+        open_column='open',
+        high_column='high',
+        low_column='low',
+        close_column='close',
+        result_prefix='ha',
+    ):
         self.state = HeikinAshiState()
     
     def update(self, open_: float, high: float, low: float, close: float, **kwargs) -> Tuple[float, float, float, float]:
@@ -553,11 +562,17 @@ class Supertrend:
     ParabolicSAR : Alternative trend-following indicator
     """
     
-    def __init__(self, 
-                 period: int = 10, 
-                 multiplier: float = 3.0,
-                 atr_method: Literal["classic", "wilder", "ema"] = "wilder",
-                 min_periods: Optional[int] = None):
+    def __init__(
+        self,
+        period: int = 10,
+        multiplier: float = 3.0,
+        high_column: str = "high",
+        low_column: str = "low",
+        close_column: str = "close",
+        method: Literal["classic", "wilder", "ema"] = "wilder",
+        min_periods: Optional[int] = None,
+    ):
+
         """
         Initialize Supertrend indicator
         
@@ -574,12 +589,15 @@ class Supertrend:
         """
         self.period = period
         self.multiplier = multiplier
-        self.atr_method = atr_method
+        self.high_column = high_column
+        self.low_column = low_column
+        self.close_column = close_column
+        self.atr_method = method
         self.min_periods = min_periods if min_periods is not None else period
         
         # Map string method to integer for jitclass
         method_map = {"classic": 0, "wilder": 1, "ema": 2}
-        atr_method_int = method_map.get(atr_method, 1)  # Default to wilder
+        atr_method_int = method_map.get(method, 1)  # Default to wilder
         
         # Initialize state with integer method
         self.state = SupertrendState(

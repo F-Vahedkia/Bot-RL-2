@@ -251,8 +251,31 @@ class FeatureEngine:
         tf = tf.upper()
         df = dataset.get(tf)
 
-        kwargs = dict(ps.kwargs)
-        out = spec.fn(df, **kwargs)
+        kwargs = dict(ps.kwargs)                                  # old
+        # for param in spec.parameters:
+        #     if param.name not in kwargs:
+        #         for alias in param.aliases:
+        #             if alias in kwargs:
+        #                 kwargs[param.name] = kwargs.pop(alias)
+        #                 break
+        out = spec.fn(df, **kwargs)                               # old
+
+        # try:                                                        # new for debug only
+        #     out = spec.fn(df, **kwargs)                             # new for debug only
+        #     print("DEBUG MACD OUTPUT")
+        #     print(out.tail(10))
+        #     print(out.isna().sum())
+        # except TypeError as e:                                      # new for debug only
+        #     if "unexpected keyword argument 'column'" in str(e):    # new for debug only
+        #         kwargs.pop("column", None)                          # new for debug only
+        #         out = spec.fn(df, **kwargs)                         # new for debug only
+        #         print("DEBUG MACD OUTPUT")
+        #         print(out.tail(10))
+        #         print(out.isna().sum())
+        #     else:                                                   # new for debug only
+        #         raise                                               # new for debug only
+
+
 
         if out is None:
             return dataset

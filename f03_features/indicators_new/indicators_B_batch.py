@@ -1,3 +1,5 @@
+# Last revewed at 1405/06/17
+
 """
 indicators_B_batch.py
 ===================
@@ -402,7 +404,7 @@ def truerange_batch(high, low, close):
     return result
 
 
-def truerange_batch_df(df, high_col='high', low_col='low', close_col='close',
+def truerange_batch_df(df, high_column='high', low_column='low', close_column='close',
                        result_col='true_range', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -411,11 +413,11 @@ def truerange_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     result_col : str, optional
         نام ستون نتیجه (پیش‌فرض: 'true_range')
@@ -425,9 +427,9 @@ def truerange_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.Series
         سری نتایج True Range
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     result = truerange_batch(high, low, close)
 
@@ -475,8 +477,8 @@ def atr_batch(high, low, close, n=14, method=1, min_periods=-1):
     return result
 
 
-def atr_batch_df(df, high_col='high', low_col='low', close_col='close', 
-                 n=14, method='wilder', min_periods=-1, 
+def atr_batch_df(df, high_column='high', low_column='low', close_column='close', 
+                 period=14, method='wilder', min_periods=-1, 
                  result_col='atr', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -485,17 +487,17 @@ def atr_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         دوره ATR (پیش‌فرض: 14)
     method : int, optional
         روش محاسبه: 0=classic, 1=wilder, 2=ema (پیش‌فرض: 1)
     min_periods : int, optional
         حداقل دوره برای محاسبه (پیش‌فرض: -1 که برابر n می‌شود)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     result_col : str, optional
         نام ستون نتیجه (پیش‌فرض: 'atr')
@@ -505,9 +507,9 @@ def atr_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.Series
         سری نتایج ATR
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     # تبدیل method از string به int
     method_map = {'classic': 0, 'wilder': 1, 'ema': 2}
@@ -515,11 +517,11 @@ def atr_batch_df(df, high_col='high', low_col='low', close_col='close',
     if method_int is None:
         raise ValueError(f"Invalid method: {method}. Choose from {list(method_map.keys())}")
     
-    result = atr_batch(high, low, close, n=n, method=method_int, min_periods=min_periods)
+    result = atr_batch(high, low, close, n=period, method=method_int, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}_{method}': result
+            f'{result_col}_{period}_{method}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -567,7 +569,7 @@ def macd_batch(close, fast=12, slow=26, signal=9):
     return macd_line, signal_line, histogram
 
 
-def macd_batch_df(df, close_col='close',
+def macd_batch_df(df, column='close',                     # close_col='close',
                   fast=12, slow=26, signal=9, 
                   macd_col='macd', signal_col='macd_signal',
                   hist_col='macd_hist', add_para_to_names = False):
@@ -584,7 +586,7 @@ def macd_batch_df(df, close_col='close',
         دوره EMA کند (پیش‌فرض: 26)
     signal : int, optional
         دوره EMA سیگنال (پیش‌فرض: 9)
-    close_col : str, optional
+    column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     macd_col : str, optional
         نام ستون MACD line (پیش‌فرض: 'macd')
@@ -598,10 +600,23 @@ def macd_batch_df(df, close_col='close',
     pd.DataFrame
         دیتافریم با سه ستون: MACD line, Signal line, Histogram
     """
-    close = df[close_col].values
+    close = df[column].values
     
     macd_line, signal_line, histogram = macd_batch(close, fast=fast, slow=slow, signal=signal)
-    
+
+    # print("MACD valid:", np.sum(~np.isnan(macd_line)))
+    # print("Signal valid:", np.sum(~np.isnan(signal_line)))
+    # print("Hist valid:", np.sum(~np.isnan(histogram)))
+
+    # print("MACD tail:")
+    # print(macd_line[-10:])
+
+    # print("Signal tail:")
+    # print(signal_line[-10:])
+
+    # print("Hist tail:")
+    # print(histogram[-10:])
+
     if add_para_to_names:
         return pd.DataFrame({
             f'{macd_col}_{fast}_{slow}_{signal}': macd_line,
@@ -665,8 +680,8 @@ def bollinger_batch(close, n=20, k=2.0, min_periods=-1):
     return upper, middle, lower, width, percent
 
 
-def bollinger_batch_df(df, close_col='close',
-                       n=20, k=2.0, min_periods=-1,
+def bollinger_batch_df(df, column='close',
+                       period=20, multiplier=2.0, min_periods=-1,
                        upper_col='bb_upper', middle_col='bb_middle', 
                        lower_col='bb_lower', width_col='bb_width', 
                        percent_col='bb_percent', add_para_to_names = False):
@@ -677,9 +692,9 @@ def bollinger_batch_df(df, close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         دوره محاسبه (پیش‌فرض: 20)
-    k : float, optional
+    multiplier : float, optional
         ضریب انحراف معیار (پیش‌فرض: 2.0)
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه (پیش‌فرض: -1 یعنی برابر n)
@@ -701,19 +716,19 @@ def bollinger_batch_df(df, close_col='close',
     pd.DataFrame
         دیتافریم با پنج ستون: upper, middle, lower, width, percent
     """
-    close = df[close_col].values
+    close = df[column].values
     
     upper, middle, lower, width, percent = bollinger_batch(
-        close, n=n, k=k, min_periods=min_periods
+        close, n=period, k=multiplier, min_periods=min_periods
     )
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{upper_col}_{n}_{k}': upper,
-            f'{middle_col}_{n}_{k}': middle,
-            f'{lower_col}_{n}_{k}': lower,
-            f'{width_col}_{n}_{k}': width,
-            f'{percent_col}_{n}_{k}': percent
+            f'{upper_col}_{period}_{multiplier}': upper,
+            f'{middle_col}_{period}_{multiplier}': middle,
+            f'{lower_col}_{period}_{multiplier}': lower,
+            f'{width_col}_{period}_{multiplier}': width,
+            f'{percent_col}_{period}_{multiplier}': percent
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -778,8 +793,8 @@ def keltner_batch(high, low, close, n=20, m=2.0, min_periods=-1):
     return upper, middle, lower, width, percent
 
 
-def keltner_batch_df(df, high_col='high', low_col='low', close_col='close',
-                     n=20, m=2.0, min_periods=-1,
+def keltner_batch_df(df, high_column='high', low_column='low', close_column='close',
+                     period=20, multiplier=2.0, min_periods=-1,
                      upper_col='kc_upper', middle_col='kc_middle',
                      lower_col='kc_lower', width_col='kc_width',
                      percent_col='kc_percent', add_para_to_names = False):
@@ -790,17 +805,17 @@ def keltner_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         دوره محاسبه (پیش‌فرض: 20)
-    m : float, optional
+    multiplier : float, optional
         ضریب ATR (پیش‌فرض: 2.0)
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه (پیش‌فرض: -1 یعنی برابر n)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     upper_col : str, optional
         نام ستون کانال بالایی (پیش‌فرض: 'kc_upper')
@@ -818,21 +833,21 @@ def keltner_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.DataFrame
         دیتافریم با پنج ستون: upper, middle, lower, width, percent
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     upper, middle, lower, width, percent = keltner_batch(
-        high, low, close, n=n, m=m, min_periods=min_periods
+        high, low, close, n=period, m=multiplier, min_periods=min_periods
     )
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{upper_col}_{n}_{m}': upper,
-            f'{middle_col}_{n}_{m}': middle,
-            f'{lower_col}_{n}_{m}': lower,
-            f'{width_col}_{n}_{m}': width,
-            f'{percent_col}_{n}_{m}': percent
+            f'{upper_col}_{period}_{multiplier}': upper,
+            f'{middle_col}_{period}_{multiplier}': middle,
+            f'{lower_col}_{period}_{multiplier}': lower,
+            f'{width_col}_{period}_{multiplier}': width,
+            f'{percent_col}_{period}_{multiplier}': percent
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -892,7 +907,7 @@ def stochastic_batch(high, low, close, k_period=14, d_period=3, smooth_k=3, meth
     return k, d
 
 
-def stochastic_batch_df(df, high_col='high', low_col='low', close_col='close',
+def stochastic_batch_df(df, high_column='high', low_column='low', close_column='close',
                        k_period=14, d_period=3, smooth_k=3, method='sma', min_periods=-1,
                        k_col='stoch_k', d_col='stoch_d', add_para_to_names = False):
     """
@@ -912,11 +927,11 @@ def stochastic_batch_df(df, high_col='high', low_col='low', close_col='close',
         روش هموارسازی: 'sma' یا 'ema' (پیش‌فرض: 'sma')
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه (پیش‌فرض: -1 یعنی برابر k_period)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     k_col : str, optional
         نام ستون %K (پیش‌فرض: 'stoch_k')
@@ -928,9 +943,9 @@ def stochastic_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.DataFrame
         دیتافریم با دو ستون: k, d
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     # تبدیل method از string به int
     method_map = {'sma': 0, 'ema': 1}
@@ -994,8 +1009,8 @@ def cci_batch(high, low, close, n=20, min_periods=-1):
     return result
 
 
-def cci_batch_df(df, high_col='high', low_col='low', close_col='close',
-                 n=20, min_periods=-1,
+def cci_batch_df(df, high_column='high', low_column='low', close_column='close',
+                 period=20, min_periods=-1,
                  result_col='cci', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1004,15 +1019,15 @@ def cci_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         دوره محاسبه CCI (پیش‌فرض: 20)
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه (پیش‌فرض: -1 یعنی برابر n)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     output_col : str, optional
         نام ستون خروجی (پیش‌فرض: 'cci')
@@ -1022,15 +1037,15 @@ def cci_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.Series
         سری مقادیر CCI
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
-    result = cci_batch(high, low, close, n=n, min_periods=min_periods)
+    result = cci_batch(high, low, close, n=period, min_periods=min_periods)
 
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -1082,8 +1097,8 @@ def mfi_batch(high, low, close, volume, n=14, min_periods=-1):
     return result
 
 
-def mfi_batch_df(df, high_col='high', low_col='low', close_col='close', volume_col='volume',
-                 n=14, min_periods=-1,
+def mfi_batch_df(df, high_column='high', low_column='low', close_column='close', volume_column='volume',
+                 period=14, min_periods=-1,
                  result_col='mfi', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1092,17 +1107,17 @@ def mfi_batch_df(df, high_col='high', low_col='low', close_col='close', volume_c
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         دوره محاسبه MFI (پیش‌فرض: 14)
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه (پیش‌فرض: -1 یعنی برابر n)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
-    volume_col : str, optional
+    volume_column : str, optional
         نام ستون حجم معاملات (پیش‌فرض: 'volume')
     output_col : str, optional
         نام ستون خروجی (پیش‌فرض: 'mfi')
@@ -1112,16 +1127,16 @@ def mfi_batch_df(df, high_col='high', low_col='low', close_col='close', volume_c
     pd.Series
         سری مقادیر MFI
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
-    volume = df[volume_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
+    volume = df[volume_column].values
     
-    result = mfi_batch(high, low, close, volume, n=n, min_periods=min_periods)
+    result = mfi_batch(high, low, close, volume, n=period, min_periods=min_periods)
 
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
          return pd.DataFrame({
@@ -1165,7 +1180,7 @@ def obv_batch(close, volume):
     return result
 
 
-def obv_batch_df(df, close_col='close', volume_col='volume',
+def obv_batch_df(df, close_column='close', volume_column='volume',
                  result_col='obv', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1174,9 +1189,9 @@ def obv_batch_df(df, close_col='close', volume_col='volume',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
-    volume_col : str, optional
+    volume_column : str, optional
         نام ستون حجم معاملات (پیش‌فرض: 'volume')
     output_col : str, optional
         نام ستون خروجی (پیش‌فرض: 'obv')
@@ -1186,8 +1201,8 @@ def obv_batch_df(df, close_col='close', volume_col='volume',
     pd.Series
         سری مقادیر OBV
     """
-    close = df[close_col].values
-    volume = df[volume_col].values
+    close = df[close_column].values
+    volume = df[volume_column].values
     
     result = obv_batch(close, volume)
     
@@ -1241,8 +1256,8 @@ def williamsr_batch(high, low, close, n=14, min_periods=-1):
     return result
 
 
-def williamsr_batch_df(df, high_col='high', low_col='low', close_col='close',
-                       n=14, min_periods=-1,
+def williamsr_batch_df(df, high_column='high', low_column='low', close_column='close',
+                       period=14, min_periods=-1,
                        result_col='williamsr', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1251,15 +1266,15 @@ def williamsr_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    n : int, optional
+    period : int, optional
         تعداد دوره‌های lookback (پیش‌فرض: 14)
     min_periods : int, optional
         حداقل تعداد داده برای محاسبه معتبر (پیش‌فرض: -1 یعنی برابر n)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     output_col : str, optional
         نام ستون خروجی (پیش‌فرض: 'williamsr')
@@ -1269,15 +1284,15 @@ def williamsr_batch_df(df, high_col='high', low_col='low', close_col='close',
     pd.Series
         سری مقادیر Williams %R
     """
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
-    result = williamsr_batch(high, low, close, n=n, min_periods=min_periods)
+    result = williamsr_batch(high, low, close, n=period, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -1344,7 +1359,7 @@ def parabolicsar_batch(high, low, af_start=0.02, af_step=0.02, af_max=0.2):
     return result
 
 
-def parabolicsar_batch_df(df, high_col='high', low_col='low',
+def parabolicsar_batch_df(df, high_column='high', low_column='low',
                   af_start=0.02, af_step=0.02, af_max=0.2,
                   result_col='psar', add_para_to_names = False):
     """
@@ -1360,9 +1375,9 @@ def parabolicsar_batch_df(df, high_col='high', low_col='low',
         مقدار افزایش AF در هر EP جدید (پیش‌فرض: 0.02)
     af_max : float, optional
         حداکثر مقدار AF (پیش‌فرض: 0.2)
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
     output_col : str, optional
         نام ستون خروجی (پیش‌فرض: 'psar')
@@ -1383,8 +1398,8 @@ def parabolicsar_batch_df(df, high_col='high', low_col='low',
     >>> # استفاده برای تشخیص روند
     >>> df['trend'] = np.where(df['close'] > df['psar'], 1, -1)
     """
-    high = df[high_col].values
-    low = df[low_col].values
+    high = df[high_column].values
+    low = df[low_column].values
     
     result = parabolicsar_batch(high, low, af_start=af_start, af_step=af_step, af_max=af_max)
     
@@ -1467,7 +1482,8 @@ def heikinashi_batch(open_, high, low, close):
     return ha_open, ha_high, ha_low, ha_close
 
 
-def heikinashi_batch_df(df, open_col='open', high_col='high', low_col='low', close_col='close',
+def heikinashi_batch_df(df,
+                        open_column='open', high_column='high', low_column='low', close_column='close',
                         result_prefix='ha', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1476,13 +1492,13 @@ def heikinashi_batch_df(df, open_col='open', high_col='high', low_col='low', clo
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    open_col : str, optional
+    open_column : str, optional
         نام ستون قیمت باز شدن (پیش‌فرض: 'open')
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     output_prefix : str, optional
         پیشوند برای ستون‌های خروجی (پیش‌فرض: 'ha_')
@@ -1515,10 +1531,10 @@ def heikinashi_batch_df(df, open_col='open', high_col='high', low_col='low', clo
     >>> df['strong_downtrend'] = (ha_df['ha_close'] < ha_df['ha_open']) & \
     ...                           (ha_df['ha_high'] == ha_df['ha_open'])
     """
-    open_arr = df[open_col].values
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    open_arr = df[open_column].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     ha_o, ha_h, ha_l, ha_c = heikinashi_batch(open_arr, high, low, close)
     
@@ -1631,8 +1647,8 @@ def supertrend_batch(high, low, close, period=10, multiplier=3.0,
     return supertrend, direction
 
 
-def supertrend_batch_df(df, high_col='high', low_col='low', close_col='close',
-                        period=10, multiplier=3.0, atr_method='wilder', min_periods=-1,
+def supertrend_batch_df(df, high_column='high', low_column='low', close_column='close',
+                        period=10, multiplier=3.0, method='wilder', min_periods=-1,
                         super_col='supertrend', direction_col='st_direction', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -1641,11 +1657,11 @@ def supertrend_batch_df(df, high_col='high', low_col='low', close_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
-    close_col : str, optional
+    close_column : str, optional
         نام ستون قیمت بسته شدن (پیش‌فرض: 'close')
     period : int, optional
         دوره ATR (پیش‌فرض: 10)
@@ -1715,15 +1731,15 @@ def supertrend_batch_df(df, high_col='high', low_col='low', close_col='close',
     ...                              output_col='st_ema')
     """
     # تبدیل method از string به int
-    if isinstance(atr_method, str):
+    if isinstance(method, str):
         method_map = {'classic': 0, 'wilder': 1, 'ema': 2}
-        atr_method_int = method_map.get(str(atr_method).lower(), 1)  # default: 'wilder'
+        atr_method_int = method_map.get(str(method).lower(), 1)  # default: 'wilder'
     else:
-        atr_method_int = int(atr_method)  # اگر عدد بود، مستقیم استفاده کن
+        atr_method_int = int(method)  # اگر عدد بود، مستقیم استفاده کن
 
-    high = df[high_col].values
-    low = df[low_col].values
-    close = df[close_col].values
+    high = df[high_column].values
+    low = df[low_column].values
+    close = df[close_column].values
     
     st, direction = supertrend_batch(high, low, close, period=period, 
                                      multiplier=multiplier, atr_method=atr_method_int,
@@ -1731,8 +1747,8 @@ def supertrend_batch_df(df, high_col='high', low_col='low', close_col='close',
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{super_col}_{period}_{multiplier}_{atr_method}': st,
-            f'{direction_col}_{period}_{multiplier}_{atr_method}': direction
+            f'{super_col}_{period}_{multiplier}_{method}': st,
+            f'{direction_col}_{period}_{multiplier}_{method}': direction
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -1841,7 +1857,7 @@ def aroon_batch(high, low, period=25, min_periods=-1):
     return aroon_up, aroon_down, oscillator
 
 
-def aroon_batch_df(df, high_col='high', low_col='low',
+def aroon_batch_df(df, high_column='high', low_column='low',
                    period=25, min_periods=-1,
                    aroon_up_col='aroon_up', aroon_down_col='aroon_down',
                    aroon_osc_col='aroon_oscillator', add_para_to_names = False):
@@ -1852,9 +1868,9 @@ def aroon_batch_df(df, high_col='high', low_col='low',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    high_col : str, optional
+    high_column : str, optional
         نام ستون قیمت بالا (پیش‌فرض: 'high')
-    low_col : str, optional
+    low_column : str, optional
         نام ستون قیمت پایین (پیش‌فرض: 'low')
     period : int, optional
         دوره lookback (پیش‌فرض: 25)
@@ -1989,8 +2005,8 @@ def aroon_batch_df(df, high_col='high', low_col='low',
     ...     (aroon_long['aroon_up_50'] > 70)
     ... )
     """
-    high = df[high_col].values
-    low = df[low_col].values
+    high = df[high_column].values
+    low = df[low_column].values
     
     aroon_up, aroon_down, oscillator = aroon_batch(high, low, 
                                                     period=period, 
@@ -2049,8 +2065,8 @@ def dema_batch(data, n=20, min_periods=-1):
     return result
 
 
-def dema_batch_df(df, price_col='close',
-                  n=20, min_periods=-1,
+def dema_batch_df(df, column='close',
+                  period=20, min_periods=-1,
                   result_col='dema', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -2059,7 +2075,7 @@ def dema_batch_df(df, price_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    price_col : str, optional
+    column : str, optional
         نام ستون قیمت (پیش‌فرض: 'close')
     n : int, optional
         دوره EMA (پیش‌فرض: 20)
@@ -2081,12 +2097,12 @@ def dema_batch_df(df, price_col='close',
     >>> df['dema'] = dema_batch_df(df, n=20)
     >>> df['signal'] = np.where(df['close'] > df['dema'], 1, -1)
     """
-    data = df[price_col].values
-    result = dema_batch(data, n=n, min_periods=min_periods)
+    data = df[column].values
+    result = dema_batch(data, n=period, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -2134,8 +2150,8 @@ def tema_batch(data, n=20, min_periods=-1):
     return result
 
 
-def tema_batch_df(df, price_col='close',
-                  n=20, min_periods=-1,
+def tema_batch_df(df, column='close',
+                  period=20, min_periods=-1,
                   result_col='tema', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -2144,7 +2160,7 @@ def tema_batch_df(df, price_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    price_col : str, optional
+    column : str, optional
         نام ستون قیمت (پیش‌فرض: 'close')
     n : int, optional
         دوره EMA (پیش‌فرض: 20)
@@ -2167,12 +2183,12 @@ def tema_batch_df(df, price_col='close',
     >>> df['dema'] = dema_batch_df(df, n=20)
     >>> df['tema'] = tema_batch_df(df, n=20)
     """
-    data = df[price_col].values
-    result = tema_batch(data, n=n, min_periods=min_periods)
+    data = df[column].values
+    result = tema_batch(data, n=period, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -2224,8 +2240,8 @@ def kama_batch(data, n=10, fast_span=2, slow_span=30, min_periods=-1):
     return result
 
 
-def kama_batch_df(df, price_col='close',
-                  n=10, fast_span=2, slow_span=30, min_periods=-1,
+def kama_batch_df(df, column='close',
+                  period=10, fast_span=2, slow_span=30, min_periods=-1,
                   result_col='kama', add_para_to_names = False):
     """
     Wrapper برای استفاده با DataFrame
@@ -2234,7 +2250,7 @@ def kama_batch_df(df, price_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    price_col : str, optional
+    column : str, optional
         نام ستون قیمت (پیش‌فرض: 'close')
     n : int, optional
         دوره ER (پیش‌فرض: 10)
@@ -2260,13 +2276,13 @@ def kama_batch_df(df, price_col='close',
     >>> df['kama'] = kama_batch_df(df)
     >>> df['signal'] = np.where(df['close'] > df['kama'], 1, -1)
     """
-    data = df[price_col].values
-    result = kama_batch(data, n=n, fast_span=fast_span, slow_span=slow_span, 
+    data = df[column].values
+    result = kama_batch(data, n=period, fast_span=fast_span, slow_span=slow_span, 
                        min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}_{fast_span}_{slow_span}': result
+            f'{result_col}_{period}_{fast_span}_{slow_span}': result
         }, index=df.index)
     else:
         return pd.DataFrame({
@@ -2308,8 +2324,8 @@ def hma_batch(data, n=20, min_periods=-1):
     return result
 
 
-def hma_batch_df(df, price_col='close',
-                 n=20, min_periods=-1,
+def hma_batch_df(df, column='close',
+                 period=20, min_periods=-1,
                  result_col='hma', add_para_to_names = False):
     """
     محاسبه Hull Moving Average برای DataFrame.
@@ -2318,7 +2334,7 @@ def hma_batch_df(df, price_col='close',
     -----------
     df : pd.DataFrame
         دیتافریم ورودی
-    price_col : str
+    column : str
         نام ستون قیمت (پیش‌فرض: 'close')
     n : int
         دوره HMA (پیش‌فرض: 20)
@@ -2334,13 +2350,13 @@ def hma_batch_df(df, price_col='close',
     مثال:
     ------
     # HMA استاندارد 20 دوره‌ای
-    df = hma_batch_df(df, price_col='close', n=20)
+    df = hma_batch_df(df, column='close', n=20)
     
     # HMA سریع 9 دوره‌ای
-    df = hma_batch_df(df, price_col='close', n=9, result_col='HMA_9')
+    df = hma_batch_df(df, column='close', n=9, result_col='HMA_9')
     
     # HMA با min_periods سفارشی
-    df = hma_batch_df(df, price_col='close', n=20, min_periods=10)
+    df = hma_batch_df(df, column='close', n=20, min_periods=10)
     
     # استراتژی تقاطع HMA
     df = hma_batch_df(df, n=9, result_col='HMA_fast')
@@ -2348,11 +2364,11 @@ def hma_batch_df(df, price_col='close',
     df['signal'] = np.where(df['HMA_fast'] > df['HMA_slow'], 1, -1)
     """
     
-    result = hma_batch(df[price_col].values, n=n, min_periods=min_periods)
+    result = hma_batch(df[column].values, n=period, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({
-            f'{result_col}_{n}': result
+            f'{result_col}_{period}': result
         }, index=df.index)
     else:
         return pd.DataFrame({

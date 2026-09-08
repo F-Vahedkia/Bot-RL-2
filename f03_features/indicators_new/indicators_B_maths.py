@@ -286,11 +286,16 @@ class RSIState:
 
         self.prev = close
         
+        # if self.avg_loss == 0.0:
+        #     rs = 0.0
+        # else:
+        #     rs = self.avg_gain / self.avg_loss
         if self.avg_loss == 0.0:
-            rs = 0.0
-        else:
-            rs = self.avg_gain / self.avg_loss
-            
+            if self.avg_gain == 0.0:
+                return 50.0
+            return 100.0
+        rs = self.avg_gain / self.avg_loss
+
         return 100.0 - (100.0 / (1.0 + rs))
 
     def reset(self):
@@ -426,12 +431,19 @@ macd_spec = [
 
 @jitclass(macd_spec)
 class MACDState:
+
     """
     استفاده از EMAState به‌عنوان nested jitclass
 
     نحوه استفاده:
+
     macd = MACDState(fast=12, slow=26, signal=9)
     macd_line, signal_line, histogram = macd.update(close)
+
+    نکته:
+    EMA مربوط به signal نباید NaNهای اولیه MACD را دریافت کند.
+    بنابراین تا زمانی که slow EMA معتبر نشده است، signal EMA
+    به‌روزرسانی نمی‌شود.
     """
 
     def __init__(self, fast=12, slow=26, signal=9):
@@ -442,9 +454,23 @@ class MACDState:
     def update(self, close):
         f = self.fast.update(close)
         s = self.slow.update(close)
+
+        # تا زمانی که slow EMA معتبر نشده،
+        # MACD و Signal و Histogram معتبر نیستند.
+        if np.isnan(s):
+            return np.nan, np.nan, np.nan
+
         macd = f - s
+
+        # فقط MACD معتبر وارد Signal EMA می‌شود.
         sig = self.sig.update(macd)
+
+        # Signal EMA خودش تا تکمیل min_periods مقدار NaN می‌دهد.
+        if np.isnan(sig):
+            return macd, np.nan, np.nan
+
         hist = macd - sig
+
         return macd, sig, hist
 
     def reset(self):
@@ -1262,23 +1288,54 @@ class AroonState:
         # بررسی min_periods
         if self.count < self.min_periods:
             return (np.nan, np.nan, np.nan)
+
+        # ============================================بلوک قدیمی حذف شده
+        # # پیدا کردن آخرین موقعیت highest high
+        # max_high = self.highs[0]
+        # bars_since_high = current_len - 1
+        # for i in range(current_len):
+        #     if self.highs[i] >= max_high:
+        #         max_high = self.highs[i]
+        #         bars_since_high = current_len - 1 - i
         
+        # # پیدا کردن آخرین موقعیت lowest low
+        # min_low = self.lows[0]
+        # bars_since_low = current_len - 1
+        # for i in range(current_len):
+        #     if self.lows[i] <= min_low:
+        #         min_low = self.lows[i]
+        #         bars_since_low = current_len - 1 - i
+
+
+        # ============================================بلوک جدید- شروع
+        # ترتیب منطقی زمانی:
+        # قبل از پر شدن buffer، داده‌ها از index 0 شروع می‌شوند.
+        # بعد از پر شدن، self.head به قدیمی‌ترین داده اشاره می‌کند.
+        start = 0 if self.count < self.period else self.head
+
         # پیدا کردن آخرین موقعیت highest high
-        max_high = self.highs[0]
+        max_high = self.highs[start]
         bars_since_high = current_len - 1
+
         for i in range(current_len):
-            if self.highs[i] >= max_high:
-                max_high = self.highs[i]
+            idx = (start + i) % self.period
+
+            if self.highs[idx] >= max_high:
+                max_high = self.highs[idx]
                 bars_since_high = current_len - 1 - i
-        
+
         # پیدا کردن آخرین موقعیت lowest low
-        min_low = self.lows[0]
+        min_low = self.lows[start]
         bars_since_low = current_len - 1
+
         for i in range(current_len):
-            if self.lows[i] <= min_low:
-                min_low = self.lows[i]
+            idx = (start + i) % self.period
+
+            if self.lows[idx] <= min_low:
+                min_low = self.lows[idx]
                 bars_since_low = current_len - 1 - i
-        
+        # ============================================بلوک جدید- پایان
+
         # محاسبه Aroon Up و Aroon Down
         aroon_up = ((self.period - bars_since_high) / self.period) * 100.0
         aroon_down = ((self.period - bars_since_low) / self.period) * 100.0
@@ -1725,6 +1782,5 @@ class HMAState:
         self.wma_full_state = WMAState(self.n          , 1)
         self.wma_sqrt_state = WMAState(self.sqrt_period, 1)
         self.count = 0
-
 
 # ===================================================================

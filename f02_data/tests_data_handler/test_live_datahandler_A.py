@@ -46,7 +46,7 @@ class LiveDataHandlerTester:
         if self.base_tf not in self.timeframes:
             self.timeframes = [self.base_tf] + self.timeframes
         
-        self.num_live_candles = 6  # تعداد کندل‌های زنده برای جمع‌آوری
+        self.num_live_candles = 3  # تعداد کندل‌های زنده برای جمع‌آوری
         
         self.event_bus = EventBus(queue_size=1000)
         self.data_handler = DataHandler(cfg=cfg, symbol=symbol, event_bus=self.event_bus)
