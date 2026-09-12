@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 import logging
+import pandas as pd
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
@@ -13,13 +14,50 @@ from f03_features.feature_C_engine_6 import FeatureEngine
 from f03_features.feature_B_store import FeatureStoreV2
 from f03_features.observation_B_builder import ObservationBuilder
 
+from f03_features.time_features.time_feature_engine import apply_time_features, add_time_features_to_live_df
+
 logger = logging.getLogger(__name__)
 
 class FeaturePipeline:
     """ اتصال رسمی بین لایه Data و Features.
-    جریان داده:
-        MTFDataset  ->  FeatureEngine  ->  FeatureStore  ->  ObservationBuilder  ->  Observation
+
+    جریان داده برای حالت batch:
+    ----------------------------
+                DataHandler
+                    ↓
+                MTFDataset
+                    ↓
+                _apply_time_features()
+                    ↓
+                Time Features فقط روی base_tf
+                    ↓
+                FeatureEngine.execute()
+                    ↓
+                FeatureStore
+                    ↓
+                ObservationBuilder
+                    ↓
+                Observation
+
+    و جریان داده برای حالت live:
+    -----------------------------
+                DataHandler
+                    ↓
+                MTFDataset
+                    ↓
+                _apply_time_features_live()
+                    ↓
+                Time Features فقط روی base_tf
+                    ↓
+                FeatureEngine.execute(mode="live")
+                    ↓
+                FeatureStore
+                    ↓
+                ObservationBuilder
+                    ↓
+                Observation
     """
+
     # ========================================================================= 1 بررسی شد و فهمیده شد
     def __init__(
         self,
@@ -60,6 +98,7 @@ class FeaturePipeline:
         self._dataset: Optional[MTFDataset] = None
         self._features: Optional[MTFDataset] = None
         self._observation = None
+        self._time_feature_previous_timestamp: pd.Timestamp | None = None  # new2 کُس کِش
 
         logger.info(
             "FeaturePipeline initialized for symbol=%s",
@@ -76,9 +115,107 @@ class FeaturePipeline:
         # -----------------------------------------------------------
         # reset live runtime state
         # -----------------------------------------------------------
+        self._time_feature_previous_timestamp = None
         self._dataset = None
         self._features = None
         self._observation = None
+
+    # ========================================================================= new added at 050617
+    def _apply_time_features(
+        self,
+        dataset: MTFDataset,
+    ) -> MTFDataset:
+        """
+        Apply configured time features to the current symbol.
+
+        Configuration:
+            features.time_features.enabled
+            features.time_features.symbols.<SYMBOL>
+
+        The time-feature engine intentionally applies the selected
+        features only to dataset.base_tf.
+        """
+
+        if self.config is None:
+            return dataset
+
+        time_features_cfg = (
+            self.config
+            .get("features", {})
+            .get("time_features", {})
+            or {}
+        )
+
+        if not time_features_cfg.get("enabled", False):
+            return dataset
+
+        symbols_cfg = time_features_cfg.get("symbols", {}) or {}
+        requested_features = symbols_cfg.get(self.symbol.upper(), [])
+
+        if not requested_features:
+            return dataset
+
+        return apply_time_features(
+            dataset=dataset,
+            time_feature_config={
+                self.symbol.upper(): list(requested_features),
+            },
+        )
+
+    # ========================================================================= new added at 050617
+    def _apply_time_features_live(
+        self,
+        dataset: MTFDataset,
+    ) -> MTFDataset:
+        """
+        Apply configured time features to the base timeframe
+        for live processing.
+
+        The live API is used so stateful timestamp-derived features
+        such as is_new_day can use the previous live timestamp.
+        """
+
+        time_features_cfg = (
+            self.config
+            .get("features", {})
+            .get("time_features", {})
+            or {}
+        )
+
+        if not time_features_cfg.get("enabled", False):
+            return dataset
+
+        symbols_cfg = time_features_cfg.get("symbols", {}) or {}
+
+        requested_features = symbols_cfg.get(
+            self.symbol.upper(),
+            [],
+        )
+
+        if not requested_features:
+            return dataset
+
+        base_tf = dataset.base_tf.upper()
+        df = dataset.get(base_tf)
+
+        if df is None or df.empty:
+            return dataset
+
+        updated_df = add_time_features_to_live_df(
+            df=df,
+            features=list(requested_features),
+            timeframe=base_tf,
+            previous_timestamp=self._time_feature_previous_timestamp,
+        )
+
+        self._time_feature_previous_timestamp = updated_df.index[-1]
+
+        dataset.add(
+            base_tf,
+            updated_df,
+        )
+
+        return dataset
 
     # ========================================================================= 3 بررسی شد و فهمیده شد
     def run(
@@ -107,16 +244,12 @@ class FeaturePipeline:
         پارامترها:
             dataset:
                 دیتاست چندتایم‌فریمی مربوط به Symbol جاری.
-
             mode:
                 حالت اجرای FeatureEngine، مانند train، optimize یا live.
-
             save_features:
                 در صورت True، FeatureStore نیز روی دیسک ذخیره می‌شود.
-
             save_dir:
                 مسیر ذخیره FeatureStore.
-
             save_name:
                 نام خروجی ذخیره‌شده.
 
@@ -128,17 +261,18 @@ class FeaturePipeline:
                 observation
         
         کارهایی که این متد انجام میدهد:
-            0) اعتبار سنجی دیتاست ورودی
-            1) انجام محاسبه فیچرها توسط feature_engine.execute()
-            2) ساخت فیچر استور توسط build_feature_store() که ان هم از متد feature_store.build() استفاده میکند
+            1) اعتبار سنجی دیتاست ورودی
+            2) افزودن فیچرهای زمانی به دیتاست
+            3) انجام محاسبه فیچرها توسط feature_engine.execute()
+            4) ساخت فیچر استور توسط build_feature_store() که ان هم از متد feature_store.build() استفاده میکند
                ساخت matadata
-            3) 
-            4) 
-            5) 
+            5) ذخیره نمودن فیچر استور
+            6) ساخت observation
+            7) ساخت و بازگرداندن دیکشنری خروجی
         """
 
         # -----------------------------------------------------------
-        # 0. Validation of input dataset
+        # 1. Validation of input dataset
         # -----------------------------------------------------------
         if dataset is None:
             raise ValueError("dataset is None")
@@ -160,7 +294,12 @@ class FeaturePipeline:
         )
 
         # -----------------------------------------------------------
-        # 1. Feature calculation
+        # 2. Add time features
+        # -----------------------------------------------------------
+        dataset = self._apply_time_features(dataset)
+        
+        # -----------------------------------------------------------
+        # 3. Feature calculation
         # -----------------------------------------------------------
         features = self.feature_engine.execute(
             dataset=dataset,
@@ -171,8 +310,8 @@ class FeaturePipeline:
             raise RuntimeError("FeatureEngine returned None.")
 
         # -----------------------------------------------------------
-        # 2. Feature Store                      --- OLD
-        # 2. Build final FeatureStore dataset   --- NEW
+        # 4. Feature Store                      --- OLD
+        # 4. Build final FeatureStore dataset   --- NEW
         # -----------------------------------------------------------
         # feature_dataset = self.feature_store.build(      # OLD
         #     dataset=dataset,                             # OLD
@@ -187,7 +326,7 @@ class FeaturePipeline:
         )
 
         # -----------------------------------------------------------
-        # 3. Optional persistence
+        # 5. Optional persistence
         # -----------------------------------------------------------
         if save_features:
             if save_dir is None:
@@ -207,7 +346,7 @@ class FeaturePipeline:
             )
 
         # -----------------------------------------------------------
-        # 4. Observation
+        # 6. Observation
         # -----------------------------------------------------------
         # observation = self.observation_builder.build(    # OLD
         #     feature_dataset,                             # OLD
@@ -222,7 +361,7 @@ class FeaturePipeline:
         )
 
         # -----------------------------------------------------------
-        # 5. Update runtime state
+        # 7. Update runtime state
         # -----------------------------------------------------------
         self._dataset = dataset
         self._features = feature_dataset
@@ -251,6 +390,8 @@ class FeaturePipeline:
         جریان:
             MTFDataset
                 ↓
+            Time Features
+                ↓
             FeatureEngine
                 ↓
             FeatureStore
@@ -260,6 +401,9 @@ class FeaturePipeline:
             Observation
         """
 
+        # -----------------------------------------------------------
+        # 1. Validation of input dataset
+        # -----------------------------------------------------------
         if dataset is None:
             raise ValueError("dataset is None")
 
@@ -275,9 +419,14 @@ class FeaturePipeline:
             )
 
         # -----------------------------------------------------------
-        # 1. Incremental feature calculation
+        # 2. Add time features
         # -----------------------------------------------------------
-        features = self.feature_engine.process_live_data(
+        dataset = self._apply_time_features_live(dataset)
+
+        # -----------------------------------------------------------
+        # 3. Incremental feature calculation
+        # -----------------------------------------------------------
+        features = self.feature_engine.execute(
             dataset=dataset,
             specs=self.feature_specs,
             mode="live",
@@ -287,7 +436,7 @@ class FeaturePipeline:
             return None
 
         # -----------------------------------------------------------
-        # 2. Build feature dataset
+        # 4. Build feature dataset
         # -----------------------------------------------------------
         feature_dataset = self.feature_store.build(
             dataset=dataset,
@@ -295,7 +444,7 @@ class FeaturePipeline:
         )
 
         # -----------------------------------------------------------
-        # 3. Build observation
+        # 5. Build observation
         # -----------------------------------------------------------
         # observation = self.observation_builder.build(    # OLD
         #     feature_dataset,                             # OLD
@@ -310,7 +459,7 @@ class FeaturePipeline:
         )
 
         # -----------------------------------------------------------
-        # 4. Update runtime state
+        # 6. Update runtime state
         # -----------------------------------------------------------
         self._dataset = dataset
         self._features = feature_dataset
@@ -683,6 +832,7 @@ class FeaturePipeline:
             f"base_tf={self.base_tf!r}, "
             f"specs={len(self.feature_specs)})"
         )
+
 
     # =========================================================================
     # Accessors

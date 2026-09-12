@@ -13,18 +13,18 @@ from stable_baselines3.common.monitor import Monitor  # برای eval
 
 try:
     from f10_utils.config_loader import load_config
-    from f04_env.trading_env import TradingEnv, EnvConfig
-    from f04_env.utils import paths_from_cfg
+    from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig
+    from f04_env.OLD_files.OLD_utils import paths_from_cfg
     from f08_evaluation.backtest import transform_obs
 except ModuleNotFoundError:
     import sys, os
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from f10_utils.config_loader import load_config
-    from f04_env.trading_env import TradingEnv, EnvConfig
-    from f04_env.utils import paths_from_cfg
+    from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig
+    from f04_env.OLD_files.OLD_utils import paths_from_cfg
     from f08_evaluation.backtest import transform_obs
 
-from f04_env.utils import paths_from_cfg, resolve_spread_selection
+from f04_env.OLD_files.OLD_utils import paths_from_cfg, resolve_spread_selection
 
 try:
     import gymnasium as gym

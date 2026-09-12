@@ -8,7 +8,7 @@ from pathlib import Path
 
 from f10_utils.config_loader import load_config
 from f02_data.OLD.data_handler import DataHandler, BuildParams
-from f04_env.trading_env import TradingEnv, EnvConfig
+from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig
 
 # ------------------------------
 # دادهٔ خام مصنوعی برای XAUUSD/M1
@@ -42,7 +42,7 @@ def test_artifacts_and_split_summary(tmp_path: Path):
     df = dh.build(BuildParams(symbol="XAUUSD", base_tf="M1", timeframes=["M1"], prefer_parquet=True))
     out = dh.save(df, symbol="XAUUSD", base_tf="M1", fmt="parquet")
     
-    import f04_env.utils as U
+    import f04_env.OLD_files.OLD_utils as U
     from shutil import copyfile
     expected = U.paths_from_cfg(cfg)["processed"] / "XAUUSD" / "M1.parquet"
     expected.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def test_artifacts_and_split_summary(tmp_path: Path):
     env.reset(split="val")
 
     #split_json = (out.parent / "M1.split.json")
-    import f04_env.utils as U
+    import f04_env.OLD_files.OLD_utils as U
     split_json = U.paths_from_cfg(cfg)["processed"] / "XAUUSD" / "M1.split.json"
     
     assert split_json.exists(), "Split summary json was not created!"

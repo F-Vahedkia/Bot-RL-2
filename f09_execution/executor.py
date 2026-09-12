@@ -22,8 +22,8 @@ from typing import Optional
 import json, csv, os, time
 
 from f10_utils.config_loader import load_config
-from f04_env.utils import paths_from_cfg, resolve_spread_selection
-from f04_env.trading_env import TradingEnv, EnvConfig  # موجود در پروژه
+from f04_env.OLD_files.OLD_utils import paths_from_cfg, resolve_spread_selection
+from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig  # موجود در پروژه
 from f08_evaluation.backtest import transform_obs
 
 try:
@@ -31,7 +31,7 @@ try:
 except Exception:
     _load_sb3 = None
 
-from f05_envexe_core.risk import RiskManager
+from f04_env.OLD_files.OLD_risk import RiskManager
 
 # [OMS:IMPORTS] — unique anchor
 from hashlib import blake2s

@@ -151,8 +151,8 @@ class ObservationBuilder:
             return fnmatch(column, pattern)
         return column == pattern or pattern in column
 
-    # -------------------------------------------------------------------------
-    def _apply_filters(self, columns: Sequence[str]) -> List[str]:
+    # ------------------------------------------------------------------------- deleted & new
+    def _apply_filters_deleted(self, columns: Sequence[str]) -> List[str]:
         selected = list(columns)
 
         if self.whitelist:
@@ -177,6 +177,98 @@ class ObservationBuilder:
 
         return selected
 
+
+    def _filtered_graph_columns(self, graph: FeatureGraph) -> List[str]:              # new
+        """
+        Resolve graph nodes to their output columns and apply whitelist /
+        blacklist at the Indicator-Node level.
+
+        Whitelist semantics:
+            1. If the Indicator Node matches the whitelist, all of its
+               output columns are selected.
+            2. Otherwise, individual output columns are tested against
+               the whitelist, allowing selective output filtering.
+
+        Blacklist semantics:
+            1. If the Indicator Node matches the blacklist, all of its
+               output columns are removed.
+            2. Otherwise, individual output columns are tested against
+               the blacklist.
+
+        The original graph execution order is preserved.
+        """
+        columns: List[str] = []
+        seen: set[str] = set()
+
+        for node in graph.execution_order():
+            output_columns = self._output_columns(node)
+
+            # =============================================================
+            # Whitelist
+            # =============================================================
+            if self.whitelist:
+                node_whitelisted = (
+                    any(
+                        self._matches_pattern(node.name, pattern)
+                        for pattern in self.whitelist
+                    )
+                    or any(
+                        self._matches_pattern(node.canonical, pattern)
+                        for pattern in self.whitelist
+                    )
+                )
+
+                if node_whitelisted:
+                    selected = list(output_columns)
+                else:
+                    selected = [
+                        column
+                        for column in output_columns
+                        if any(
+                            self._matches_pattern(column, pattern)
+                            for pattern in self.whitelist
+                        )
+                    ]
+            else:
+                selected = list(output_columns)
+
+            # =============================================================
+            # Blacklist
+            # =============================================================
+            if self.blacklist:
+                node_blacklisted = (
+                    any(
+                        self._matches_pattern(node.name, pattern)
+                        for pattern in self.blacklist
+                    )
+                    or any(
+                        self._matches_pattern(node.canonical, pattern)
+                        for pattern in self.blacklist
+                    )
+                )
+
+                if node_blacklisted:
+                    selected = []
+                else:
+                    selected = [
+                        column
+                        for column in selected
+                        if not any(
+                            self._matches_pattern(column, pattern)
+                            for pattern in self.blacklist
+                        )
+                    ]
+
+            # =============================================================
+            # Preserve graph order and remove duplicates
+            # =============================================================
+            for column in selected:
+                if column not in seen:
+                    columns.append(column)
+                    seen.add(column)
+
+        return columns
+    
     # -------------------------------------------------------------------------
     def _aligned_dataset(self, dataset: MTFDataset) -> pd.DataFrame:
         """Create a base-timeframe view without mutating the MTFDataset."""
@@ -218,8 +310,7 @@ class ObservationBuilder:
         self._validate_inputs(dataset, graph)
 
         aligned = self._aligned_dataset(dataset)
-        feature_columns = self._graph_columns(graph)
-        feature_columns = self._apply_filters(feature_columns)
+        feature_columns = self._filtered_graph_columns(graph)
 
         missing = [column for column in feature_columns if column not in aligned.columns]
         if missing:
@@ -262,6 +353,5 @@ class ObservationBuilder:
             raise TypeError(
                 f"Expected graph to be FeatureGraph, got {type(graph).__name__}"
             )
-        return self._apply_filters(self._graph_columns(graph))
-
+        return self._filtered_graph_columns(graph)
 # ----------------------------------------------------------------------------- END

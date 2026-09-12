@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 class FeatureEngine:
 
-    # ========================================================================= 0 خوانده شد و فهمیده شد.
+    # ========================================================================= 0
     def __init__(self, config: Dict[str, Any]) -> None:
         """
         این متد 5 کار انجام میدهد:
@@ -56,7 +56,7 @@ class FeatureEngine:
             registry_version="1",
         )
     
-    # =========================================================================
+    # ========================================================================= 1
     def reset_live_state(self) -> None:
         """
         پاک‌سازی کامل stateهای runtime مربوط به اجرای Live.
@@ -69,7 +69,7 @@ class FeatureEngine:
 
         logger.info("FeatureEngine live state reset.")
         
-    # ========================================================================= 1 خوانده شد و تقریباً فهمیده شد.
+    # ========================================================================= 2
     def execute(self, dataset: MTFDataset, specs: List[str], mode: str = "train") -> MTFDataset:
         """
         ---- old docstring---------------------------------
@@ -170,7 +170,7 @@ class FeatureEngine:
         logger.info("Feature calculation completed on %d timeframes.", len(dataset.frames))
         return dataset
 
-    # ========================================================================= 2
+    # ========================================================================= 3
     def _apply_spec(self, dataset: MTFDataset, ps: ParsedSpec, mode: str) -> MTFDataset:
         """
         Execute one feature according to the Registry contract.
@@ -237,7 +237,7 @@ class FeatureEngine:
         logger.warning("Unsupported execution mode '%s' for indicator '%s'", mode, ps.name)
         return dataset
 
-    # ========================================================================= 3
+    # ========================================================================= 4
     def _call_batch(self, spec: IndicatorSpec, dataset: MTFDataset, ps: ParsedSpec) -> MTFDataset:
         """
         Execute one Batch indicator using the validated Registry contract.
@@ -318,7 +318,7 @@ class FeatureEngine:
         dataset.replace(tf, self._merge(df, out))
         return dataset
 
-    # ========================================================================= 4
+    # ========================================================================= 5
     def _apply_live(
         self,
         spec: IndicatorSpec,
@@ -460,7 +460,7 @@ class FeatureEngine:
             outputs_by_timestamp=state["outputs"],
         )
 
-    # ========================================================================= 5
+    # ========================================================================= 6
     def _update_live(self, obj: Any, row: pd.Series, spec: IndicatorSpec, ps: ParsedSpec):
         """
         Feed one row into a stateful indicator.
@@ -502,7 +502,7 @@ class FeatureEngine:
             output=raw,
         )
 
-    # ========================================================================= 6
+    # ========================================================================= 7
     def _build_live_instance(self, spec: IndicatorSpec, ps: ParsedSpec) -> Any:
         """
         Build one stateful Live indicator instance.
@@ -515,7 +515,7 @@ class FeatureEngine:
 
         return spec.fn(**kwargs)
 
-    # ========================================================================= 7
+    # ========================================================================= 8
     def _merge(self, df: pd.DataFrame, out: pd.DataFrame) -> pd.DataFrame:
         """
         Merge feature columns without modifying the input frame.
@@ -540,7 +540,7 @@ class FeatureEngine:
 
         return result
 
-    # ========================================================================= 8
+    # ========================================================================= 9
     def _attach_live_output(
         self,
         df: pd.DataFrame,
@@ -578,7 +578,7 @@ class FeatureEngine:
         out = pd.DataFrame(feature_data, index=df.index)
         return self._merge(df, out)
 
-    # ========================================================================= 9
+    # ========================================================================= 10
     def _build_live_column_name(self, output_name: str, ps: ParsedSpec) -> str:
         canonical = ps.canonical
 
@@ -589,7 +589,7 @@ class FeatureEngine:
 
         return f"{output_name}{params_part}"
 
-    # ========================================================================= 10
+    # ========================================================================= 11
     def _normalize_output(self, spec: IndicatorSpec, output: Any) -> Dict[str, Any]:
 
         if isinstance(output, dict):
@@ -618,7 +618,7 @@ class FeatureEngine:
             f"but defines multiple output_names."
         )
 
-    # ========================================================================= 11
+    # ========================================================================= 12
     def _validate_contract(self, spec: IndicatorSpec, df: pd.DataFrame, mode: str, timeframe: str) -> bool:
         if not spec.supports(mode):
             logger.warning(
@@ -654,3 +654,18 @@ class FeatureEngine:
     # ========================================================================= END
 
 
+""" Methods of FeatureEngine class:
+__init__
+reset_live_state
+execute
+_apply_spec
+_call_batch
+_apply_live
+_update_live
+_build_live_instance
+_merge
+_attach_live_output
+_build_live_column_name
+_normalize_output
+_validate_contract
+"""

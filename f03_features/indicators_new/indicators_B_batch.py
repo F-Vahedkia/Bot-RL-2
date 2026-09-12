@@ -79,7 +79,7 @@ def sma_batch_df(df, column,
     pd.Series
         سری نتایج SMA
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = sma_batch(data, period, min_periods)
        
     if add_para_to_names:
@@ -149,7 +149,7 @@ def wma_batch_df(df, column,
     pd.Series
         سری نتایج WMA
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = wma_batch(data, period, min_periods)
       
     if add_para_to_names:
@@ -219,7 +219,7 @@ def ema_batch_df(df, column,
     pd.Series
         سری نتایج EMA
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = ema_batch(data, period, min_periods)
     
     if add_para_to_names:
@@ -285,7 +285,7 @@ def roc_batch_df(df, column,
     pd.Series
         سری نتایج ROC
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = roc_batch(data, period)
     
     if add_para_to_names:
@@ -358,7 +358,7 @@ def rsi_batch_df(df, column='close',
     # تبدیل method از string به int
     method_int = 1 if method.lower() == 'wilders' else 0
     
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = rsi_batch(data, period, method_int)
     
     if add_para_to_names:
@@ -427,9 +427,9 @@ def truerange_batch_df(df, high_column='high', low_column='low', close_column='c
     pd.Series
         سری نتایج True Range
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     result = truerange_batch(high, low, close)
 
@@ -507,9 +507,9 @@ def atr_batch_df(df, high_column='high', low_column='low', close_column='close',
     pd.Series
         سری نتایج ATR
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     # تبدیل method از string به int
     method_map = {'classic': 0, 'wilder': 1, 'ema': 2}
@@ -600,9 +600,9 @@ def macd_batch_df(df, column='close',                     # close_col='close',
     pd.DataFrame
         دیتافریم با سه ستون: MACD line, Signal line, Histogram
     """
-    close = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     
-    macd_line, signal_line, histogram = macd_batch(close, fast=fast, slow=slow, signal=signal)
+    macd_line, signal_line, histogram = macd_batch(data, fast=fast, slow=slow, signal=signal)
 
     # print("MACD valid:", np.sum(~np.isnan(macd_line)))
     # print("Signal valid:", np.sum(~np.isnan(signal_line)))
@@ -716,10 +716,10 @@ def bollinger_batch_df(df, column='close',
     pd.DataFrame
         دیتافریم با پنج ستون: upper, middle, lower, width, percent
     """
-    close = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     
     upper, middle, lower, width, percent = bollinger_batch(
-        close, n=period, k=multiplier, min_periods=min_periods
+        data, n=period, k=multiplier, min_periods=min_periods
     )
     
     if add_para_to_names:
@@ -833,9 +833,9 @@ def keltner_batch_df(df, high_column='high', low_column='low', close_column='clo
     pd.DataFrame
         دیتافریم با پنج ستون: upper, middle, lower, width, percent
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     upper, middle, lower, width, percent = keltner_batch(
         high, low, close, n=period, m=multiplier, min_periods=min_periods
@@ -943,9 +943,9 @@ def stochastic_batch_df(df, high_column='high', low_column='low', close_column='
     pd.DataFrame
         دیتافریم با دو ستون: k, d
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     # تبدیل method از string به int
     method_map = {'sma': 0, 'ema': 1}
@@ -1037,9 +1037,9 @@ def cci_batch_df(df, high_column='high', low_column='low', close_column='close',
     pd.Series
         سری مقادیر CCI
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     result = cci_batch(high, low, close, n=period, min_periods=min_periods)
 
@@ -1127,11 +1127,11 @@ def mfi_batch_df(df, high_column='high', low_column='low', close_column='close',
     pd.Series
         سری مقادیر MFI
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
-    volume = df[volume_column].values
-    
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
+    volume = df[volume_column].to_numpy(dtype=np.float64)
+
     result = mfi_batch(high, low, close, volume, n=period, min_periods=min_periods)
 
     if add_para_to_names:
@@ -1201,8 +1201,8 @@ def obv_batch_df(df, close_column='close', volume_column='volume',
     pd.Series
         سری مقادیر OBV
     """
-    close = df[close_column].values
-    volume = df[volume_column].values
+    close = df[close_column].to_numpy(dtype=np.float64)
+    volume = df[volume_column].to_numpy(dtype=np.float64)
     
     result = obv_batch(close, volume)
     
@@ -1284,9 +1284,9 @@ def williamsr_batch_df(df, high_column='high', low_column='low', close_column='c
     pd.Series
         سری مقادیر Williams %R
     """
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     result = williamsr_batch(high, low, close, n=period, min_periods=min_periods)
     
@@ -1398,8 +1398,8 @@ def parabolicsar_batch_df(df, high_column='high', low_column='low',
     >>> # استفاده برای تشخیص روند
     >>> df['trend'] = np.where(df['close'] > df['psar'], 1, -1)
     """
-    high = df[high_column].values
-    low = df[low_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
     
     result = parabolicsar_batch(high, low, af_start=af_start, af_step=af_step, af_max=af_max)
     
@@ -1531,10 +1531,10 @@ def heikinashi_batch_df(df,
     >>> df['strong_downtrend'] = (ha_df['ha_close'] < ha_df['ha_open']) & \
     ...                           (ha_df['ha_high'] == ha_df['ha_open'])
     """
-    open_arr = df[open_column].values
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    open_arr = df[open_column].to_numpy(dtype=np.float64)
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     ha_o, ha_h, ha_l, ha_c = heikinashi_batch(open_arr, high, low, close)
     
@@ -1737,9 +1737,9 @@ def supertrend_batch_df(df, high_column='high', low_column='low', close_column='
     else:
         atr_method_int = int(method)  # اگر عدد بود، مستقیم استفاده کن
 
-    high = df[high_column].values
-    low = df[low_column].values
-    close = df[close_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
+    close = df[close_column].to_numpy(dtype=np.float64)
     
     st, direction = supertrend_batch(high, low, close, period=period, 
                                      multiplier=multiplier, atr_method=atr_method_int,
@@ -2005,8 +2005,8 @@ def aroon_batch_df(df, high_column='high', low_column='low',
     ...     (aroon_long['aroon_up_50'] > 70)
     ... )
     """
-    high = df[high_column].values
-    low = df[low_column].values
+    high = df[high_column].to_numpy(dtype=np.float64)
+    low = df[low_column].to_numpy(dtype=np.float64)
     
     aroon_up, aroon_down, oscillator = aroon_batch(high, low, 
                                                     period=period, 
@@ -2097,7 +2097,7 @@ def dema_batch_df(df, column='close',
     >>> df['dema'] = dema_batch_df(df, n=20)
     >>> df['signal'] = np.where(df['close'] > df['dema'], 1, -1)
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = dema_batch(data, n=period, min_periods=min_periods)
     
     if add_para_to_names:
@@ -2183,7 +2183,7 @@ def tema_batch_df(df, column='close',
     >>> df['dema'] = dema_batch_df(df, n=20)
     >>> df['tema'] = tema_batch_df(df, n=20)
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = tema_batch(data, n=period, min_periods=min_periods)
     
     if add_para_to_names:
@@ -2276,7 +2276,7 @@ def kama_batch_df(df, column='close',
     >>> df['kama'] = kama_batch_df(df)
     >>> df['signal'] = np.where(df['close'] > df['kama'], 1, -1)
     """
-    data = df[column].values
+    data = df[column].to_numpy(dtype=np.float64)
     result = kama_batch(data, n=period, fast_span=fast_span, slow_span=slow_span, 
                        min_periods=min_periods)
     
@@ -2364,7 +2364,8 @@ def hma_batch_df(df, column='close',
     df['signal'] = np.where(df['HMA_fast'] > df['HMA_slow'], 1, -1)
     """
     
-    result = hma_batch(df[column].values, n=period, min_periods=min_periods)
+    data = df[column].to_numpy(dtype=np.float64)
+    result = hma_batch(data, n=period, min_periods=min_periods)
     
     if add_para_to_names:
         return pd.DataFrame({

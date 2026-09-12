@@ -24,14 +24,14 @@ python -m f02_data.mt5_data_loader_E `
     --symbols XAUUSD_i               `
     --timeframes M1 M2 M4 M20 H1 H4  `
     --lookback 10000000              `
-    --format parquet                 `
+    --save_format parquet                 `
     --log-level DEBUG
 
 python -m f02_data.mt5_data_loader_E `
     -c ./f01_config/config.yaml      `
-    --symbols BITCOIN          `
-    --timeframes M1  `
-    --format csv
+    --symbols XAUUSD          `
+    --timeframes M1 M2  `
+    --save_format parquet
 
 python -m f02_data.mt5_data_loader_E
 
@@ -783,6 +783,7 @@ def main() -> int:
     # -- 2 -- ساخت لاگر و تعیین سطح آن، همراه با تعیین فرمت و فرمت زمان 
     _setup_logging_all("debug")
     
+    # --- این بلوک کد زیری باید حفظ بشود ---
     # _setup_logging_funcname(
     #     "debug",
     #     allowed_functions=[
@@ -806,7 +807,7 @@ def main() -> int:
     if args.save_format:
         # cfg.setdefault("download_defaults", {})
         # cfg["download_defaults"]["save_format"] = args.format
-        cfg.setdefault("download_defaults", {})["save_format"] = args.format
+        cfg.setdefault("download_defaults", {})["save_format"] = args.save_format
     # -- 5 -- ساخت کانکتور
     my_connector = MT5Connector(config=cfg)
 
@@ -820,16 +821,30 @@ def main() -> int:
     # if args.brk_date_to is not None:
     #     date_to   = normalize_datetime(args.brk_date_to  , ZoneInfo("Europe/Athens"))   # <= گیت ورودی از CLI
 
+    # --- پلان اولی برای دیباگ است ---
+    # plans = loader.build_plan(
+    #     symbols=None,
+    #     timeframes=None,
+    #     # lookback_bars=7,
+    #     # date_from=None,
+    #     # date_to=None,
+    #     # date_tz=ZoneInfo("Asia/Tehran"),
+    #     result_tz="Asia/Tehran",
+    #     # range_policy="count",
+    # )
+
+    # --- پلان دومی برای اصل برنامه است ---
     plans = loader.build_plan(
-        symbols=None,            # args.symbols,
-        timeframes=None,         # args.timeframes,
-        # lookback_bars=7,       # args.lookback,
-        # date_from=None,            # args.brk_date_from,
-        # date_to=None,              # args.brk_date_to,
-        # date_tz=ZoneInfo("Asia/Tehran"),
-        result_tz="Asia/Tehran",
-        # range_policy="count",
+        symbols=args.symbols,
+        timeframes=args.timeframes,
+        lookback_bars=args.lookback,
+        date_from=args.brk_date_from,
+        date_to=args.brk_date_to,
+        date_tz=ZoneInfo("Europe/Athens"),
+        result_tz="Europe/Athens",
+        range_policy="date",
     )
+
 
     # -- 8 -- اجرای لودر و دریافت نتیجه دانلودها
     results = loader.run_plan(plans)

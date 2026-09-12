@@ -6,8 +6,8 @@ import pandas as pd
 from pathlib import Path
 
 from f10_utils.config_loader import load_config
-from f04_env.trading_env import TradingEnv, EnvConfig
-import f04_env.utils as U  # ← به‌جای import مستقیم تابع، ماژول را می‌آوریم تا پچِ conftest اثر کند.
+from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig
+import f04_env.OLD_files.OLD_utils as U  # ← به‌جای import مستقیم تابع، ماژول را می‌آوریم تا پچِ conftest اثر کند.
 
 def _write_processed_with_zcol(cfg, symbol="XAUUSD", tf="M1"):
     paths = U.paths_from_cfg(cfg)  # ← مسیر 'processed' با پچ به 'test_process' می‌رود.

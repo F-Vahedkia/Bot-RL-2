@@ -16,7 +16,7 @@ def _redirect_processed_to_test_process(monkeypatch):
     مسیر 'processed' را به 'test_process' در کنار آن تغییر می‌دهد تا
     خروجی تست‌ها وارد مسیر تولیدی پروژه نشوند.
     """
-    import f04_env.utils as U
+    import f04_env.OLD_files.OLD_utils as U
     orig = U.paths_from_cfg
 
     def patched(cfg):

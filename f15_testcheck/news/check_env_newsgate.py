@@ -21,7 +21,7 @@ def main():
 
     # Env import (adapt if your path differs)
     try:
-        from f04_env.trading_env import TradingEnv
+        from f04_env.OLD_files.OLD_trading_env import TradingEnv
     except Exception:
         from trading_env import TradingEnv  # fallback
 

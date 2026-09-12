@@ -101,9 +101,9 @@ download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader /
   # - D1
   # - W1
   # ----- below 4 keys, used in: mt5_data_loader/class DownloadPlan
-  lookback_bars: 4              # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
-  broker_date_from: 2026-08-23 23:06:00+03:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
-  broker_date_to:   2026-08-23 23:10:00+03:00  # مقدار date_to میتواند NOW یا now هم اختیار کند 
+  lookback_bars: 20000              # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
+  broker_date_from: 2026-08-31 00:00:00+03:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+  broker_date_to:   2026-09-04 23:59:00+03:00  # مقدار date_to میتواند NOW یا now هم اختیار کند 
   result_timezone: "UTC"
   range_policy: date                    # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
 
@@ -118,32 +118,77 @@ features:
   symbols:
     # -----------------------
     COMMON:
-      # symbols: [XAUUSD] #, EURUSD, BITCOIN]
-      # candles: [M10]
+      symbols: [XAUUSD]  #, EURUSD, BITCOIN]
+      # candles: [M1]
       indicators:
-      # - sma(column='close',period=20)@M1      # Simple Moving Average
-      # - wma(column='close',period=20)@H4      # Weighted Moving Average
-      # - ema(column='close',period=30)@D1      # Exponential Moving Average
-      # - roc(column='close',period=14)@H4      # Rate of Change
-      # - rsi(period=14)@H1            # Relative Strength Index
-      # - true_range@H1                # True Range
-      # - atr(period=14)@H1            # Average True Range
-      # - macd(fast=12,slow=26,signal=9)@H1      # MACD
-      # - bollinger_bands(close,20,2)@H1         # Bollinger Bands
-      # - keltner_channel(close_col='close', n=20, m=2)@H1    # Keltner Channel
-      # - stochastic(k_period=14, d_period=3, slowing=3)@H1   # Stochastic
-      # - cci(period=20)@H1          # Commodity Channel Index
-      # - mfi(period=14)@H1          # Money Flow Index
-      # - obv@H1                     # On Balance Volume
-      # - williams_r(period=14)@H1   # Williams %R
-      # - parabolic_sar(step=0.02, max_step=0.02, acceleration=0.2)@H1  # Parabolic SAR
-      # - heikin_ashi@H1                              # Heikin Ashi
-      # - supertrend(period=10, multiplier=3)@H1      # Supertrend
-      # - aroon(period=25)@H1                   # Aroon
-      # - dema(column='close', period=20)@H1    # Double Exponential Moving Average
-      # - tema(column='close', period=20)@H1    # Triple Exponential Moving Average
-      # - kama(column='close', period=20)@H1    # Kaufman's Adaptive Moving Average
-      # - hma(column='close', period=20)@H1     # Hull Moving Average
+        - sma(column='close',period=8)@M1      # Simple Moving Average
+        - sma(column='close',period=4)@M2      # Simple Moving Average
+
+        - wma(column='close',period=6)@M1      # Weighted Moving Average
+        - wma(column='close',period=6)@M2      # Weighted Moving Average
+
+        - ema(column='close',period=6)@M1      # Exponential Moving Average
+        - ema(column='close',period=6)@M2      # Exponential Moving Average
+
+        - roc(column='close',period=4)@M1      # Rate of Change
+        - roc(column='close',period=4)@M2      # Rate of Change
+
+        - rsi(period=6)@M1            # Relative Strength Index
+        - rsi(period=6)@M2            # Relative Strength Index
+
+        - true_range@M1                # True Range
+        - true_range@M2                # True Range
+
+        - atr(period=6)@M1            # Average True Range
+        - atr(period=6)@M2            # Average True Range
+
+        - macd(fast=12,slow=26,signal=9)@M1      # MACD
+        - macd(fast=12,slow=26,signal=9)@M2      # MACD
+
+        - bollinger_bands(close,8,2)@M1         # Bollinger Bands
+        - bollinger_bands(close,8,2)@M2         # Bollinger Bands
+
+        - keltner_channel(close_col='close', n=10, m=2)@M1    # Keltner Channel
+        - keltner_channel(close_col='close', n=10, m=2)@M2    # Keltner Channel
+
+        - stochastic(k_period=14, d_period=3, slowing=3)@M1   # Stochastic
+        - stochastic(k_period=14, d_period=3, slowing=3)@M2   # Stochastic
+
+        - cci(period=10)@M1          # Commodity Channel Index
+        - cci(period=10)@M2          # Commodity Channel Index
+
+        - mfi(period=8)@M1          # Money Flow Index
+        - mfi(period=8)@M2          # Money Flow Index
+
+        - obv@M1                     # On Balance Volume
+        - obv@M2                     # On Balance Volume
+
+        - williams_r(period=9)@M1   # Williams %R
+        - williams_r(period=9)@M2   # Williams %R
+
+        - parabolic_sar(af_start=0.02, af_step=0.02, af_max=0.2)@M1  # Parabolic SAR
+        - parabolic_sar(af_start=0.02, af_step=0.02, af_max=0.2)@M2  # Parabolic SAR
+
+        - heikin_ashi@M1                              # Heikin Ashi
+        - heikin_ashi@M2                              # Heikin Ashi
+
+        - supertrend(period=10, multiplier=3)@M1      # Supertrend
+        - supertrend(period=10, multiplier=3)@M2      # Supertrend
+
+        - aroon(period=25)@M1                   # Aroon
+        - aroon(period=25)@M2                   # Aroon
+
+        - dema(column='close', period=10)@M1    # Double Exponential Moving Average
+        - dema(column='close', period=10)@M2    # Double Exponential Moving Average
+
+        - tema(column='close', period=10)@M1    # Triple Exponential Moving Average
+        - tema(column='close', period=10)@M2    # Triple Exponential Moving Average
+
+        - kama(column='close', period=20)@M1    # Kaufman's Adaptive Moving Average
+        - kama(column='close', period=20)@M2    # Kaufman's Adaptive Moving Average
+
+        - hma(column='close', period=20)@M1     # Hull Moving Average
+        - hma(column='close', period=20)@M2     # Hull Moving Average
     # -----------------------
     XAUUSD:
       # base_timeframe: M1
@@ -230,20 +275,36 @@ features:
         # - kama(column='close', period=20)@M1    # Kaufman's Adaptive Moving Average
         # - kama(column='close', period=20)@M2    # Kaufman's Adaptive Moving Average
 
-        - hma(column='close', period=20)@M1     # Hull Moving Average
-        - hma(column='close', period=20)@M2     # Hull Moving Average
+        # - hma(column='close', period=20)@M1     # Hull Moving Average
+        # - hma(column='close', period=20)@M2     # Hull Moving Average
   # ----------------------------------------
   observation:
     features_whitelist:
-    - __sma_
-    - __rsi_
-    - __macd_
-    - __ema_close_
-    - __atr_
-    - __bb_
-    - __stoch_
-    - __sar_
-    - __supertrend_
+      - sma
+      - wma
+      - ema
+      - roc
+      - rsi
+      - true_range
+      - atr
+      - macd
+      - bollinger_bands
+      - keltner_channel
+
+      - stochastic
+      - cci
+      - mfi
+      - obv
+      - williams_r
+      - parabolic_sar
+      - heikin_ashi
+      - supertrend
+      - aroon
+      - dema
+
+      - tema
+      - kama
+      - hma
     
     features_blacklist:
     - qc_*
@@ -275,10 +336,10 @@ features:
         sin_hour, cos_hour, sin_day_of_week, cos_day_of_week, sin_month, cos_month,
         market_open_flag, market_close_flag, is_new_day,
       ]
-    add_hour_of_day: true
-    add_day_of_week: true 
-    add_session_flags: true
-    normalize_time: true
+    add_hour_of_day: true     # به نظر میرسد که دیگر نیازی به این سطر نباشد
+    add_day_of_week: true     # به نظر میرسد که دیگر نیازی به این سطر نباشد
+    add_session_flags: true     # به نظر میرسد که دیگر نیازی به این سطر نباشد
+    normalize_time: true     # به نظر میرسد که دیگر نیازی به این سطر نباشد
 
   # representation: # ===> NOT USED
   #   default: "binary"

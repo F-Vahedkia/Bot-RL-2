@@ -8,8 +8,8 @@ from pathlib import Path
 
 from f10_utils.config_loader import load_config
 from f10_utils.config_operations import _deep_get
-from f04_env.trading_env import TradingEnv, EnvConfig
-import f04_env.utils as U  # لازم است تا پچ conftest روی paths_from_cfg اثر کند.
+from f04_env.OLD_files.OLD_trading_env import TradingEnv, EnvConfig
+import f04_env.OLD_files.OLD_utils as U  # لازم است تا پچ conftest روی paths_from_cfg اثر کند.
 
 def _write_minimal_processed(cfg, symbol: str = "XAUUSD", tf: str = "M1", n: int = 800) -> Path:
     """ساخت دیتای مصنوعی و ذخیرهٔ Parquet در test_process (به واسطهٔ conftest)."""

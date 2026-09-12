@@ -242,23 +242,26 @@ def test_process_live_flow():
     stored = ds()
     obs = pd.DataFrame({"x": [1, 2, 3]})
 
-    e.process_live_data.return_value = features
+    # New FeaturePipeline live flow uses FeatureEngine.execute().
+    e.execute.return_value = features
+
+    # FeatureStoreV2.build() returns the stored Feature Dataset.
     s.build.return_value = stored
+
+    # ObservationBuilder builds the final Observation.
     b.build.return_value = obs
 
     assert p.process_live(raw) is obs
 
-    e.process_live_data.assert_called_once_with(
+    e.execute.assert_called_once_with(
         dataset=raw,
         specs=p.feature_specs,
         mode="live",
     )
-
     s.build.assert_called_once_with(
         dataset=raw,
         features=features,
     )
-
     b.build.assert_called_once_with(
         stored,
         g,
@@ -268,27 +271,20 @@ def test_process_live_flow():
 def test_process_live_validation_and_none():
     p, e, s, b, _ = pipe()
 
-    with pytest.raises(
-        ValueError,
-        match="dataset is None",
-    ):
+    with pytest.raises(ValueError, match="dataset is None"):
         p.process_live(None)
 
-    with pytest.raises(
-        TypeError,
-        match="Expected MTFDataset",
-    ):
+    with pytest.raises(TypeError, match="Expected MTFDataset"):
         p.process_live("bad")
 
-    with pytest.raises(
-        ValueError,
-        match="does not match pipeline symbol",
-    ):
+    with pytest.raises(ValueError, match="does not match pipeline symbol"):
         p.process_live(ds("EURUSD"))
 
-    e.process_live_data.return_value = None
+    # New live flow uses FeatureEngine.execute().
+    e.execute.return_value = None
 
     assert p.process_live(ds()) is None
+
     s.build.assert_not_called()
     b.build.assert_not_called()
 
@@ -307,6 +303,7 @@ def test_build_observation():
 
     assert called_dataset is dataset
     assert called_graph is g
+
 
 def test_build_feature_store():
     p, _, s, _, _ = pipe()
