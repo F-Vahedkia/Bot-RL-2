@@ -1,32 +1,71 @@
-# f02_data/live_market_engine.py
+# f02_data/live_market_engine.py (5)
+#
+# Last reviewed: 1405/06/25
+# =============================================================================
+""" ---> Docstring:
+موتور داده زنده بازار برای لایه f02_data.
 
-# Date Reviewed:
-#    1405/05/19-21:58 ==> run result of 5 test in folder" tests_live_market_engine": All OK
-"""
-نهایی هستند:
-   - API عمومی
-   - معماری Pub/Sub
-   - یک Queue برای هر Consumer
-   - Thread-safe
-   - publish()
-   - subscribe()
-   - unsubscribe()
+این ماژول مسیر live را از دریافت دوره‌ای داده از MT5 تا انتشار event برای مصرف‌کنندگان
+اجرا می‌کند. معماری آن شامل EventBus، CandleDetector، MT5StreamWorker و MarketDataEngine است.
 
-هنوز نهایی نشده اند:
-   - event payload schema
-   - overflow policy
-   - shutdown
-   - health monitoring
-   - backpressure
-   - metrics
-   - consumer naming
-   - event persistence
+اجزای اصلی:
+    - EventBus: پیاده‌سازی Pub/Sub با Queue مستقل برای هر subscriber و دسترسی thread-safe.
+        در مسیر publish() فعلی، رویداد به صف subscriber متناظر با symbol ارسال می‌شود و در صورت
+        پر بودن صف، event کنار گذاشته می‌شود.
+    - CandleDetector: برای هر ترکیب symbol/timeframe وضعیت آخرین timestamp را نگه می‌دارد و
+        هنگام مشاهده timestamp جدید، event داده‌ای مربوط به آخرین کندل بسته را تولید می‌کند.
+    - MT5StreamWorker: با polling از MT5 داده می‌گیرد، کندل جاری را کنار می‌گذارد، بسته‌شده‌ها
+        را بررسی می‌کند، و هنگام کشف کندل جدید داده تمام timeframeهای موردنیاز آن symbol را
+        دریافت و به EventBus منتشر می‌کند.
+    - MarketDataEngine: EventBus و worker را orchestration می‌کند و ورودی اصلی مسیر live است.
+
+قرارداد event فعلی:
+{
+    "event_type": str,
+    "symbol": str,
+    "timeframe": str,
+    "all_dfs": Dict[str, pd.DataFrame],
+}
+
+کلیدهای all_dfs به صورت "SYMBOL:TF" و در ارتباط با warmups_dicts ساخته می‌شوند.
+DataFrameهای موجود در all_dfs شامل کندل‌های بسته‌شده موردنیاز هر timeframe هستند.
+
+قرارداد زمانی:
+    - broker_timezone از project.broker_timezone گرفته می‌شود.
+    - CandleDetector زمان کندل را برای event به UTC تبدیل می‌کند.
+    - MT5StreamWorker می‌تواند result_timezone را از download_defaults بخواند و آن را به connector
+        منتقل کند؛ مسیرهای بالادستی در پروژه فعلی داده را در چارچوب UTC مصرف می‌کنند.
+
+
+این ماژول منبع اصلی رویدادهای live برای DataHandler و سایر مصرف‌کنندگان بالادستی است.
 """
+# =============================================================================
+# """
+# نهایی هستند:
+#    - API عمومی
+#    - معماری Pub/Sub
+#    - یک Queue برای هر Consumer
+#    - Thread-safe
+#    - publish()
+#    - subscribe()
+#    - unsubscribe()
+
+# هنوز نهایی نشده اند:
+#    - event payload schema
+#    - overflow policy
+#    - shutdown
+#    - health monitoring
+#    - backpressure
+#    - metrics
+#    - consumer naming
+#    - event persistence
+# """
 
 # =============================================================================
 # Imports
 # =============================================================================
 # f02_data/live_market_engine.py
+
 from __future__ import annotations
 
 import time
@@ -337,7 +376,9 @@ class CandleDetector:
 
         # --- update state ----------------------
         state.last_candle_time = last_time_raw
-        logger.info(f"New candle detected {symbol}/{timeframe} at {last_time} UTC / {last_time_raw} Broker")
+        logger.info(
+            f"New candle detected {symbol}/{timeframe} at "
+            f"{last_time} UTC / {last_time_raw.tz_convert(self.tzinfo)} Broker")
     
         # --- استخراج داده های کندل ------------
         # داده‌های کندل بسته شده را از ردیف ماقبل آخر بگیر
@@ -369,7 +410,7 @@ class MT5StreamWorker:
         self,
         cfg: Dict[str, Any],
         event_bus: EventBus,
-        # warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
+        warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
         poll_interval_sec: float = 2.0,
     ) -> None:
         """
@@ -377,8 +418,10 @@ class MT5StreamWorker:
         """
         self.cfg = cfg
         self.event_bus = event_bus
-        # self.warmups_dicts = warmups_dicts   #////change_1405/05/20-16:30
-        self.warmups_dicts: Dict[str, Dict[str, int]] = cfg["__warmups_dicts"]
+
+        self.warmups_dicts = warmups_dicts   #////change_1405/05/20-16:30
+        # self.warmups_dicts: Dict[str, Dict[str, int]] = cfg["__warmups_dicts"]
+
         self.symbols = list(self.warmups_dicts.keys())
         self.timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in self.warmups_dicts.items()}
         self.poll_interval_sec = poll_interval_sec
@@ -542,7 +585,7 @@ class MarketDataEngine:
     # -------------------------------------------------------- OK
     def start(
         self,
-        # warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
+        warmups_dicts: Dict[str, Dict[str, int]],   #////change_1405/05/20-16:30
         poll_interval_sec: float = 2.0,
     ) -> None:
         """
@@ -558,7 +601,7 @@ class MarketDataEngine:
         self.worker = MT5StreamWorker(
             cfg=self.cfg,
             event_bus=self.event_bus,
-            # warmups_dicts=warmups_dicts,   #////change_1405/05/20-16:30
+            warmups_dicts=warmups_dicts,   #////change_1405/05/20-16:30
             poll_interval_sec=poll_interval_sec,
         )
         self.worker.start()

@@ -1,6 +1,31 @@
-# f02_data/mtf_dataset.py
-# Date Reviewed:
-#   1405/04/28
+# f02_data/mtf_dataset.py (6)
+#
+# Date Reviewed: 1405/06/25
+# =======================================================================================
+""" ---> Docstring
+کانتینر داده چندتایم‌فریمی MTFDataset برای لایه f02_data.
+
+MTFDataset داده‌های یک symbol را در چند timeframe نگهداری می‌کند و برای هر timeframe یک
+DataFrame مستقل در frames دارد. این کلاس عمداً هیچ هم‌ترازسازی زمانی، resampling یا merge
+بین timeframeها انجام نمی‌دهد.
+
+قرارداد داده:
+    - symbol و base_tf در سطح dataset نگهداری می‌شوند.
+    - frames یک Dict[str, pd.DataFrame] است که کلیدهای timeframe در آن uppercase هستند.
+    - add(timeframe, df) یک frame را ثبت یا جایگزین می‌کند و نام timeframe را uppercase می‌کند.
+    - get(timeframe) و __getitem__(timeframe) frame متناظر را برمی‌گردانند.
+    - replace(timeframe, df) فقط frame موجود را جایگزین می‌کند و در نبود آن KeyError می‌دهد.
+    - copy() یک dataset مستقل با copy از DataFrameهای frames ایجاد می‌کند.
+    - timeframes فهرست کلیدهای فعلی frames را برمی‌گرداند.
+    - apply() یک تابع را روی هر DataFrame اعمال می‌کند؛ apply_each() علاوه بر DataFrame نام
+        timeframe را نیز به تابع می‌دهد.
+
+قانون معماری مهم:
+هر DataFrame متعلق به یک timeframe مستقل است و MTFDataset داده‌ها را به شبکه زمانی
+base_tf تبدیل یا روی آن merge نمی‌کند. مصرف‌کننده باید این استقلال را حفظ کند مگر اینکه
+صراحتاً مسئولیت دیگری در قرارداد لایه بعدی تعریف شده باشد.
+"""
+# =======================================================================================
 
 # =======================================================================================
 # Imports

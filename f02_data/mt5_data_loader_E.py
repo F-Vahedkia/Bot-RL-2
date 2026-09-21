@@ -1,49 +1,72 @@
-# f02_data/mt5_data_loader_E.py
-# Date reviewed
-#    1405/06/02-00:23 --> run result is OK.
+# f02_data/mt5_data_loader_E.py (2)
+#
+# Last reviewed: 1405/06/25
+# =======================================================================================
+""" ---> Docstring:
+لودر batch داده‌های بازار از MetaTrader 5 برای لایه f02_data.
 
-"""
-وظایف:
-    - خواندن پیکربندی دانلود از config (symbols, timeframes, lookback_bars, batch_size, save_format)
-    - دریافت داده‌ی OHLCV از MT5 از طریق MT5Connector
-    - ذخیره‌ی داده به CSV/Parquet با ساختار پوشه‌ای استاندارد در data/raw
-        بصورت: data/raw/<SYMBOL>/<TF>.(csv|parquet)
-    - تکراری‌ها را حذف و ایندکس زمانی را مرتب می‌کند،
-    - خلاصهٔ اجرای دانلود را گزارش می‌دهد و متادیتا می‌نویسد،
-    - CLI دارد تا با یک فرمان اجرا شود.
+این ماژول لایه دریافت داده از MT5Connector را به یک فرایند قابل‌تکرار برای
+ساخت DownloadPlan، دریافت کندل‌ها، نرمال‌سازی، ادغام با فایل موجود و ذخیره داده
+خام تبدیل می‌کند.
 
-پیش‌نیاز:
-    - pandas (اجباری)، (اختیاری) pyarrow یا fastparquet برای Parquet
+مسئولیت‌های اصلی:
+    - تعریف DownloadPlan برای یک symbol/timeframe و مشخص‌کردن روش دریافت بر اساس
+        lookback_bars یا بازه date_from/date_to.
+    - خواندن و تکمیل تنظیمات download_defaults و project.broker_timezone از config.
+    - اجرای سیاست‌های range_policy شامل count، date، min و max در زمان ساخت/اجرای plan.
+    - دریافت کندل‌ها از MT5Connector و انتخاب مسیر count/date متناسب با plan.
+    - نرمال‌سازی DataFrame بدون تحمیل UTC در normalize_df؛ timezone خروجی در مرحله دریافت
+        می‌تواند توسط connector تعیین شود.
+    - الحاق داده جدید به فایل موجود، حذف timestampهای تکراری با نگه‌داشتن آخرین رکورد،
+        مرتب‌سازی و ذخیره در CSV یا Parquet.
+    - نوشتن metadata JSON در کنار فایل داده و بازگرداندن گزارش اجرای هر plan.
+    - فراهم‌کردن CLI برای اجرای batch download از config یا overrideهای command line.
 
-اجرا:
-    اجرای از طریق فراخوانی مستقیم این فایل، سبب میشود که داده های جدید در ریشه پروژه ذخیره شوند
+قرارداد خروجی:
+    - داده خام در raw_dir و در مسیر نماد/تایم‌فریم ذخیره می‌شود.
+    - format ذخیره‌سازی می‌تواند csv یا parquet باشد؛ در شکست ذخیره Parquet، fallback به CSV
+        در کد فعلی وجود دارد.
+    - DataFrameهای بازگردانده‌شده در results علاوه بر اطلاعات گزارش، کل DataFrame را در کلید
+        dataframe حمل می‌کنند.
+
+این ماژول تولیدکننده داده batch خام است و DataHandler از فایل‌های تولیدشده توسط آن
+برای ساخت MTFDataset استفاده می‌کند.
+
+
+Run: روش های اجرا از خظ فرمان یا CIL (Command Line Interface)
 
 نمونه اجرا (از ریشه‌ی ریپو):
 python -m f02_data.mt5_data_loader_E `
     --config f01_config/config.yaml  `
-    --symbols XAUUSD_i               `
+    --symbols XAUUSD                 `
     --timeframes M1 M2 M4 M20 H1 H4  `
     --lookback 10000000              `
-    --save_format parquet                 `
+    --save_format parquet            `
     --log-level DEBUG
 
 python -m f02_data.mt5_data_loader_E `
     -c ./f01_config/config.yaml      `
-    --symbols XAUUSD          `
-    --timeframes M1 M2  `
+    --symbols XAUUSD EURUSD BITCOIN  `
+    --timeframes M1 M2 M5 M10 H1 H4 D1  `
+    --lookback 1000000               `
+    --range_policy count             `
     --save_format parquet
 
-python -m f02_data.mt5_data_loader_E
+python -m f02_data.mt5_data_loader_E `
+    --symbols XAUUSD                 `
+    --timeframes M5                  `
+    --brk_date_from "2026-09-16 00:00:00+03:00" `
+    --brk_date_to "2026-09-17 00:00:00+03:00"   `
+    --range_policy date              `
+    --save_format csv
 
-اگر آرگومان‌ها را ندهید، از مقادیر بخش download_defaults در config استفاده می‌شود.
-# =======================================================================================
-نکات:
-    - با config.yaml فعلی سازگار است (paths.raw_dir, download_defaults.*, mt5_credentials).
-    - اگر pyarrow/fastparquet نداشتی، format: csv بگذار یا اجازه بده به csv برگردد.
-    - فایل متادیتای JSON کنار هر فایل داده نوشته می‌شود تا در گزارش/مانیتورینگ سریع به‌کار رود.
-    - برای بازهٔ تاریخی از --date-from/--date-to استفاده کن؛
-     در غیر این صورت از lookback یا مقدار پیش‌فرض کانفیگ می‌گیرد.
+python -m f02_data.mt5_data_loader_E
+    در این حالت، اگر آرگومان‌ها را ندهید، از مقادیر بخش download_defaults در کانفیگ استفاده میشود.
 """
+
+# f02_data/mt5_data_loader_E.py (2)
+# =======================================================================================
+
 # =======================================================================================
 # Imports & Logger
 # =======================================================================================
@@ -75,7 +98,7 @@ logger.addHandler(logging.NullHandler())
 # =======================================================================================
 # ساختار برنامه و کمکی‌ها 
 # =======================================================================================
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 @dataclass
 class DownloadPlan:
     """طرح دانلود برای یک جفت ارز (نماد/تایم‌فریم)."""
@@ -90,7 +113,7 @@ class DownloadPlan:
     # ----- 
     range_policy: Literal["min", "max", "date", "count"] = "count"
 
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
     """ نرمال‌سازی دیتافریم دریافتی از متاتریدر
     - تنظیم ایندکس زمانی در UTC      <<<=== این تنظیم کامنت شد. این تنظیم کار را خراب کرده بود.
@@ -142,8 +165,13 @@ def normalize_df(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
-# ------------------------------------------------------------------- OK=
-def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[int, int]:
+# -------------------------------------------------------------------
+def _append_or_write(
+    df_new: pd.DataFrame,
+    out_path: Path,
+    fmt: str
+) -> Tuple[int, int, Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+    
     fmt = fmt.lower().replace(" ", "")
 
     # --- بخش خواندن فایل موجود (با مدیریت خطای کامل برای هر دو فرمت) ---
@@ -184,6 +212,9 @@ def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[in
         before = 0
         df_all = normalize_df(df_new)
 
+    first_index = df_all.index[0] if len(df_all) > 0 else None
+    last_index = df_all.index[-1] if len(df_all) > 0 else None
+    
     # --- بخش ذخیره سازی (با پاکسازی فایل خراب قبلی در صورت لزوم) ---
     if fmt == "parquet":
         try:
@@ -194,26 +225,40 @@ def _append_or_write(df_new: pd.DataFrame, out_path: Path, fmt: str) -> Tuple[in
                 out_path.unlink()  # حذف فایل پارکت خراب/ناقص
             csv_path = out_path.with_suffix(".csv")
             df_all.to_csv(csv_path)
-            return (before, len(df_all))
+            return (before, len(df_all), first_index, last_index)
     else:  # fmt == "csv"
         df_all.to_csv(out_path)
-    
-    return (before, len(df_all))
 
-# ------------------------------------------------------------------- OK=
-def _write_metadata(df: pd.DataFrame, raw_dir: Path, symbol: str, timeframe: str, rows: int, columns: List, fmt: str) -> Path:
+    return (before, len(df_all), first_index, last_index)
+
+# -------------------------------------------------------------------
+def _write_metadata(
+    raw_dir: Path,
+    symbol: str,
+    timeframe: str,
+    first_index: pd.Timestamp,
+    last_index: pd.Timestamp,
+    rows: int,
+    columns: List,
+    fmt: str
+) -> Path:
     """
     متادیتا (فایل JSON) را کنار داده ذخیره می‌کند تا برنامه‌های دیگر بتوانند سریع گزارش بگیرند.
     """
     meta = {
         "symbol": symbol,
         "timeframe": timeframe.upper(),
-        "first_index": df.index[0].isoformat(),
-        "last_index": df.index[-1].isoformat(),
+
+        # "first_index": df.index[0].isoformat(),
+        # "last_index": df.index[-1].isoformat(),
+        "first_index": first_index.isoformat(),
+        "last_index": last_index.isoformat(),
+
         "rows": int(rows),
         "columns": list(columns),
         "format": fmt.lower(),
-        "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "updated_at_utc": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "updated_at_tehran_time": datetime.now(ZoneInfo("Asia/Tehran")).replace(microsecond=0).isoformat()
     }
     meta_path = raw_dir / symbol / f"{timeframe.upper()}.meta.json"
     
@@ -224,7 +269,7 @@ def _write_metadata(df: pd.DataFrame, raw_dir: Path, symbol: str, timeframe: str
 
     return meta_path
 
-# ------------------------------------------------------------------- OK= new 050315
+# -------------------------------------------------------------------
 def _fetch_candles(connector: MT5Connector, p: DownloadPlan) -> pd.DataFrame:
     """ دریافت داده‌های کندلی از متاتریدر بر اساس طرح دانلود (DownloadPlan) """
 
@@ -329,7 +374,7 @@ class MT5DataLoader_batch:
     """لودر داده‌ی MT5. با MT5Connector کار می‌کند و داده‌ها را در data/raw ذخیره می‌کند """
     # ---------------------------------------------------------------
     # سازنده 
-    # --------------------------------------------------------------- OK=
+    # ---------------------------------------------------------------
     def __init__(self, 
                  cfg:       Optional[Dict[str, Any]] = None,
                  connector: Optional[MT5Connector]   = None,
@@ -390,18 +435,18 @@ class MT5DataLoader_batch:
             logger.warning("save_format is unknown; falling back to csv.")
             self.save_format = "csv"
 
-        logger.debug(f"self.default_symbols = {self.default_symbols}")         # save for debug
-        logger.debug(f"self.default_timeframes = {self.default_timeframes}")   # save for debug
-        logger.debug(f"self.default_lookback = {self.default_lookback}")       # save for debug
-        logger.debug(f"self.date_from = {self.date_from}")                     # save for debug
-        logger.debug(f"self.date_to = {self.date_to}")                         # save for debug
-        logger.debug(f"self.broker_timezone = {self.broker_timezone}")         # save for debug
-        logger.debug(f"self.result_timezone = {self.result_timezone}")         # save for debug
-        logger.debug(f"self.range_policy = {self.range_policy}")               # save for debug
-        logger.debug(f"self.save_format = {self.save_format}")                 # save for debug
+        # logger.debug(f"self.default_symbols = {self.default_symbols}")         # save for debug
+        # logger.debug(f"self.default_timeframes = {self.default_timeframes}")   # save for debug
+        # logger.debug(f"self.default_lookback = {self.default_lookback}")       # save for debug
+        # logger.debug(f"self.date_from = {self.date_from}")                     # save for debug
+        # logger.debug(f"self.date_to = {self.date_to}")                         # save for debug
+        # logger.debug(f"self.broker_timezone = {self.broker_timezone}")         # save for debug
+        # logger.debug(f"self.result_timezone = {self.result_timezone}")         # save for debug
+        # logger.debug(f"self.range_policy = {self.range_policy}")               # save for debug
+        # logger.debug(f"self.save_format = {self.save_format}")                 # save for debug
 
-        # -- 7 -- save_at_utc_time ----------------------------------
-        self.save_at_utc_time = bool(dl["save_at_utc_time"])
+        # # -- 7 -- save_at_utc_time ----------------------------------
+        # self.save_at_utc_time = bool(dl["save_at_utc_time"])
         
         # -- 8 -- connection to mt5 ---------------------------------
         self.conn = connector or MT5Connector(config=self.cfg)
@@ -455,7 +500,7 @@ class MT5DataLoader_batch:
 
     # ---------------------------------------------------------------
     # ساخت طرح دانلود- متد اصلی
-    # --------------------------------------------------------------- OK=
+    # ---------------------------------------------------------------
     def build_plan(
         self,
         symbols: Optional[Iterable[str]] = None,
@@ -606,7 +651,7 @@ class MT5DataLoader_batch:
 
     # ---------------------------------------------------------------
     # اجرای طرح دانلود برای حالت batch
-    # --------------------------------------------------------------- OK=
+    # ---------------------------------------------------------------
     def run_plan(self,
             plans: List[DownloadPlan],
             ) -> List[Dict[str, Any]]:
@@ -644,8 +689,8 @@ class MT5DataLoader_batch:
                 logger.debug(f"============================================================\n") # save for debug
 
 
-                if not self.save_at_utc_time:                             # *** درست نمودن زمان داده های خام دانلود شده
-                    df.index = df.index.tz_convert(self.broker_timezone)  # *** درست نمودن زمان داده های خام دانلود شده
+                # if not self.save_at_utc_time:                             # *** درست نمودن زمان داده های خام دانلود شده
+                #     df.index = df.index.tz_convert(self.broker_timezone)  # *** درست نمودن زمان داده های خام دانلود شده
                 
 
                 # -- L2 -- Normalizing DataFrame --------------------
@@ -665,6 +710,7 @@ class MT5DataLoader_batch:
                             p.timeframe, p.date_from, p.date_to)
                 else:
                     if _downloaded_by == "count":
+                        logger.info("\n")
                         logger.info("TF=%s | requested=%d | returned=%d | range=%s → %s",
                             p.timeframe, req, len(df), df.index.min(), df.index.max() )
                     else:
@@ -675,7 +721,7 @@ class MT5DataLoader_batch:
                 # -- L4 -- Writing downloaded dataframes to files ---
 
                 out_path = full_file_path(self.raw_dir, p.symbol, p.timeframe, self.save_format)
-                before, after = _append_or_write(df, out_path, self.save_format)
+                before, after, first_index, last_index = _append_or_write(df, out_path, self.save_format)
 
                 # -- L5 -- Logging saved files & sizes --------------
 
@@ -684,7 +730,7 @@ class MT5DataLoader_batch:
 
                 # -- L6 -- Writing metadatas to files ---------------
 
-                _write_metadata(df, self.raw_dir, p.symbol, p.timeframe, after, df.columns, self.save_format)
+                _write_metadata(self.raw_dir, p.symbol, p.timeframe, first_index, last_index, after, df.columns, self.save_format)
                 # لاگر در داخل تابع لاگ را ثبت میکند
 
                 # -- L6 -- Wrapping list of dictionaries ------------
@@ -721,7 +767,7 @@ class MT5DataLoader_batch:
 # =============================================================================
 # CLI
 # =============================================================================
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 def _setup_logging_all(level: str = "INFO") -> None:
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
@@ -759,7 +805,7 @@ def _setup_logging_funcname(
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
 
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 def _parse_args() -> argparse.Namespace:
     path = str(project_root() / "f01_config" / "config.yaml")
     parser = argparse.ArgumentParser(description="Download data from MT5 and save to f02_data/raw (CSV/Parquet).")
@@ -768,20 +814,21 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--symbols", nargs="*", default=None, help="List of symbols (Example: XAUUSD EURUSD)")
     parser.add_argument("--timeframes", nargs="*", default=None, help="List of time frames (example: M5 H1)")
     parser.add_argument("--lookback", type=int, default=None, help="Number of closing candles to receive") #تعداد کندلهای انتهایی
-    parser.add_argument("--brk_date-from", type=str, default=None, help="Start of interval (ISO 8601 like 2024-01-01T00:00:00Z)")
-    parser.add_argument("--brk_date-to", type=str, default=None, help="End of interval (ISO8601)")
+    parser.add_argument("--brk_date_from", type=str, default=None, help="Start of interval (ISO 8601 like 2024-01-01T00:00:00Z)")
+    parser.add_argument("--brk_date_to", type=str, default=None, help="End of interval (ISO8601)")
+    parser.add_argument("--range_policy", type=str, default=None, choices=["date", "count"], help="Range policy")
     parser.add_argument("--save_format", type=str, default=None, choices=["csv", "parquet"], help="Storage format")
-    parser.add_argument("--log-level", type=str, default="INFO", help="Log level: DEBUG/INFO/WARN/ERROR")
+    parser.add_argument("--log_level", type=str, default="INFO", help="Log level: DEBUG/INFO/WARN/ERROR")
     
     return parser.parse_args()
 
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 def main() -> int:
     # --1 -- استخراج مقادیر از خط فرمان 
     args = _parse_args()
     
     # -- 2 -- ساخت لاگر و تعیین سطح آن، همراه با تعیین فرمت و فرمت زمان 
-    _setup_logging_all("debug")
+    _setup_logging_all(args.log_level)
     
     # --- این بلوک کد زیری باید حفظ بشود ---
     # _setup_logging_funcname(
@@ -825,25 +872,42 @@ def main() -> int:
     # plans = loader.build_plan(
     #     symbols=None,
     #     timeframes=None,
-    #     # lookback_bars=7,
-    #     # date_from=None,
-    #     # date_to=None,
-    #     # date_tz=ZoneInfo("Asia/Tehran"),
-    #     result_tz="Asia/Tehran",
-    #     # range_policy="count",
+    #     lookback_bars=None,
+    #     date_from=None,
+    #     date_to=None,
+    #     ## date_tz=ZoneInfo("Asia/Tehran"),
+    #     ## result_tz="Asia/Tehran",
+    #     range_policy="count",
     # )
 
     # --- پلان دومی برای اصل برنامه است ---
-    plans = loader.build_plan(
-        symbols=args.symbols,
-        timeframes=args.timeframes,
-        lookback_bars=args.lookback,
-        date_from=args.brk_date_from,
-        date_to=args.brk_date_to,
-        date_tz=ZoneInfo("Europe/Athens"),
-        result_tz="Europe/Athens",
-        range_policy="date",
-    )
+    if args.range_policy.lower() == "date" or args.range_policy.lower() == "count":
+        rng_policy = args.range_policy.lower()
+    else:
+        rng_policy = cfg.get("download_defaults").get("range_policy")
+
+    if rng_policy == "date":
+        plans = loader.build_plan(
+            symbols=args.symbols,
+            timeframes=args.timeframes,
+            # lookback_bars=args.lookback,
+            date_from=datetime.fromisoformat(args.brk_date_from),
+            date_to=datetime.fromisoformat(args.brk_date_to),
+            date_tz=ZoneInfo("Europe/Athens"),
+            result_tz="UTC",
+            range_policy=args.range_policy,
+        )
+    elif rng_policy == "count":
+        plans = loader.build_plan(
+            symbols=args.symbols,
+            timeframes=args.timeframes,
+            lookback_bars=args.lookback,
+            # date_from=datetime.fromisoformat(args.brk_date_from),
+            # date_to=datetime.fromisoformat(args.brk_date_to),
+            date_tz=ZoneInfo("Europe/Athens"),
+            result_tz="UTC",
+            range_policy=args.range_policy,
+        )
 
 
     # -- 8 -- اجرای لودر و دریافت نتیجه دانلودها
@@ -857,8 +921,10 @@ def main() -> int:
 
         if not isinstance(df, pd.DataFrame):
             df = pd.DataFrame(df)
-        df.to_csv(f"___{symbol}_{tf}.csv")
-        logger.info(f"Df saved in root of project: ___{symbol}_{tf}.csv")
+        # df.to_csv(f"___{symbol}_{tf}.csv")
+        # logger.info(f"Df saved in root of project: ___{symbol}_{tf}.csv")
+        logger.info(f"Df can save in root of project: ___{symbol}_{tf}.csv")
+
     # -- 10 -- گزارش خلاصه 
     ok  = [r for r in results if "error" not in r]
     bad = [r for r in results if "error"     in r]
@@ -870,32 +936,9 @@ def main() -> int:
         return 2
     return 0
 
-# ------------------------------------------------------------------- OK=
+# -------------------------------------------------------------------
 # اجرای از طریق فراخوانی مستقیم این فایل، سبب میشود که داده های جدید در ریشه پروژه ذخیره شوند
 if __name__ == "__main__":
     raise SystemExit(main())
 
-
-# =============================================================================
-# تست پوشش کد (برای توسعه‌دهندگان) 
-# =============================================================================
-""" Func Names                                 Used in Functions: ...
-                            1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  16  17
-1  DownloadPlan            --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --
-2  resolve_raw_dir        --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --
-3  full_file_path         --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
-4  normalize_df           --  --  --  --  ok  --  --  --  --  --  --  ok  --  --  --  --  --
-5  _append_or_write        --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
-6  _write_metadata         --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --
-7  _floor_to_last_closed   --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --  --
-8  _lookback_to_range      --  --  --  --  --  --  --  --  --  --  --  ok  --  --  --  --  --  Commented
-9  MT5DataLoader           --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-10 __init__                --  --  --  --  --  --  --  --  ok  --  --  --  --  --  --  --  --
-11 build_plan              --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-12 run                     --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-13 _parse_args             --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-14 _setup_logging          --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-15 normalize_datetime               --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok  --
-16 main                    --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  --  ok
-17 (Global code)           -/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/-/
-"""
+# ============================================================================= END

@@ -7,7 +7,7 @@
 تابع write_specs_yaml در واقع تابع اصلی و ماحصل فایل symbol_specs_snapshot.py است
 
 Run:
-python -m f02_data._ExamCaller_write_specs_yaml
+python -m f02_data.ExamCaller_write_specs_yaml
 '''
 
 from f02_data.symbol_specs_snapshot import write_specs_yaml

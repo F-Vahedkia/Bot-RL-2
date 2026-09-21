@@ -77,6 +77,7 @@ connection:   # ----- Used in: mt5_connector.py
 
 # === 6 ============================================================= new
 download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader / __init__()
+  auto_download: true
   symbols:   # ----- Used in: mt5_connector.py / _auto_select_symbols()
   # - XAUUSD
   # - EURUSD
@@ -102,14 +103,14 @@ download_defaults:   # ----- Used in: mt5_data_loader.py / class MT5DataLoader /
   # - W1
   # ----- below 4 keys, used in: mt5_data_loader/class DownloadPlan
   lookback_bars: 20000              # در صورتیکه صفر یا منفی باشد، به حساب نمی آید 
-  broker_date_from: 2026-08-31 00:00:00+03:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
-  broker_date_to:   2026-09-04 23:59:00+03:00  # مقدار date_to میتواند NOW یا now هم اختیار کند 
+  broker_date_from: 2026-09-16 00:00:00+03:00  # در صورتیکه هر دو برابر باشند یا date_from بیشتر باشد به حساب نمی آیند 
+  broker_date_to:   2026-09-16 21:59:00+03:00  # مقدار date_to میتواند NOW یا now هم اختیار کند 
   result_timezone: "UTC"
-  range_policy: date                    # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
+  range_policy: count                    # میتواند یکی از رشته مقادیر min, max, date, count را داشته باشد 
 
   batch_size: 50                                   # NOT USED
   save_format: csv   # can be: csv | parquet   # Used many times in different files
-  save_at_utc_time: true                           # Used in: mt5_data_loader/class MT5DataLoader_batch/__init__()
+  # save_at_utc_time: true    (بهتر است حذف بشود)   # Used in: mt5_data_loader/class MT5DataLoader_batch/__init__()
 
 # === 7 =============================================================
 features:
@@ -118,8 +119,8 @@ features:
   symbols:
     # -----------------------
     COMMON:
-      symbols: [XAUUSD]  #, EURUSD, BITCOIN]
-      # candles: [M1]
+      symbols: [BITCOIN, EURUSD, XAUUSD]
+
       indicators:
         - sma(column='close',period=8)@M1      # Simple Moving Average
         - sma(column='close',period=4)@M2      # Simple Moving Average
@@ -163,7 +164,7 @@ features:
         - obv@M1                     # On Balance Volume
         - obv@M2                     # On Balance Volume
 
-        - williams_r(period=9)@M1   # Williams %R
+        - williams_r(period=7)@M1   # Williams %R
         - williams_r(period=9)@M2   # Williams %R
 
         - parabolic_sar(af_start=0.02, af_step=0.02, af_max=0.2)@M1  # Parabolic SAR
@@ -189,24 +190,93 @@ features:
 
         - hma(column='close', period=20)@M1     # Hull Moving Average
         - hma(column='close', period=20)@M2     # Hull Moving Average
+
     # -----------------------
     XAUUSD:
-      # base_timeframe: M1
-      # candles: [M1, M2, M10, H1]
+      # candles: [H1, H4, D1]
       indicators:
-        # - sma(column='close',period=19)@M5     # Simple Moving Average
-        # - sma(column='close',period=19)@M2      # Simple Moving Average
-        # - sma(column='close',period=19)@M1      # Simple Moving Average
+        # - dema(column='close', period=10)@M1    # Double Exponential Moving Average
+        # - dema(column='close', period=10)@M2    # Double Exponential Moving Average
+
+        # - tema(column='close', period=10)@M1    # Triple Exponential Moving Average
+        # - tema(column='close', period=10)@M2    # Triple Exponential Moving Average
+
+        # - kama(column='close', period=20)@M1    # Kaufman's Adaptive Moving Average
+        # - kama(column='close', period=20)@M2    # Kaufman's Adaptive Moving Average
     # -----------------------
     EURUSD:
-      # base_timeframe: M1
       # candles: [M5, M15]
       indicators:
-        # - wma(column='close',period=5)@M10      # Weighted Moving Average
-        # - wma(column='close',period=6)@M5      # Weighted Moving Average
+        # - sma(column='close',period=8)@M1      # Simple Moving Average
+        # - sma(column='close',period=4)@M2      # Simple Moving Average
+
+        # - wma(column='close',period=6)@M1      # Weighted Moving Average
+        # - wma(column='close',period=6)@M2      # Weighted Moving Average
+
+        # - ema(column='close',period=6)@M1      # Exponential Moving Average
+        # - ema(column='close',period=6)@M2      # Exponential Moving Average
+
+        # - roc(column='close',period=4)@M1      # Rate of Change
+        # - roc(column='close',period=4)@M2      # Rate of Change
+
+        # - rsi(period=6)@M1            # Relative Strength Index
+        # - rsi(period=6)@M2            # Relative Strength Index
+
+        # - true_range@M1                # True Range
+        # - true_range@M2                # True Range
+
+        # - atr(period=6)@M1            # Average True Range
+        # - atr(period=6)@M2            # Average True Range
+
+        # - macd(fast=12,slow=26,signal=9)@M1      # MACD
+        # - macd(fast=12,slow=26,signal=9)@M2      # MACD
+
+        # - bollinger_bands(close,8,2)@M1         # Bollinger Bands
+        # - bollinger_bands(close,8,2)@M2         # Bollinger Bands
+
+        # - keltner_channel(close_col='close', n=10, m=2)@M1    # Keltner Channel
+        # - keltner_channel(close_col='close', n=10, m=2)@M2    # Keltner Channel
+
+        # - stochastic(k_period=14, d_period=3, slowing=3)@M1   # Stochastic
+        # - stochastic(k_period=14, d_period=3, slowing=3)@M2   # Stochastic
+
+        # - cci(period=10)@M1          # Commodity Channel Index
+        # - cci(period=10)@M2          # Commodity Channel Index
+
+        # - mfi(period=8)@M1          # Money Flow Index
+        # - mfi(period=8)@M2          # Money Flow Index
+
+        # - obv@M1                     # On Balance Volume
+        # - obv@M2                     # On Balance Volume
+
+        # - williams_r(period=9)@M1   # Williams %R
+        # - williams_r(period=9)@M2   # Williams %R
+
+        # - parabolic_sar(af_start=0.02, af_step=0.02, af_max=0.2)@M1  # Parabolic SAR
+        # - parabolic_sar(af_start=0.02, af_step=0.02, af_max=0.2)@M2  # Parabolic SAR
+
+        # - heikin_ashi@M1                              # Heikin Ashi
+        # - heikin_ashi@M2                              # Heikin Ashi
+
+        # - supertrend(period=10, multiplier=3)@M1      # Supertrend
+        # - supertrend(period=10, multiplier=3)@M2      # Supertrend
+
+        # - aroon(period=25)@M1                   # Aroon
+        # - aroon(period=25)@M2                   # Aroon
+
+        # - dema(column='close', period=10)@M1    # Double Exponential Moving Average
+        # - dema(column='close', period=10)@M2    # Double Exponential Moving Average
+
+        # - tema(column='close', period=10)@M1    # Triple Exponential Moving Average
+        # - tema(column='close', period=10)@M2    # Triple Exponential Moving Average
+
+        # - kama(column='close', period=20)@M1    # Kaufman's Adaptive Moving Average
+        # - kama(column='close', period=20)@M2    # Kaufman's Adaptive Moving Average
+
+        # - hma(column='close', period=20)@M1     # Hull Moving Average
+        # - hma(column='close', period=20)@M2     # Hull Moving Average
     # -----------------------
     BITCOIN:
-      # base_timeframe: M5
       # candles: [M1, M2]
       indicators:
         # - sma(column='close',period=8)@M1      # Simple Moving Average
@@ -278,7 +348,36 @@ features:
         # - hma(column='close', period=20)@M1     # Hull Moving Average
         # - hma(column='close', period=20)@M2     # Hull Moving Average
   # ----------------------------------------
+  candles:
+    required:
+      XAUUSD:
+        M1: 20
+        M5: 4
+        H1: 4
+      EURUSD:
+        M5: 5
+        M10: 10
+      BITCOIN:
+        M1: 10
+        H2: 20
+    namse:
+      - high
+      - low
+      - close
+      - volume
+    normalization:
+      enabled: true
+      price:
+        method: "price_relative"
+        reference: "prev_close"
+      volume:
+        method: "relative"
+        window: 20
+  # ----------------------------------------
   observation:
+    base_timeframe:
+      mode: union_min        # fixed | feature_min | candle_min | union_min
+      timeframe: null
     features_whitelist:
       - sma
       - wma
@@ -579,38 +678,38 @@ env:
   use_volume: true
   use_spread: false
   reward_mode: pnl
-  
-  observation:
-    resample_to_base_tf: M5
-    clip_values: true
-    clip_range:
-    - -5
-    - 5
 
+  # RL/Environment observation processing only.
+  # The final feature observation itself still comes from f03_features.
+  observation:
+    window_size: 128
+    clip_values: true
+    clip_range: [-5, 5]
+    normalize: true
+
+  # Gymnasium-facing action spaces.
+  # Symbol action is discrete and matches the current project semantics.
+  # Meta action is kept as a separate continuous vector boundary because
+  # PortfolioDecision contains several continuous allocations.
   action_space:
-    type: discrete
-    dim: 3
-    read_from_config: true
-    #discrete_actions: [STEP_-2, STEP_-1, HOLD, STEP_+1, STEP_+2]  # ۵‌سطح سازگار با نگاشت داخلی
-    discrete_actions: [short, hold, long]
-    mapping:
-      levels: [-1, 0, 1]       # ایندکس اکشن ← تغییر جهت/شدت
-      gate_from_flat_requires_extreme: false  # فقط ±2 اجازه ورود مستقیم از حالت فلت
-  
-  reward:
-    type: risk_adjusted_pnl
-    params:
-      dd_penalty: 2.5
-      trade_cost_penalty: 1.0
-  
+    symbol:
+      type: discrete
+      n: 3
+      actions: [short, hold, long]
+      levels: [-1, 0, 1]
+
+    meta:
+      type: box
+      # The actual shape is derived from the active symbol set.
+      low: 0.0
+      high: 1.0
+      dtype: float32
+
   termination:
     max_episode_steps: 5000
     stop_on_margin_call: true
     stop_on_max_drawdown_pct: 0.2
 
-  window_size: 128
-  normalize: true
-  
   split:
     ratios:
       train: 0.7
@@ -618,14 +717,14 @@ env:
       test: 0.15
     fixed:
       train:
-      - '2025-08-21'
-      - '2025-08-25'
+        - '2025-08-21'
+        - '2025-08-25'
       val:
-      - '2025-08-25'
-      - '2025-08-26'
+        - '2025-08-25'
+        - '2025-08-26'
       test:
-      - '2025-08-26'
-      - '2099-12-31'
+        - '2025-08-26'
+        - '2099-12-31'
     align:
       unit: session
       tz: America/New_York
@@ -634,20 +733,10 @@ env:
       mode: auto
       margin_bars: 32
     flat_at_boundary: true
-  
 
-  base_tf: M5           # chatgpt میگوید که حذف بشوند
-  timeframes:           # chatgpt میگوید که حذف بشوند
-  - M1                  #
-  - M5                  #
-  - M30                 # chatgpt میگوید که حذف بشوند
-  - H4                  #
-  - D1                  #
-  - W1                  #
-  n_candles_per_tf: 256 # chatgpt میگوید که حذف بشوند
-
-
-  mode: offline #or online  # used in data_handler
+  # Data/Feature ownership is intentionally removed from env:
+  # base_tf, timeframes and n_candles_per_tf belong to upstream layers.
+  mode: offline   # or online
 
 # === 10 =============================================================
 risk:
@@ -674,90 +763,179 @@ risk:
       atr_mult: 3.0
   
   position_limits:
-    max_open_positions: 1
-    max_positions_per_symbol: 1
+    max_open_positions: 1     # used
+    max_positions_per_symbol: 1  # used
     cooldown_minutes_after_stop: 15
 
 # === 11 =============================================================
+# Notes about parts 9-env, 11-training:
+# 1. f03_features remains the owner of base_tf/timeframes/feature alignment.
+# 2. f05_agents remains the owner of AgentObservation -> Symbol-Agent ->
+#    Meta-Agent -> PortfolioDecision contracts.
+# 3. backend selection changes only the RL integration/provider path.
+# 4. policy names such as MlpPolicy are SB3-specific and therefore are not
+#    part of the common rl block.
+# 5. RLlib uses RLModule/Learner and EnvRunner/ConnectorV2 on its current API
+#    stack; those details remain inside rllib_integration.py.
+
 training:
   total_timesteps: 2000000
   eval_freq_steps: 25000
   checkpoint_interval_steps: 50000
   max_checkpoints_to_keep: 10
   resume_if_exists: true
+
   early_stop:
     enabled: true
     metric: eval/sharpe
     patience_evals: 8
     min_delta: 0.01
+
   experiment_name: ppo_baseline_mtf
+
   rl:
+    # THE SINGLE SWITCH selecting the RL backend.
+    # Allowed values in this architecture: sb3 | rllib
+    backend: sb3
+
+    # Both supported backends use PyTorch and Gymnasium.
+    framework: torch
+    environment_api: gymnasium
+
+    # Keep the algorithm name backend-neutral here.
     algorithm: PPO
-    policy: MlpPolicy
-    hyperparams:
-      ppo:
-        n_steps: 2048
-        batch_size: 256
-        gamma: 0.99
-        gae_lambda: 0.95
-        clip_range: 0.2
-        ent_coef: 0.01
-        vf_coef: 0.5
-        max_grad_norm: 0.5
-        learning_rate: 0.0003
-        target_kl: 0.01
-        n_epochs: 10
-        clip_range_vf: 0.2
-      sac:
-        learning_rate: 0.0003
-        buffer_size: 1000000
-        batch_size: 256
-        gamma: 0.99
-        tau: 0.005
-        ent_coef: auto
-        train_freq: 1
-        gradient_steps: 1
-        learning_starts: 10000
-        target_entropy: auto
-      td3:
-        learning_rate: 0.0003
-        buffer_size: 1000000
-        batch_size: 256
-        gamma: 0.99
-        tau: 0.005
-        train_freq: 1
-        gradient_steps: 1
-        policy_delay: 2
-        noise_sigma: 0.1
-        noise_clip: 0.3
-      a2c:
-        n_steps: 5
-        gamma: 0.99
-        ent_coef: 0.0
-        vf_coef: 0.5
-        max_grad_norm: 0.5
-        learning_rate: 0.0007
-      dqn:
-        learning_rate: 0.00025
-        buffer_size: 100000
-        batch_size: 128
-        gamma: 0.99
-        train_freq: 1
-        exploration_fraction: 0.1
-        exploration_final_eps: 0.01
-        learning_starts: 50000
-        target_update_interval: 1000
-        tau: 1.0
-      ddpg:
-        learning_rate: 0.0003
-        buffer_size: 1000000
-        batch_size: 256
-        gamma: 0.99
-        tau: 0.005
-        train_freq: 1
-        gradient_steps: 1
-        action_noise: normal(0.1)
-        policy_delay: 2
+
+    deterministic_inference: true
+
+    # Backend-independent action semantics.
+    action_codec:
+      symbol:
+        name: discrete_symbol_v1
+        actions: [short, hold, long]
+        levels: [-1, 0, 1]
+        exposure_by_signal:
+          '-1': 0.20
+          '0': 0.0
+          '1': 0.20
+        stop_price_source: context_metadata
+        stop_price_key: proposed_stop_price
+
+      meta:
+        name: mapping_meta_v1
+        stop_policy: inherit_unless_overridden
+
+    # ---------------------------------------------------------------
+    # SB3 + PyTorch + Gymnasium
+    # ---------------------------------------------------------------
+    sb3:
+      policy: MlpPolicy
+      device: auto
+
+      algorithms:
+        PPO:
+          n_steps: 2048
+          batch_size: 256
+          gamma: 0.99
+          gae_lambda: 0.95
+          clip_range: 0.2
+          ent_coef: 0.01
+          vf_coef: 0.5
+          max_grad_norm: 0.5
+          learning_rate: 0.0003
+          target_kl: 0.01
+          n_epochs: 10
+          clip_range_vf: 0.2
+
+        SAC:
+          learning_rate: 0.0003
+          buffer_size: 1000000
+          batch_size: 256
+          gamma: 0.99
+          tau: 0.005
+          ent_coef: auto
+          train_freq: 1
+          gradient_steps: 1
+          learning_starts: 10000
+          target_entropy: auto
+
+        TD3:
+          learning_rate: 0.0003
+          buffer_size: 1000000
+          batch_size: 256
+          gamma: 0.99
+          tau: 0.005
+          train_freq: 1
+          gradient_steps: 1
+          policy_delay: 2
+          noise_sigma: 0.1
+          noise_clip: 0.3
+
+        A2C:
+          n_steps: 5
+          gamma: 0.99
+          ent_coef: 0.0
+          vf_coef: 0.5
+          max_grad_norm: 0.5
+          learning_rate: 0.0007
+
+        DQN:
+          learning_rate: 0.00025
+          buffer_size: 100000
+          batch_size: 128
+          gamma: 0.99
+          train_freq: 1
+          exploration_fraction: 0.1
+          exploration_final_eps: 0.01
+          learning_starts: 50000
+          target_update_interval: 1000
+          tau: 1.0
+
+        DDPG:
+          learning_rate: 0.0003
+          buffer_size: 1000000
+          batch_size: 256
+          gamma: 0.99
+          tau: 0.005
+          train_freq: 1
+          gradient_steps: 1
+          action_noise: normal(0.1)
+          policy_delay: 2
+
+    # ---------------------------------------------------------------
+    # RLlib + PyTorch + Gymnasium
+    # ---------------------------------------------------------------
+    rllib:
+      framework: torch
+      module_id: null
+      checkpoint: null
+      num_env_runners: 0
+
+      algorithms:
+        PPO:
+          training:
+            lr: 0.0003
+            gamma: 0.99
+            lambda_: 0.95
+            clip_param: 0.2
+            entropy_coeff: 0.01
+            vf_loss_coeff: 0.5
+            grad_clip: 0.5
+            num_epochs: 10
+            minibatch_size: 256
+
+          model_config:
+            fcnet_hiddens: [256, 256]
+            fcnet_activation: relu
+
+        DQN:
+          training:
+            lr: 0.00025
+            gamma: 0.99
+
+        SAC:
+          training:
+            lr: 0.0003
+            gamma: 0.99
 
 # === 12 ============================================================
 evaluation:
