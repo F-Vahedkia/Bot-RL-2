@@ -55,7 +55,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from math import isfinite
-from typing import Mapping, Optional, Tuple,  TYPE_CHECKING
+from typing import Mapping, Tuple,  TYPE_CHECKING
 
 from f05_agents.contracts import (
     DecisionMode,
@@ -117,13 +117,13 @@ class RiskRequest:
     """
     Input contract for one Risk Engine evaluation.
 
-    `risk_context` is optional for backward compatibility with the original
-    Chapter-4 request path. Production pre-trade evaluation should provide it.
+    `risk_context` is mandatory.
+    The official Risk evaluation path is projected-state evaluation.
     """
 
     decision: PortfolioDecision
     portfolio: PortfolioContext
-    risk_context: Optional["RiskContext"] = None
+    risk_context: "RiskContext"
     #-----new-1-start
     stop_loss_requests: Mapping[
             str,
@@ -150,14 +150,18 @@ class RiskRequest:
         if self.decision.mode != self.portfolio.mode:
             raise ValueError("Decision mode must match portfolio mode.")
 
-        if self.risk_context is not None:
-            from f06_risk.risk_context import RiskContext
+        from f06_risk.risk_context import RiskContext
 
-            if not isinstance(self.risk_context, RiskContext):
-                raise TypeError("risk_context must be RiskContext.")
+        if self.risk_context is None:
+            raise ValueError("risk_context is required.")
 
-            if self.risk_context.timestamp != self.decision.timestamp:
-                raise ValueError("RiskContext timestamp must match decision timestamp.")
+        if not isinstance(self.risk_context, RiskContext):
+            raise TypeError("risk_context must be RiskContext.")
+
+        if self.risk_context.timestamp != self.decision.timestamp:
+            raise ValueError(
+                "RiskContext timestamp must match decision timestamp."
+            )
 
         #-----new-2 start
         for symbol, request in self.stop_loss_requests.items():

@@ -29,7 +29,11 @@ from f06_risk.risk_engine import RiskEngine
 from f06_risk.stop_loss_position_sizing import (
     StopLossPositionSizingRequest,
 )
-
+from f06_risk.risk_context import (
+    AccountRiskSnapshot,
+    RiskContext,
+    SymbolRiskSnapshot,
+)
 
 TS = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
 
@@ -90,6 +94,52 @@ def make_portfolio(
     )
 
 
+def make_risk_context(
+    *,
+    target_exposure: float,
+) -> RiskContext:
+    return RiskContext(
+        timestamp=TS,
+        account=AccountRiskSnapshot(
+            balance=10_000.0,
+            equity=10_000.0,
+            used_margin=1_000.0,
+            free_margin=9_000.0,
+            margin_level=1_000.0,
+            leverage=100.0,
+            peak_equity=10_000.0,
+            day_start_equity=10_000.0,
+            open_position_count=1,
+        ),
+        symbols={
+            "XAUUSD": SymbolRiskSnapshot(
+                symbol="XAUUSD",
+                exposure=target_exposure,
+                notional=abs(target_exposure) * 10_000.0,
+                used_margin=250.0,
+                current_lots=(
+                    0.0
+                    if target_exposure == 0.0
+                    else 0.05
+                ),
+                current_side=(
+                    0
+                    if target_exposure == 0.0
+                    else 1
+                    if target_exposure > 0.0
+                    else -1
+                ),
+            ),
+        },
+        correlation={
+            "XAUUSD": {
+                "XAUUSD": 1.0,
+            },
+        },
+        risk_blocked=False,
+    )
+
+
 def make_sl_request(
     *,
     entry_price: float = 2_500.0,
@@ -117,6 +167,9 @@ def make_request(
             target_exposure=target_exposure,
         ),
         portfolio=make_portfolio(
+            target_exposure=target_exposure,
+        ),
+        risk_context=make_risk_context(
             target_exposure=target_exposure,
         ),
         stop_loss_requests={
@@ -242,33 +295,6 @@ def test_projected_engine_enforces_alignment() -> None:
     with pytest.raises(
         ValueError,
         match="long exposure",
-    ):
-        RiskEngine().evaluate(request)
-
-
-def test_legacy_engine_enforces_alignment() -> None:
-    decision = make_decision(
-        target_exposure=-0.20,
-    )
-
-    portfolio = make_portfolio(
-        target_exposure=-0.20,
-    )
-
-    request = RiskRequest(
-        decision=decision,
-        portfolio=portfolio,
-        stop_loss_requests={
-            "XAUUSD": make_sl_request(
-                entry_price=2_500.0,
-                stop_price=2_490.0,
-            ),
-        },
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="short exposure",
     ):
         RiskEngine().evaluate(request)
 

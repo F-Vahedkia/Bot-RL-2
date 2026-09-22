@@ -25,6 +25,9 @@ https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_ri
 https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_risk/stop_loss_position_sizing.py
 https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_risk/stop_loss_risk.py
 
+
+
+
 https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_risk/tests_ch4_i0prev/f06_risk_tester_A.py
 https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_risk/tests_ch4_i0prev/margin_calculator_tester_A.py
 https://raw.githubusercontent.com/F-Vahedkia/Bot-RL-2/refs/heads/original/f06_risk/tests_ch4_i0prev/position_sizing_tester_A.py

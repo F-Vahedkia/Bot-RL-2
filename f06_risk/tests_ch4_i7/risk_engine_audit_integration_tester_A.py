@@ -12,7 +12,6 @@ Purpose:
 
 این تستر 8 موضوع را بررسی می‌کند:
     ثبت evaluation در مسیر projected
-    ثبت evaluation در مسیر legacy
     ثبت حالت MODIFIED
     ثبت حالت REJECTED
     حفظ ترتیب چند رکورد
@@ -131,7 +130,6 @@ def make_request(
     *,
     decision_id: str = "decision-001",
     portfolio_risk: float = 0.10,
-    include_risk_context: bool = True,
     drawdown: float = 0.0,
     daily_drawdown: float = 0.0,
     risk_blocked: bool = False,
@@ -172,7 +170,7 @@ def make_request(
             daily_drawdown=daily_drawdown,
             risk_blocked=risk_blocked,
         ),
-        risk_context=context if include_risk_context else None,
+        risk_context=context,
         stop_loss_requests=stop_loss_requests or {},
     )
 
@@ -188,7 +186,6 @@ def test_projected_evaluation_creates_one_audit_record() -> None:
 
     request = make_request(
         decision_id="decision-projected",
-        include_risk_context=True,
     )
 
     result = engine.evaluate(request)
@@ -257,83 +254,6 @@ def test_projected_stop_loss_is_preserved_in_audit() -> None:
     }
 
     assert record.stop_loss_results["XAUUSD"] is result.stop_loss_results["XAUUSD"]
-
-
-def test_legacy_stop_loss_is_preserved_in_audit() -> None:
-    engine = RiskEngine(
-        limits=RiskLimits(
-            max_symbol_exposure=1.0,
-            max_total_exposure=1.0,
-            max_margin_utilization=1.0,
-        )
-    )
-
-    stop_loss_request = StopLossPositionSizingRequest(
-        symbol="XAUUSD",
-        equity=10_000.0,
-        risk_per_trade=0.01,
-        entry_price=2000.0,
-        stop_price=1990.0,
-        contract_size=100.0,
-        currency_conversion_rate=1.0,
-    )
-
-    request = make_request(
-        decision_id="decision-legacy-stop-loss-audit",
-        include_risk_context=False,
-        target_exposure={
-            "XAUUSD": 0.10,
-        },
-        stop_loss_requests={
-            "XAUUSD": stop_loss_request,
-        },
-    )
-
-    result = engine.evaluate(request)
-
-    assert result.status == RiskDecisionStatus.APPROVED
-    assert engine.audit_trail.count == 1
-
-    record = engine.audit_trail.latest
-    assert record is not None
-
-    assert record.evaluation_path == "legacy"
-
-    assert record.stop_loss_requests == {
-        "XAUUSD": stop_loss_request,
-    }
-
-    assert record.stop_loss_results == {
-        "XAUUSD": result.stop_loss_results["XAUUSD"],
-    }
-
-    assert record.stop_loss_results["XAUUSD"] is result.stop_loss_results["XAUUSD"]
-
-
-def test_legacy_evaluation_creates_one_audit_record() -> None:
-    engine = RiskEngine(
-        limits=RiskLimits(
-            max_symbol_exposure=1.0,
-            max_total_exposure=1.0,
-            max_margin_utilization=1.0,
-        )
-    )
-
-    request = make_request(
-        decision_id="decision-legacy",
-        include_risk_context=False,
-    )
-
-    result = engine.evaluate(request)
-
-    assert result.status == RiskDecisionStatus.APPROVED
-    assert engine.audit_trail.count == 1
-
-    record = engine.audit_trail.latest
-    assert record is not None
-
-    assert record.source_decision_id == "decision-legacy"
-    assert record.evaluation_path == "legacy"
 
 
 def test_modified_decision_audit_contains_requested_and_final_state() -> None:

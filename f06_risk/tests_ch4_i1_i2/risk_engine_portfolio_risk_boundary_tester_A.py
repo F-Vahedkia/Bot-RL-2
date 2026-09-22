@@ -109,8 +109,6 @@ def portfolio_context() -> PortfolioContext:
 
 def portfolio_request(
     portfolio_risk: float,
-    *,
-    include_risk_context: bool = True,
 ) -> RiskRequest:
     decision = PortfolioDecision(
         approved=True,
@@ -131,11 +129,8 @@ def portfolio_request(
     return RiskRequest(
         decision=decision,
         portfolio=portfolio_context(),
-        risk_context=risk_context()
-        if include_risk_context
-        else None,
+        risk_context=risk_context(),
     )
-
 
 def test_projected_portfolio_risk_below_limit_is_approved() -> None:
     limits = RiskLimits(
@@ -186,26 +181,6 @@ def test_projected_portfolio_risk_rejection_carries_expected_violation() -> None
 
     result = engine.evaluate(
         portfolio_request(0.75),
-    )
-
-    assert result.status == RiskDecisionStatus.REJECTED
-    assert any(
-        violation.code == "MAX_PORTFOLIO_RISK"
-        for violation in result.violations
-    )
-
-
-def test_legacy_portfolio_risk_above_limit_is_rejected() -> None:
-    limits = RiskLimits(
-        max_portfolio_risk=0.50,
-    )
-    engine = RiskEngine(limits=limits)
-
-    result = engine.evaluate(
-        portfolio_request(
-            0.75,
-            include_risk_context=False,
-        ),
     )
 
     assert result.status == RiskDecisionStatus.REJECTED

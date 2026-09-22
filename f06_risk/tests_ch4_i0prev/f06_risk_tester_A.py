@@ -21,7 +21,11 @@ from f06_risk.contracts import (
     RiskDecisionStatus,
     RiskRequest,
 )
-
+from f06_risk.risk_context import (
+    AccountRiskSnapshot,
+    RiskContext,
+    SymbolRiskSnapshot,
+)
 
 TIMESTAMP = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -59,6 +63,54 @@ def make_portfolio(
     )
 
 
+def make_request(
+    *,
+    decision: PortfolioDecision,
+    portfolio: PortfolioContext,
+    stop_loss_requests=None,
+) -> RiskRequest:
+    return RiskRequest(
+        decision=decision,
+        portfolio=portfolio,
+        risk_context=make_risk_context(portfolio),
+        stop_loss_requests=stop_loss_requests or {},
+    )
+
+
+def make_risk_context(
+    portfolio: PortfolioContext,
+) -> RiskContext:
+    equity = portfolio.equity
+
+    if portfolio.drawdown > 0.0:
+        peak_equity = equity / (1.0 - portfolio.drawdown)
+    else:
+        peak_equity = equity
+
+    if portfolio.daily_drawdown > 0.0:
+        day_start_equity = equity / (1.0 - portfolio.daily_drawdown)
+    else:
+        day_start_equity = equity
+
+    return RiskContext(
+        timestamp=portfolio.timestamp,
+        account=AccountRiskSnapshot(
+            balance=portfolio.balance,
+            equity=portfolio.equity,
+            used_margin=portfolio.used_margin,
+            free_margin=portfolio.free_margin,
+            margin_level=portfolio.margin_level,
+            leverage=100.0,
+            peak_equity=peak_equity,
+            day_start_equity=day_start_equity,
+            open_position_count=0,
+        ),
+        symbols={},
+        correlation=portfolio.correlation,
+        risk_blocked=portfolio.risk_blocked,
+    )
+
+
 def make_decision(
     *,
     allocation=0.20,
@@ -93,7 +145,7 @@ def test_safe_decision_is_approved():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(),
         )
@@ -116,7 +168,7 @@ def test_symbol_exposure_is_reduced():
         )
     )
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(
                 exposure=0.60
             ),
@@ -140,7 +192,7 @@ def test_max_drawdown_rejects():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(
                 drawdown=0.20
@@ -165,7 +217,7 @@ def test_daily_drawdown_rejects():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(
                 daily_drawdown=0.05
@@ -189,7 +241,7 @@ def test_portfolio_risk_limit_rejects():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(
                 risk=0.40
             ),
@@ -251,7 +303,7 @@ def test_correlation_exposure_is_reduced():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=decision,
             portfolio=portfolio,
         )
@@ -278,28 +330,70 @@ def test_correlation_exposure_is_reduced():
 
 def test_margin_utilization_modifies_decision():
 
+    risk_context = RiskContext(
+        timestamp=TIMESTAMP,
+        account=AccountRiskSnapshot(
+            balance=10_000.0,
+            equity=10_000.0,
+            used_margin=8_000.0,
+            free_margin=2_000.0,
+            margin_level=1.25,
+            leverage=100.0,
+            peak_equity=10_000.0,
+            day_start_equity=10_000.0,
+            open_position_count=1,
+        ),
+        symbols={
+            "XAUUSD": SymbolRiskSnapshot(
+                symbol="XAUUSD",
+                exposure=0.80,
+                notional=8_000.0,
+                used_margin=8_000.0,
+                current_lots=1.0,
+                current_side=1,
+            ),
+        },
+        correlation={},
+        risk_blocked=False,
+    )
+
+    portfolio = make_portfolio()
+
+    decision = make_decision(
+        allocation=0.80,
+        exposure=0.80,
+        margin=8_000.0,
+    )
+
+    request = RiskRequest(
+        decision=decision,
+        portfolio=portfolio,
+        risk_context=risk_context,
+    )
+
     engine = RiskEngine(
         limits=RiskLimits(
+            max_symbol_exposure=1.0,
             max_margin_utilization=0.50,
         )
     )
 
-    result = engine.evaluate(
-        RiskRequest(
-            decision=make_decision(
-                allocation=0.80,
-                exposure=0.80,
-                margin=8_000.0,
-            ),
-            portfolio=make_portfolio(),
-        )
-    )
+    result = engine.evaluate(request)
 
     assert result.status == RiskDecisionStatus.MODIFIED
-    assert sum(
-        result.margin_allocation.values()
-    ) == pytest.approx(
+
+    assert result.target_exposure["XAUUSD"] == pytest.approx(
+        0.50
+    )
+
+    projected = result.metadata["projected"]
+
+    assert projected["projected_used_margin"] == pytest.approx(
         5_000.0
+    )
+
+    assert projected["projected_margin_utilization"] == pytest.approx(
+        0.50
     )
 
 
@@ -314,7 +408,7 @@ def test_risk_block_rejects():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(
                 risk_blocked=True
@@ -336,7 +430,7 @@ def test_rejected_decision_creates_empty_action():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(
                 risk_blocked=True
@@ -375,7 +469,7 @@ def test_approved_decision_creates_action():
     )
 
     result = engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(
                 exposure=0.20
             ),
@@ -423,7 +517,7 @@ def test_engine_state_is_recorded():
         limits=RiskLimits()
     )
     engine.evaluate(
-        RiskRequest(
+        make_request(
             decision=make_decision(),
             portfolio=make_portfolio(),
         )
@@ -439,7 +533,7 @@ def test_engine_state_is_recorded():
 
 def test_deterministic_risk_evaluation():
 
-    request = RiskRequest(
+    request = make_request(
         decision=make_decision(
             allocation=0.40,
             exposure=0.40,
@@ -458,3 +552,18 @@ def test_deterministic_risk_evaluation():
 
     assert first == second
 
+###############################################################################
+def test_risk_request_requires_risk_context():
+    with pytest.raises(TypeError):
+        RiskRequest(
+            decision=make_decision(),
+            portfolio=make_portfolio(),
+        )
+
+def test_risk_request_rejects_none_risk_context():
+    with pytest.raises(ValueError, match="risk_context"):
+        RiskRequest(
+            decision=make_decision(),
+            portfolio=make_portfolio(),
+            risk_context=None,
+        )

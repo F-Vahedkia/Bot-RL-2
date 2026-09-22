@@ -42,6 +42,11 @@ from f06_risk.stop_loss_position_sizing import (
     StopLossPositionSizingCalculator,
     StopLossPositionSizingRequest,
 )
+from f06_risk.risk_context import (
+    AccountRiskSnapshot,
+    RiskContext,
+    SymbolRiskSnapshot,
+)
 
 TS = datetime(2026, 1, 5, 12, 0, tzinfo=timezone.utc)
 
@@ -98,6 +103,39 @@ def make_portfolio() -> PortfolioContext:
     )
 
 
+def make_risk_context() -> RiskContext:
+    return RiskContext(
+        timestamp=TS,
+        account=AccountRiskSnapshot(
+            balance=10_000.0,
+            equity=10_000.0,
+            used_margin=1_000.0,
+            free_margin=9_000.0,
+            margin_level=1_000.0,
+            leverage=100.0,
+            peak_equity=10_000.0,
+            day_start_equity=10_000.0,
+            open_position_count=1,
+        ),
+        symbols={
+            "XAUUSD": SymbolRiskSnapshot(
+                symbol="XAUUSD",
+                exposure=0.20,
+                notional=2_000.0,
+                used_margin=250.0,
+                current_lots=0.05,
+                current_side=1,
+            ),
+        },
+        correlation={
+            "XAUUSD": {
+                "XAUUSD": 1.0,
+            },
+        },
+        risk_blocked=False,
+    )
+
+
 def make_sl_request(
     symbol: str = "XAUUSD",
 ) -> StopLossPositionSizingRequest:
@@ -116,7 +154,6 @@ def make_risk_request(
     *,
     stop_loss_requests=None,
 ) -> RiskRequest:
-
     kwargs = {}
 
     if stop_loss_requests is not None:
@@ -125,6 +162,7 @@ def make_risk_request(
     return RiskRequest(
         decision=make_decision(),
         portfolio=make_portfolio(),
+        risk_context=make_risk_context(),
         **kwargs,
     )
 
