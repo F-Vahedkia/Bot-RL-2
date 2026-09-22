@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-
+from dataclasses import replace
 import pytest
 
 from f05_agents.contracts import (
@@ -260,20 +260,9 @@ def test_existing_risk_block_remains_hard_reject():
 
     p = portfolio()
 
-    blocked = PortfolioContext(
-        timestamp=p.timestamp,
-        equity=p.equity,
-        balance=p.balance,
-        used_margin=p.used_margin,
-        free_margin=p.free_margin,
-        margin_level=p.margin_level,
-        drawdown=p.drawdown,
-        daily_drawdown=p.daily_drawdown,
-        exposure=p.exposure,
-        concentration=p.concentration,
-        correlation=p.correlation,
+    context = replace(
+        risk_context(),
         risk_blocked=True,
-        mode=p.mode,
     )
 
     result = RiskEngine().evaluate(
@@ -283,8 +272,8 @@ def test_existing_risk_block_remains_hard_reject():
                     "XAUUSD": 0.20,
                 }
             ),
-            portfolio=blocked,
-            risk_context=risk_context(),
+            portfolio=portfolio(),
+            risk_context=context,
         )
     )
 

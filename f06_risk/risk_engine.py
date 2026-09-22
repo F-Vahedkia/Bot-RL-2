@@ -318,7 +318,7 @@ class RiskEngine:
 
         violations = []
 
-        if request.portfolio.risk_blocked:
+        if context.risk_blocked:
             return self._reject(
                 request,
                 RiskViolation(
@@ -329,7 +329,7 @@ class RiskEngine:
             )
 
         if (
-            request.portfolio.drawdown
+            context.account.drawdown
             >= self.limits.max_drawdown
         ):
             return self._reject(
@@ -342,7 +342,7 @@ class RiskEngine:
             )
 
         if (
-            request.portfolio.daily_drawdown
+            context.account.daily_drawdown
             >= self.limits.max_daily_drawdown
         ):
             return self._reject(
