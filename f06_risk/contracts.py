@@ -1,8 +1,7 @@
 # f06_risk/contracts.py (1)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # Chapter 4 - Risk & Constraint Layer
 #
 # این فایل قراردادهای رسمی Risk Layer را تعریف می‌کند.
@@ -64,6 +63,10 @@ from f05_agents.contracts import (
     PortfolioDecision,
     PortfolioContext,
 )
+from f06_risk.stop_loss_position_sizing import (
+    StopLossPositionSizingRequest,
+    StopLossPositionSizingResult,
+)
 if TYPE_CHECKING:
     from f06_risk.risk_context import RiskContext
 
@@ -101,11 +104,7 @@ class RiskViolation:
         if not str(self.message).strip():
             raise ValueError("violation message is required")
 
-        if self.severity not in (
-            "info",
-            "warning",
-            "critical",
-        ):
+        if self.severity not in ("info", "warning", "critical"):
             raise ValueError("severity must be info, warning or critical")
 
 
@@ -125,6 +124,12 @@ class RiskRequest:
     decision: PortfolioDecision
     portfolio: PortfolioContext
     risk_context: Optional["RiskContext"] = None
+    #-----new-1-start
+    stop_loss_requests: Mapping[
+            str,
+            StopLossPositionSizingRequest,
+        ] = field(default_factory=dict)
+    #-----new-1-end
 
     def __post_init__(self) -> None:
         if self.decision is None:
@@ -154,6 +159,30 @@ class RiskRequest:
             if self.risk_context.timestamp != self.decision.timestamp:
                 raise ValueError("RiskContext timestamp must match decision timestamp.")
 
+        #-----new-2 start
+        for symbol, request in self.stop_loss_requests.items():
+            if not str(symbol).strip():
+                raise ValueError(
+                    "stop_loss_requests contains an empty symbol."
+                )
+
+            if not isinstance(
+                request,
+                StopLossPositionSizingRequest,
+            ):
+                raise TypeError(
+                    f"stop_loss_requests[{symbol}] must be "
+                    "StopLossPositionSizingRequest."
+                )
+
+            normalized_symbol = str(symbol).strip().upper()
+
+            if request.symbol.strip().upper() != normalized_symbol:
+                raise ValueError(
+                    f"stop_loss_requests[{symbol}] symbol does not match "
+                    f"request.symbol={request.symbol}."
+                )
+        #-----new-2 end
 # =====================================================================
 # Risk Decision
 # =====================================================================
@@ -185,6 +214,12 @@ class RiskDecision:
     violations: Tuple[RiskViolation, ...]
     model: ModelIdentity
     metadata: Mapping[str, float] = field(default_factory=dict)
+    #-----new-3 start
+    stop_loss_results: Mapping[
+        str,
+        StopLossPositionSizingResult,
+    ] = field(default_factory=dict)
+    #-----new-3 end
 
     @property
     def approved(self) -> bool:
@@ -241,3 +276,4 @@ class RiskDecision:
             if signal not in (-1, 0, 1):
                 raise ValueError(f"Invalid target signal for {symbol}")
 
+# ============================================================================= END

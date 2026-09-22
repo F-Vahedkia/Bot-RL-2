@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict
 from enum import Enum
+import numpy as np
 from f04_env.contracts import PositionIntent
 from f04_env.portfolio_state import PositionState
 
@@ -65,6 +66,7 @@ class ExecutionSimulator:
         self.contract_size = float(contract_size)
         self.point_value = float(point_value)
 
+
     @staticmethod
     def _side_sign(side: int) -> int:
         if side > 0:
@@ -72,6 +74,7 @@ class ExecutionSimulator:
         if side < 0:
             return -1
         return 0
+
 
     @staticmethod
     def _classify_transition(
@@ -99,32 +102,74 @@ class ExecutionSimulator:
 
         raise RuntimeError("Invalid execution transition")
 
+
     def execute(
         self,
-        *,
         position: PositionState,
         intent: PositionIntent,
         market_price: float,
         cost: ExecutionCost | None = None,
-    ) -> Dict[str, float]:
+    ) -> dict[str, float | str]:
         """
-        Apply a target position to one symbol.
+        Apply a target-position intent to the current position.
 
-        Current implementation uses a deterministic close-price fill.
-        More advanced bid/ask/slippage models can be added later.
+        Transition semantics
+        --------------------
+        OPEN:
+            flat -> non-flat
+
+        INCREASE:
+            same side, larger size
+            realized PnL = 0
+            entry price = weighted average
+
+        REDUCE:
+            same side, smaller size
+            realized PnL = PnL of closed quantity only
+            entry price of remaining quantity is preserved
+
+        REVERSE:
+            opposite side
+            entire old position is closed and realized
+            new position is opened at current market price
+
+        CLOSE:
+            non-flat -> flat
+            entire position is realized
+
+        Notes
+        -----
+        spread and slippage are reported through the result dictionary but are
+        not applied to fill price/PnL here. That remains outside this accounting
+        correction.
         """
-        if position.symbol != intent.symbol:
+        if not isinstance(position, PositionState):
+            raise TypeError("position must be PositionState")
+
+        if not isinstance(intent, PositionIntent):
+            raise TypeError("intent must be PositionIntent")
+
+        if position.symbol.upper() != intent.symbol.upper():
             raise ValueError(
-                f"Position symbol mismatch: "
-                f"{position.symbol!r} != {intent.symbol!r}"
+                f"position symbol {position.symbol!r} does not match "
+                f"intent symbol {intent.symbol!r}"
             )
 
         price = float(market_price)
+        if not np.isfinite(price) or price <= 0.0:
+            raise ValueError("market_price must be a positive finite value")
 
-        if not (price > 0.0):
-            raise ValueError("market_price must be > 0")
+        if cost is None:
+            cost = ExecutionCost()
 
-        cost = cost or ExecutionCost()
+        price_cost = float(cost.total_price_cost())
+        long_entry_price = price + price_cost
+        short_entry_price = price - price_cost
+        long_exit_price = price - price_cost
+        short_exit_price = price + price_cost
+
+        if not isinstance(cost, ExecutionCost):
+            raise TypeError("cost must be ExecutionCost")
 
         old_side = int(position.side)
         old_lots = float(position.lots)
@@ -134,63 +179,152 @@ class ExecutionSimulator:
         new_lots = float(intent.target_lots)
 
         execution_type = self._classify_transition(
-            old_side,
-            old_lots,
-            new_side,
-            new_lots,
+            old_side=old_side,
+            old_lots=old_lots,
+            new_side=new_side,
+            new_lots=new_lots,
         )
 
         realized_pnl = 0.0
+        changed = False
 
-        # Close existing exposure first.
-        if old_side != 0 and old_lots > 0.0:
-            if old_entry is None:
-                raise RuntimeError(
-                    f"Open position {position.symbol} has no entry_price"
+        # ------------------------------------------------------------------
+        # OPEN
+        # ------------------------------------------------------------------
+        if old_side == 0 and new_side != 0:
+            position.side = new_side
+            position.lots = new_lots
+            # position.entry_price = price
+            position.entry_price = (
+                long_entry_price if new_side > 0 else short_entry_price
+            )
+            changed = True
+
+        # ------------------------------------------------------------------
+        # CLOSE
+        # ------------------------------------------------------------------
+        elif old_side != 0 and new_side == 0:
+            if old_lots > 0.0 and old_entry is not None:
+                exit_price = (
+                    long_exit_price if old_side > 0 else short_exit_price
                 )
 
-            price_diff = (price - float(old_entry)) * old_side
+                realized_pnl = (
+                    (exit_price - float(old_entry))
+                    * old_side
+                    * old_lots
+                    * self.contract_size
+                    * self.point_value
+                )
 
-            realized_pnl = (
-                price_diff
-                * old_lots
-                * self.contract_size
-                * self.point_value
-            )
-
-        # Execution cost is applied once per changed exposure.
-        changed = (
-            old_side != new_side
-            or abs(old_lots - new_lots) > 1e-12
-        )
-
-        if changed:
-            commission = float(cost.commission)
-        else:
-            commission = 0.0
-
-        # Replace position with target.
-        if new_side == 0 or new_lots <= 0.0:
             position.side = 0
             position.lots = 0.0
             position.entry_price = None
-            position.current_price = price
+            changed = True
+
+        # ------------------------------------------------------------------
+        # SAME SIDE
+        # ------------------------------------------------------------------
+        elif old_side != 0 and new_side == old_side:
+
+            # --------------------------------------------------------------
+            # INCREASE
+            # --------------------------------------------------------------
+            if new_lots > old_lots:
+                added_lots = new_lots - old_lots
+
+                if old_entry is None:
+                    new_entry = price
+                else:
+                    new_entry = (
+                        float(old_entry) * old_lots
+                        + 
+                        (
+                            long_entry_price if old_side > 0 else short_entry_price
+                        ) * added_lots
+                    ) / new_lots
+
+                position.side = old_side
+                position.lots = new_lots
+                position.entry_price = new_entry
+                changed = True
+
+            # --------------------------------------------------------------
+            # REDUCE
+            # --------------------------------------------------------------
+            elif new_lots < old_lots:
+                closed_lots = old_lots - new_lots
+
+                if old_entry is not None and closed_lots > 0.0:
+                    realized_pnl = (
+                        (
+                            (long_exit_price if old_side > 0 else short_exit_price)
+                            - float(old_entry)
+                        )
+                        * old_side
+                        * closed_lots
+                        * self.contract_size
+                        * self.point_value
+                    )
+
+                position.side = old_side
+                position.lots = new_lots
+                position.entry_price = old_entry
+                changed = True
+
+            # --------------------------------------------------------------
+            # SAME TARGET SIZE -> no accounting change
+            # --------------------------------------------------------------
+            else:
+                position.side = old_side
+                position.lots = old_lots
+                position.entry_price = old_entry
+
+        # ------------------------------------------------------------------
+        # REVERSE
+        # ------------------------------------------------------------------
         else:
+            if old_lots > 0.0 and old_entry is not None:
+                exit_price = (
+                    long_exit_price if old_side > 0 else short_exit_price
+                )
+
+                realized_pnl = (
+                    (exit_price - float(old_entry))
+                    * old_side
+                    * old_lots
+                    * self.contract_size
+                    * self.point_value
+                )
+
             position.side = new_side
             position.lots = new_lots
-            position.entry_price = price
-            position.current_price = price
+
+            if new_lots > 0.0:
+                position.entry_price = (
+                    long_entry_price if new_side > 0 else short_entry_price
+                )
+            else:
+                position.entry_price = None
+
+            changed = True
+
+        # ------------------------------------------------------------------
+        # Commission
+        # ------------------------------------------------------------------
+        commission = float(cost.commission) if changed else 0.0
 
         position.realized_pnl += realized_pnl - commission
 
         return {
-            "realized_pnl": float(realized_pnl - commission),
-            "commission": commission,
+            "realized_pnl": float(realized_pnl),
+            "commission": float(commission),
             "spread": float(cost.spread),
             "slippage": float(cost.slippage),
             "changed": float(changed),
             "execution_type": execution_type.value,
         }
+
 
     def mark_to_market(
         self,
@@ -234,3 +368,5 @@ class ExecutionSimulator:
 
         return float(total)
 
+
+# ============================================================================= END

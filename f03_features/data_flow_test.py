@@ -29,14 +29,12 @@
 from __future__ import annotations
 
 import logging
+import pytest
+import pandas as pd
+from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-import pandas as pd
-import pytest
-
-from f10_utils.config_completer import config_completer
-
-from f02_data.data_handler_F_3 import BuildParams, DataHandler
+from f02_data.data_handler_G import BuildParams, DataHandler
 from f02_data.mtf_dataset import MTFDataset
 
 from f03_features.feature_C_registry_1 import get_indicator
@@ -47,6 +45,8 @@ from f03_features.observation_B_builder import ObservationBuilder
 from f03_features.feature_pipeline import FeaturePipeline
 from f03_features.time_features.time_feature_engine import add_time_features_to_df
 from f03_features.time_features.time_feature_registry import TIME_FEATURE_REGISTRY
+
+from f10_utils.config_completer import config_completer
 
 logger = logging.getLogger(__name__)
 
@@ -527,16 +527,39 @@ def test_data_to_pipeline_batch_time_features(
         print("\nDEBUG SYMBOL =", symbol)
         print("DEBUG raw path =", completed_config.get("paths", {}).get("raw_dir"))
 
-        from pathlib import Path
         raw_path = Path(r"E:\Bot-RL-2\f02_data\raw") / symbol / "M1.parquet"
 
-        direct_df = pd.read_parquet(raw_path)
+        if raw_path.exists():
+            direct_df = pd.read_parquet(raw_path)
+            print("DEBUG source format = parquet")
+        else:
+            csv_path = raw_path.with_suffix(".csv")
+
+            if csv_path.exists():
+                direct_df = pd.read_csv(
+                    csv_path,
+                    index_col=0,
+                )
+                direct_df.index = pd.to_datetime(
+                    direct_df.index,
+                    utc=True,
+                )
+                direct_df.index.name = "time"
+                raw_path = csv_path
+                print("DEBUG source format = csv")
+            else:
+                raise FileNotFoundError(
+                    f"Neither parquet nor csv file exists for:\n"
+                    f"  parquet: {raw_path}\n"
+                    f"  csv:     {csv_path}"
+                )
 
         print("DEBUG direct path =", raw_path)
         print("DEBUG direct exists =", raw_path.exists())
         print("DEBUG direct index type =", type(direct_df.index))
         print("DEBUG direct index dtype =", direct_df.index.dtype)
         print("DEBUG direct index tz =", getattr(direct_df.index, "tz", None))
+        print("DEBUG direct index name =", direct_df.index.name)
         print("DEBUG direct columns =", direct_df.columns.tolist())
         # ====== temporary_1 ============================= end
 
@@ -592,6 +615,26 @@ def test_data_to_pipeline_batch_time_features(
         observation = result.get("observation")
 
         assert isinstance(observation, pd.DataFrame)
+        # === temporary-3 ============================== start
+        print("\n ===>>>>>>> ===>>>>> DEBUG BEFORE OBSERVATION ASSERT")
+        print("symbol =", symbol)
+        print("dataset.timeframes =", dataset.timeframes)
+
+        for tf in dataset.timeframes:
+            frame = dataset.get(tf)
+            if frame is None:
+                print(tf, "-> None")
+            else:
+                print(
+                    tf,
+                    "shape =", frame.shape,
+                    "empty =", frame.empty,
+                    "start =", frame.index[0] if not frame.empty else None,
+                    "end =", frame.index[-1] if not frame.empty else None,
+                )
+
+        print("observation shape =", observation.shape)
+        # === temporary-3 ============================== end
         assert not observation.empty
         assert observation.shape[1] > 0
 

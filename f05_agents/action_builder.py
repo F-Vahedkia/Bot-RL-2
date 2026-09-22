@@ -1,10 +1,8 @@
-# f05_agents/action_builder.py (8)
+# f05_agents/action_builder.py (between 5,6)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # Chapter 3 - Symbol-Agent + Meta-Agent
-#
 # تبدیل PortfolioDecision به PortfolioAction معنایی.
 #
 # این فایل:
@@ -30,7 +28,7 @@
 # نکته:
 #     تبدیل exposure به lots به یک sizing policy نیاز دارد.
 #     بنابراین lot sizing به صورت dependency injection انجام می‌شود.
-#
+
 
 from __future__ import annotations
 
@@ -40,14 +38,12 @@ from f04_env.contracts import (
     PortfolioAction,
     PositionIntent,
 )
-
 from f05_agents.contracts import (
     PortfolioDecision,
 )
 
-
 # =============================================================================
-# Position Sizing Interface
+# Class-1: Position Sizing Interface
 # =============================================================================
 
 class PositionSizer(Protocol):
@@ -66,7 +62,6 @@ class PositionSizer(Protocol):
         - instrument margin
     حجم را محاسبه کند.
     """
-
     def size(
         self,
         *,
@@ -75,18 +70,15 @@ class PositionSizer(Protocol):
     ) -> float:
         ...
 
-
 # =============================================================================
-# Portfolio Action Builder
+# Class-2: Portfolio Action Builder
 # =============================================================================
 
 class PortfolioActionBuilder:
     """
     تبدیل PortfolioDecision به PortfolioAction.
-
     این کلاس فقط semantic translation انجام می‌دهد.
     """
-
     def __init__(
         self,
         *,
@@ -95,10 +87,9 @@ class PortfolioActionBuilder:
 
         self.position_sizer = position_sizer
 
-
-    # =========================================================================
+    # ===========================================
     # Build
-    # =========================================================================
+    # ===========================================
 
     def build(
         self,
@@ -109,34 +100,60 @@ class PortfolioActionBuilder:
         """
         ساخت PortfolioAction از تصمیم Meta-Agent.
 
-        اگر decision رد شده باشد،
-        action خالی تولید می‌شود.
+        اگر decision رد شده باشد، action خالی تولید می‌شود.
 
         allowed_symbols:
             مجموعه نمادهای مجاز در Environment.
+
+        Symbol identity policy:
+            فقط فاصله‌ها حذف می‌شوند.
+            هیچ upper/lower normalization انجام نمی‌شود.
         """
 
         if not decision.approved:
             return PortfolioAction()
 
-
         allowed = (
             None
             if allowed_symbols is None
             else {
-                str(symbol).upper().strip()
+                str(symbol).replace(" ", "")
                 for symbol in allowed_symbols
             }
         )
 
+        normalized_signals: dict[str, int] = {}
+        normalized_exposures: dict[str, float] = {}
+        normalized_stop_prices: dict[str, float | None] = {}
 
-        symbols = set(
-            decision.target_signals
-        )
+        for symbol, side in decision.target_signals.items():
+            normalized_symbol = str(symbol).replace(" ", "")
 
+            if normalized_symbol in normalized_signals:
+                raise ValueError(
+                    "Decision contains duplicate symbols after "
+                    f"space removal: {normalized_symbol!r}"
+                )
+
+            normalized_signals[normalized_symbol] = int(side)
+
+            normalized_exposures[normalized_symbol] = float(
+                decision.target_exposure.get(
+                    symbol,
+                    0.0,
+                )
+            )
+
+            normalized_stop_prices[normalized_symbol] = (
+                decision.target_stop_price.get(
+                    symbol,
+                    None,
+                )
+            )
+
+        symbols = set(normalized_signals)
 
         if allowed is not None:
-
             unknown = symbols - allowed
 
             if unknown:
@@ -145,37 +162,22 @@ class PortfolioActionBuilder:
                     f"Environment: {sorted(unknown)}"
                 )
 
-
         intents: list[PositionIntent] = []
 
+        for normalized_symbol in sorted(symbols):
+            side = normalized_signals[normalized_symbol]
 
-        for symbol in sorted(symbols):
-
-            normalized_symbol = (
-                str(symbol).upper().strip()
-            )
-
-            side = int(
-                decision.target_signals[
-                    symbol
-                ]
-            )
-
-
-            exposure = float(
-                decision.target_exposure.get(
-                    symbol,
-                    0.0,
-                )
-            )
-
+            exposure = normalized_exposures[
+                normalized_symbol
+            ]
+            stop_price = normalized_stop_prices[
+                normalized_symbol
+            ]
 
             if side == 0:
-
                 lots = 0.0
-
+                stop_price = None
             else:
-
                 lots = float(
                     self.position_sizer.size(
                         symbol=normalized_symbol,
@@ -183,13 +185,11 @@ class PortfolioActionBuilder:
                     )
                 )
 
-
             if lots < 0.0:
                 raise ValueError(
                     f"PositionSizer returned negative "
                     f"lots for {normalized_symbol}"
                 )
-
 
             if side == 0 and lots != 0.0:
                 raise ValueError(
@@ -197,17 +197,17 @@ class PortfolioActionBuilder:
                     f"lots for {normalized_symbol}"
                 )
 
-
             intents.append(
                 PositionIntent(
                     symbol=normalized_symbol,
                     target_side=side,
                     target_lots=lots,
+                    stop_price=stop_price,
                 )
             )
-
 
         return PortfolioAction(
             intents=tuple(intents)
         )
-
+    
+# ============================================================================= END

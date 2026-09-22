@@ -1,4 +1,3 @@
-
 # f10_utils/config_completer.py
 # Date reviewed:
 #    1405/05/24-17:25 --> run result is ?????????????????
@@ -13,7 +12,7 @@ from pathlib import Path
 from f10_utils.config_loader import load_config
 from f10_utils.functions.parse_warmups import get_warmup_from_config_allsyms
 import logging
-
+from f10_utils.functions.constants import normalize_and_sort_timeframe_dicts as normalize_dict
 # =============================================================================
 # Logger
 # =============================================================================
@@ -272,6 +271,292 @@ def _apply_common_symbol_config_2(cfg: Dict) -> Dict:
     # ------------------------------------------------------------------
     return cfg
 
+
+def _apply_common_symbol_config_3(cfg: Dict) -> Dict:
+    """
+    Expand the COMMON indicator configuration into the selected symbols.
+
+    COMMON.symbols:
+        List of symbols that should receive the common configuration.
+
+    COMMON.indicators:
+        Indicators added to each selected symbol.
+
+    A symbol does NOT need to have indicators beforehand.
+    Missing indicators are created automatically.
+
+    The COMMON section itself is not treated as a trading symbol.
+    """
+
+    # ------------------------------------------------------------------
+    # Locate features.symbols
+    # ------------------------------------------------------------------
+
+    features_cfg = cfg.get("features", {})
+    if not isinstance(features_cfg, dict):
+        raise ValueError(
+            "config.features must be a dictionary."
+        )
+
+    symbols_cfg = features_cfg.get("symbols", {})
+    if not isinstance(symbols_cfg, dict):
+        raise ValueError(
+            "config.features.symbols must be a dictionary."
+        )
+
+    # ------------------------------------------------------------------
+    # COMMON
+    # ------------------------------------------------------------------
+
+    common_cfg = symbols_cfg.get("COMMON")
+
+    # No COMMON section -> nothing to do
+    if common_cfg is None:
+        return cfg
+
+    if not isinstance(common_cfg, dict):
+        raise ValueError(
+            "config.features.symbols.COMMON must be a dictionary."
+        )
+
+    # ------------------------------------------------------------------
+    # COMMON.symbols
+    # ------------------------------------------------------------------
+
+    common_symbols = common_cfg.get("symbols", [])
+
+    if common_symbols is None:
+        common_symbols = []
+
+    if not isinstance(common_symbols, list):
+        raise ValueError(
+            "config.features.symbols.COMMON.symbols must be a list."
+        )
+
+    # ------------------------------------------------------------------
+    # COMMON.indicators
+    # ------------------------------------------------------------------
+
+    common_indicators = common_cfg.get("indicators", [])
+
+    if common_indicators is None:
+        common_indicators = []
+
+    if not isinstance(common_indicators, list):
+        raise ValueError(
+            "config.features.symbols.COMMON.indicators must be a list."
+        )
+
+    # ------------------------------------------------------------------
+    # Apply COMMON indicators to every selected symbol
+    # ------------------------------------------------------------------
+
+    for symbol in common_symbols:
+
+        # --------------------------------------------------------------
+        # The symbol must exist as a real symbol in the configuration.
+        # --------------------------------------------------------------
+
+        if symbol not in symbols_cfg:
+            raise ValueError(
+                f"Symbol '{symbol}' is listed in "
+                f"config.features.symbols.COMMON.symbols "
+                f"but does not exist in config.features.symbols."
+            )
+
+        symbol_cfg = symbols_cfg[symbol]
+
+        if not isinstance(symbol_cfg, dict):
+            raise ValueError(
+                f"config.features.symbols.{symbol} must be a dictionary."
+            )
+
+        # ==============================================================
+        # indicators
+        # ==============================================================
+
+        # The symbol may have NO indicators at all.
+        # In that case create an empty list first.
+
+        symbol_indicators = symbol_cfg.get("indicators")
+
+        if symbol_indicators is None:
+            symbol_indicators = []
+            symbol_cfg["indicators"] = symbol_indicators
+
+        elif not isinstance(symbol_indicators, list):
+            raise ValueError(
+                f"config.features.symbols.{symbol}.indicators "
+                f"must be a list."
+            )
+
+        # Add COMMON indicators.
+
+        for indicator in common_indicators:
+            if indicator not in symbol_indicators:
+                symbol_indicators.append(indicator)
+
+    # ------------------------------------------------------------------
+    # Return the completed configuration
+    # ------------------------------------------------------------------
+
+    return cfg
+
+
+# =============================================================================
+# Read candles requirements
+# =============================================================================
+
+def _extract_candles_required_bars(cfg: Dict) -> Dict[str, Dict[str, int]]:
+    """
+    Extract raw-candle requirements from:
+
+        config.features.candles.required
+
+    Expected configuration structure:
+
+        features:
+          candles:
+            required:
+                XAUUSD:
+                M1: 20
+                M5: 4
+                H1: 4
+                EURUSD:
+                M5: 5
+                M10: 10
+                BITCOIN:
+                M1: 10
+                H1: 20
+
+    Returns
+    -------
+    Dict[str, Dict[str, int]]
+        Required raw candle bars for each symbol and timeframe.
+    """
+
+    # ------------------------------------------------------------------
+    # Locate features
+    # ------------------------------------------------------------------
+
+    features_cfg = cfg.get("features", {})
+
+    if not isinstance(features_cfg, dict):
+        raise ValueError(
+            "config.features must be a dictionary."
+        )
+
+    # ------------------------------------------------------------------
+    # Locate candles
+    # ------------------------------------------------------------------
+
+    candles_cfg = features_cfg.get("candles", {}).get("required", {})
+
+    if candles_cfg is None:
+        return {}
+
+    if not isinstance(candles_cfg, dict):
+        raise ValueError(
+            "config.features.candles.required must be a dictionary."
+        )
+
+    # ------------------------------------------------------------------
+    # Extract candles requirements
+    # ------------------------------------------------------------------
+
+    candles_required_bars: Dict[str, Dict[str, int]] = {}
+
+    for symbol, tf_dict in candles_cfg.items():
+
+        if not isinstance(tf_dict, dict):
+            raise ValueError(
+                f"config.features.candles.required.{symbol} "
+                f"must be a dictionary."
+            )
+
+        symbol_bars: Dict[str, int] = {}
+
+        for timeframe, bar_count in tf_dict.items():
+
+            if not isinstance(bar_count, int) or isinstance(bar_count, bool):
+                raise ValueError(
+                    f"Required bar count for symbol '{symbol}', "
+                    f"timeframe '{timeframe}' must be an integer."
+                )
+
+            if bar_count <= 0:
+                raise ValueError(
+                    f"Required bar count for symbol '{symbol}', "
+                    f"timeframe '{timeframe}' must be > 0."
+                )
+
+            symbol_bars[str(timeframe).upper()] = bar_count
+
+        if symbol_bars:
+            candles_required_bars[symbol] = symbol_bars
+
+    return candles_required_bars
+
+
+# =============================================================================
+# Merge results of two above function
+# =============================================================================
+
+def _merge_required_bars(
+    warmups_dicts: Dict[str, Dict[str, int]],
+    candles_required_bars: Dict[str, Dict[str, int]],
+) -> Dict[str, Dict[str, int]]:
+    """
+    Merge indicator warmup requirements and raw-candle requirements.
+
+    For every symbol and timeframe:
+
+        required_bars = max(warmup_bars, candle_bars)
+
+    If a symbol/timeframe exists in only one of the two dictionaries,
+    its value is copied directly to the result.
+
+    Returns
+    -------
+    Dict[str, Dict[str, int]]
+        Final required bars for each symbol and timeframe.
+    """
+
+    required_bars: Dict[str, Dict[str, int]] = {}
+
+    # ------------------------------------------------------------------
+    # Merge indicator warmups
+    # ------------------------------------------------------------------
+
+    for symbol, tf_dict in warmups_dicts.items():
+
+        required_bars[symbol] = {}
+
+        for timeframe, bar_count in tf_dict.items():
+            required_bars[symbol][timeframe] = bar_count
+
+    # ------------------------------------------------------------------
+    # Merge raw-candle requirements
+    # ------------------------------------------------------------------
+
+    for symbol, tf_dict in candles_required_bars.items():
+
+        if symbol not in required_bars:
+            required_bars[symbol] = {}
+
+        for timeframe, bar_count in tf_dict.items():
+
+            if timeframe in required_bars[symbol]:
+                required_bars[symbol][timeframe] = max(
+                    required_bars[symbol][timeframe],
+                    bar_count,
+                )
+            else:
+                required_bars[symbol][timeframe] = bar_count
+
+    all_required_bars = required_bars
+    return all_required_bars
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -281,8 +566,29 @@ def config_completer(path: Optional[Union[str, Path]] = None,
                     enable_env_override: bool = True,
                     copy_: Literal["main", "shallow", "mutable-safe", "deep"] = "shallow"
                     ) -> Dict[str, Any]:
+
+    """ Docstring:
+    Load, complete, normalize, and derive the main configuration
+    requirements used by the bot.
+
+    The function:
+
+    - applies COMMON indicator settings to selected symbols;
+    - calculates indicator warm-up requirements;
+    - extracts raw-candle requirements;
+    - merges both into ``__all_required_bars`` using the maximum
+    requirement for overlapping symbol/timeframe pairs;
+    - derives ``__symbols``, ``__timeframes_dict``, and
+    ``__base_tfs_dict`` from the final normalized and sorted requirements.
+
+    Returns
+    -------
+    Dict[str, Any]
+        Completed configuration containing the original settings and
+        the derived internal configuration dictionaries.
     """
 
+    """ Examples:
     Some Data structures:
     __warmups_dicts = {
         "XAUUSD" : {'M1': 14,  'M5':9 , 'H1':14, 'D1':12},
@@ -317,7 +623,7 @@ def config_completer(path: Optional[Union[str, Path]] = None,
     # -----------------------------------------------------
     # Apply COMMON symbol configuration
     # -----------------------------------------------------
-    cfg = _apply_common_symbol_config_2(cfg)
+    cfg = _apply_common_symbol_config_3(cfg)
 
     # -----------------------------------------------------
     # 1) Warmup Dicts
@@ -325,38 +631,57 @@ def config_completer(path: Optional[Union[str, Path]] = None,
     warmups_dicts: Dict[str, Dict[str, int]] = get_warmup_from_config_allsyms(cfg)
     warmups_dicts.pop("COMMON", None)
 
-    # -----------------------------------------------------
-    # solve symbols, timeframes_dict, base_tfs_dict
-    # -----------------------------------------------------
     if warmups_dicts == {}:
-        print("WARNING ! Message from f10_utils/config_completer: In config.features.symbols there is no any timeframe.")
         cfg["__warmups_dicts"] = {}
+    else:
+        warmups_dicts = normalize_dict(warmups_dicts)
+        cfg["__warmups_dicts"] = warmups_dicts
+
+    # -----------------------------------------------------
+    # 2) candles_required_bars
+    # -----------------------------------------------------
+    candles_required_bars: Dict[str, Dict[str, int]] = _extract_candles_required_bars(cfg)
+    if candles_required_bars == {}:
+        cfg["__candles_required_bars"] = {}
+    else:
+        candles_required_bars = normalize_dict(candles_required_bars)
+        cfg["__candles_required_bars"] = candles_required_bars
+
+    # -----------------------------------------------------
+    # 3) all_required_bars
+    # -----------------------------------------------------
+    all_required_bars: Dict[str, Dict[str, int]] = _merge_required_bars(warmups_dicts, candles_required_bars)
+    if all_required_bars == {}:
+        print("WARNING ! Message from f10_utils/config_completer: In config.features.symbols there is no any timeframe.")
+        cfg["__all_required_bars"] = {}
         cfg["__symbols"] = []
         cfg["__timeframes_dict"] = {}
+        cfg["__base_tfs_dict"] = {}
     else:
-        # 1) Warmup Dicts
-        cfg["__warmups_dicts"] = warmups_dicts   # یک دیکشنری که حاوی چندین warmup_dict است
+        # 1) --- all required bars
+        cfg["__all_required_bars"] = normalize_dict(all_required_bars) # یک دیکشنری که حاوی چندین warmup_dict است
 
         # 2) --- symbols
-        symbols: List[str] = list(warmups_dicts.keys())
+        symbols: List[str] = list(all_required_bars.keys())
 
         cfg["__symbols"] = symbols
 
         # 3) --- timeframes
-        timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in warmups_dicts.items()}
+        timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in all_required_bars.items()}
         cfg["__timeframes_dict"] = timeframes_dict
 
         # 4) --- base_tfs_dict
-        base_tfs_dict = {sym: list(warmup.keys())[0] for sym, warmup in warmups_dicts.items()}
+        base_tfs_dict = {sym: list(warmup.keys())[0] for sym, warmup in all_required_bars.items()}
         """
         # بلوک زیر، همان کار سطر بالا را انجام میدهد.
         # ولی نمادهایی که دیکشنری وارم-آپ انها تهی است را بطور خودکار به حساب نمی آورد.
         """
         # base_tfs_dict = {}
-        # for sym, warmup in warmups_dicts.items():
+        # for sym, warmup in all_required_bars.items():
         #     if warmup.keys():
         #         base_tfs_dict[sym] = list(warmup.keys())[0]
         cfg["__base_tfs_dict"] = base_tfs_dict
+
 
     return cfg
 
@@ -368,6 +693,12 @@ def main():
 
     print("\n", "="*3, "__warmups_dicts", "="* (60-len("__warmups_dicts")))
     print(cfg["__warmups_dicts"])
+
+    print("\n", "="*3, "__candles_required_bars", "="* (60-len("__candles_required_bars")))
+    print(cfg["__candles_required_bars"])
+
+    print("\n", "="*3, "__all_required_bars", "="* (60-len("__all_required_bars")))
+    print(cfg["__all_required_bars"])
 
     print("\n", "="*3, "__symbols", "="* (60-len("__symbols")))
     print(cfg["__symbols"])
@@ -383,8 +714,9 @@ def main():
         specs = list(cfg["features"]["symbols"][sym]["indicators"])
         for s in specs:
             print(s)
-        print("\n", (cfg["features"]["symbols"][sym]["candles"]))
+        print("\n", (cfg["features"]["candles"][sym]))
     print("\n")
+
 # ===================================================================
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -68,11 +68,11 @@ class FileConverter:
 if __name__ == "__main__":
     # تبدیل CSV به Parquet
     # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/D1.csv")
-    FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/H4.csv")
-    FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M1.csv")
-    FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M5.csv")
-    FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M30.csv")
-    FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/W1.csv")
+    # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/H4.csv")
+    # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M1.csv")
+    # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M5.csv")
+    # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/M30.csv")
+    # FileConverter.csv_to_parquet("f02_data/raw/XAUUSD_I/W1.csv")
     
     # تبدیل Parquet به CSV
     # FileConverter.parquet_to_csv("data.parquet")
@@ -84,5 +84,5 @@ if __name__ == "__main__":
     # FileConverter.read_last_n_rows("f02_data/raw/XAUUSD_I/D1.parquet", 10, "parquet")
 
     # تبدیل Parquet به CSV
-    # FileConverter.parquet_to_csv("f02_data/raw/XAUUSD_I/D1_last_10.parquet")
+    FileConverter.parquet_to_csv("f02_data/raw/BITCOIN/M1.parquet")
     

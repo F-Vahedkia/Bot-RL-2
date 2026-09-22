@@ -10,6 +10,7 @@ import logging
 
 from f02_data.mtf_dataset import MTFDataset
 from f03_features.feature_C_registry_1 import get_indicator, IndicatorSpec
+from f03_features.feature_sys_contract import FEATURE_SYSTEM_CONTRACT
 from f10_utils.functions.parser import parse_spec, ParsedSpec
 
 # این بخش برای train و optimize است.
@@ -98,36 +99,42 @@ class FeatureEngine:
         # -------------------------------------------------
         # 1. Validate input dataset
         # -------------------------------------------------
+
         if dataset is None:
             raise ValueError("dataset is required")
-
         if not isinstance(dataset, MTFDataset):
             raise TypeError(
                 f"Expected MTFDataset, got {type(dataset).__name__}"
             )
+
+        # -------------------------------------------------
+        # 2. Validate / normalize execution mode
+        # -------------------------------------------------
+
+        mode = FEATURE_SYSTEM_CONTRACT.validate_mode(mode)
 
         if len(dataset.frames) == 0:
             logger.info("MTFDataset is empty.")
             return dataset
 
         # -------------------------------------------------
-        # 2. Validate specs
+        # 3. Validate specs
         # -------------------------------------------------
+
         if specs is None:
             raise ValueError("specs is required")
-
-        if not specs:     # بررسی وجود و اعنبار اسپکها. در واقع بررسی اینکه اصلاً چیزی برای محاسبه وجود دارد یا نه.
+        if not specs:
             return dataset
 
         # -------------------------------------------------
-        # 3. Set execution context
+        # 4. Set execution context
         # -------------------------------------------------
         self.mode = mode
         self._run_id += 1
 
 
         # -------------------------------------------------
-        # 4. Parse specifications
+        # 5. Parse specifications
         # -------------------------------------------------
         parsed_specs: List[ParsedSpec] = []
         for raw_spec in specs:
@@ -140,7 +147,7 @@ class FeatureEngine:
             raise ValueError("No valid feature specifications were parsed.")
 
         # -------------------------------------------------
-        # 5. Execution order
+        # 6. Execution order
         # -------------------------------------------------
         """
         در اینجا میشود که مرتب‌سازی بر اساس dependency
@@ -149,7 +156,7 @@ class FeatureEngine:
         ordered_specs = parsed_specs
 
         # -------------------------------------------------
-        # 6. Execute features
+        # 7. Execute features
         # -------------------------------------------------
         for ps in ordered_specs:
             if mode in {"train", "optimize"}:

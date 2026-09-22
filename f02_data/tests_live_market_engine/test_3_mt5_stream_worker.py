@@ -3,7 +3,7 @@
 #    1405/05/19-19:19 ==> run result is OK for 4 tests.
 
 # Run:
-# pytest f02_data/tests_live_market_engine/test_3_mt5_stream_worker.py -v
+#     pytest f02_data/tests_live_market_engine/test_3_mt5_stream_worker.py -v
 
 # اجرای تمام فایلهای تستر داخل پوشه:
 # pytest f02_data/tests_live_market_engine/ -v
@@ -77,7 +77,7 @@ class TestMT5StreamWorker:
         worker = MT5StreamWorker(
             cfg=mock_config,
             event_bus=event_bus,
-            # warmups_dicts=warmups_dicts,
+            warmups_dicts=warmups_dicts,
             poll_interval_sec=1.0
         )
         assert worker.symbols == ["EURUSD", "GBPUSD"]
@@ -100,13 +100,14 @@ class TestMT5StreamWorker:
         worker = MT5StreamWorker(
             cfg=mock_config,
             event_bus=event_bus,
-            # warmups_dicts=warmups_dicts
+            warmups_dicts=warmups_dicts
         )
         df = worker._fetch_closed("EURUSD", "H1", 5)
         mock_connector.get_candles_num.assert_called_once_with(
             symbol="EURUSD",
             timeframe="H1",
-            num_candles=6
+            num_candles=6,
+            result_tz=None,
         )
         assert not df.empty
 
@@ -125,7 +126,7 @@ class TestMT5StreamWorker:
         worker = MT5StreamWorker(
             cfg=mock_config,
             event_bus=event_bus,
-            # warmups_dicts=warmups_dicts
+            warmups_dicts=warmups_dicts
         )
         event_bus.subscribe("EURUSD")
         old_df = sample_df.iloc[:-1]
@@ -152,7 +153,7 @@ class TestMT5StreamWorker:
         worker = MT5StreamWorker(
             cfg=mock_config,
             event_bus=event_bus,
-            # warmups_dicts=warmups_dicts
+            warmups_dicts=warmups_dicts
         )
         with pytest.raises(
             RuntimeError,

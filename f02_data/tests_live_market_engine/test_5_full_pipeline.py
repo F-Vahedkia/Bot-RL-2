@@ -19,7 +19,7 @@ from f02_data.live_market_engine import (
     CandleDetector,
     MarketDataEngine
 )
-from f02_data.data_handler_F_3 import DataHandler
+from f02_data.data_handler_G import DataHandler
 from zoneinfo import ZoneInfo
 
 
@@ -34,7 +34,8 @@ class TestFullPipeline:
             "download_defaults": {"save_format": "parquet"},
             "__timeframes_dict": {"EURUSD": ["H1"]},
             "__base_tfs_dict": {"EURUSD": "H1"},
-            "__warmups_dicts": {"EURUSD": {"H1": 20}}
+            "__warmups_dicts": {"EURUSD": {"H1": 20}},
+            "__all_required_bars": {"EURUSD": {"H1": 20}},
         }
 
     # =========================================================================
@@ -126,7 +127,7 @@ class TestFullPipeline:
         worker = Mock()
         MockWorker.return_value = worker
         engine = MarketDataEngine(cfg=mock_config)
-        engine.start()   #(warmups_dicts={"EURUSD": {"H1": 20}})
+        engine.start(warmups_dicts={"EURUSD": {"H1": 20}})
 
         MockWorker.assert_called_once()
         worker.start.assert_called_once()
@@ -143,6 +144,8 @@ class TestFullPipeline:
         mock_config["__timeframes_dict"]["GBPUSD"] = ["H1"]
         mock_config["__base_tfs_dict"]["GBPUSD"] = "H1"
         mock_config["__warmups_dicts"]["GBPUSD"] = {"H1": 20}
+        mock_config["__all_required_bars"]["GBPUSD"] = {"H1": 20}
+
         bus = EventBus()
         eur_handler = DataHandler(cfg=mock_config, symbol="EURUSD")
         gbp_handler = DataHandler(cfg=mock_config, symbol="GBPUSD")

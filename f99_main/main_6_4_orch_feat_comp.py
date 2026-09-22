@@ -117,7 +117,7 @@ import pandas as pd
 # -------------------- Internal Imports -------------------
 from f10_utils.config_loader import load_config
 from f02_data.live_market_engine import MarketDataEngine
-from f02_data.data_handler_F_3 import DataHandler, BuildParams
+from f02_data.data_handler_G import DataHandler, BuildParams
 from f02_data.mt5_data_loader_E import MT5DataLoader_batch
 from f02_data.mtf_dataset import MTFDataset
 

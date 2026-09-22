@@ -1,10 +1,8 @@
-# f05_agents/portfolio_context_adapter.py (10)
+# f05_agents/portfolio_context_adapter.py (6)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # Chapter 3 - Symbol-Agent + Meta-Agent
-#
 # هدف:
 #     تبدیل PortfolioState واقعی f04_env به PortfolioContext
 #     مورد استفاده Meta-Agent.
@@ -42,7 +40,6 @@ from typing import Mapping
 from f04_env.portfolio_state import (
     PortfolioState,
 )
-
 from f05_agents.contracts import (
     DecisionMode,
     PortfolioContext,
@@ -50,7 +47,7 @@ from f05_agents.contracts import (
 
 
 # =============================================================================
-# Portfolio Context Adapter
+# Class-1: Portfolio Context Adapter
 # =============================================================================
 
 class PortfolioContextAdapter:
@@ -79,47 +76,38 @@ class PortfolioContextAdapter:
 
         نکته:
             exposure و correlation محاسبه نمی‌شوند؛
-            چون این دو مفهوم باید توسط لایه تخصصی مربوطه
-            تولید شوند.
+            چون این دو مفهوم باید توسط لایه تخصصی مربوطه تولید شوند.
         """
 
         if not isinstance(
             portfolio,
             PortfolioState,
         ):
-            raise TypeError(
-                "portfolio must be PortfolioState"
-            )
+            raise TypeError("portfolio must be PortfolioState")
 
         if timestamp.tzinfo is None:
-            raise ValueError(
-                "timestamp must be timezone-aware"
-            )
+            raise ValueError("timestamp must be timezone-aware")
 
         normalized_exposure = {
-            str(symbol).upper().strip(): float(value)
+            str(symbol).replace(" ",""): float(value)
             for symbol, value
             in exposure.items()
         }
 
         normalized_concentration = {
-            str(symbol).upper().strip(): float(value)
+            str(symbol).replace(" ",""): float(value)
             for symbol, value
-            in (
-                concentration or {}
-            ).items()
+            in (concentration or {}).items()
         }
 
         normalized_correlation = {
-            str(symbol_a).upper().strip(): {
-                str(symbol_b).upper().strip(): float(value)
+            str(symbol_a).replace(" ",""): {
+                str(symbol_b).replace(" ",""): float(value)
                 for symbol_b, value
                 in row.items()
             }
             for symbol_a, row
-            in (
-                correlation or {}
-            ).items()
+            in (correlation or {}).items()
         }
 
         return PortfolioContext(
@@ -139,3 +127,5 @@ class PortfolioContextAdapter:
             risk_blocked=bool(risk_blocked),
             mode=mode,
         )
+
+# ============================================================================= END

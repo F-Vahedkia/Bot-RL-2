@@ -1,4 +1,4 @@
-# f10_utils/constants.py
+# f10_utils/functions/constants.py
 
 from typing import Dict, List, Literal, Union
 from datetime import datetime, timezone
@@ -14,7 +14,6 @@ _TF_MINUTES = {
 }
 
 _EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
-
 
 # =======================================================================================
 # نگاشت تایم‌فریم‌ها 
@@ -50,15 +49,17 @@ _TF_MAP = {
 }
 
 # =======================================================================================
+
 def mapping_tf(tf: str) -> str:
     if not isinstance(tf, str):
         raise TypeError("The input parameter must be 'str'.")
     tf_temp = tf.upper().replace(" ","")
     if tf_temp not in _TF_MAP:
-        raise ValueError("Can not map the timeframe to standard form !")
+        raise ValueError(f"Can not map the timeframe {tf} to standard form !")
     return _TF_MAP[tf_temp]
         
-# ---------------------------
+# =======================================================================================
+
 def mapping_tfs(
     tfs: Union[List, Dict],
     mode: Literal["keys", "values", "both"] = "keys"
@@ -98,3 +99,77 @@ def mapping_tfs(
         raise TypeError("The input parameter must be 'List' or 'Dict'.")
     
 # =======================================================================================
+
+def normalize_and_sort_timeframe_dicts(
+    tf_dicts: Dict[str, Dict[str, int]]
+) -> Dict[str, Dict[str, int]]:
+    """
+    Normalize timeframe names and sort timeframes from smallest to largest.
+
+    Input structure:
+        Dict[symbol, Dict[timeframe, int]]
+    Example:
+        {
+            "XAUUSD": {"1h": 4, "1M": 20, "5  m": 9},
+            "EURUSD": {"10  m": 10, "m 5": 5},
+        }
+    Output:
+        {
+            "XAUUSD": {"M1": 20, "M5": 9, "H1": 4},
+            "EURUSD": {"M5": 5, "M10": 10},
+        }
+    """
+    if not isinstance(tf_dicts, dict):
+        raise TypeError(
+            "The input parameter must be a dictionary."
+        )
+
+    result: Dict[str, Dict[str, int]] = {}
+
+    for symbol, symbol_tf_dict in tf_dicts.items():
+
+        if not isinstance(symbol_tf_dict, dict):
+            raise TypeError(
+                f"Timeframe data for symbol '{symbol}' "
+                f"must be a dictionary."
+            )
+
+        # --------------------------------------------------------------
+        # Normalize timeframe names
+        # --------------------------------------------------------------
+
+        normalized_tf_dict = mapping_tfs(
+            symbol_tf_dict,
+            mode="keys",
+        )
+
+        # --------------------------------------------------------------
+        # Prevent silent data loss after normalization
+        # Example:
+        # {"M1": 20, "1M": 30}
+        # both become "M1"
+        # --------------------------------------------------------------
+
+        if len(normalized_tf_dict) != len(symbol_tf_dict):
+            raise ValueError(
+                f"Duplicate timeframe after normalization "
+                f"for symbol '{symbol}'."
+            )
+
+        # --------------------------------------------------------------
+        # Sort timeframes from smallest to largest
+        # --------------------------------------------------------------
+
+        sorted_tf_dict = dict(
+            sorted(
+                normalized_tf_dict.items(),
+                key=lambda item: _TF_MINUTES[item[0]],
+            )
+        )
+
+        result[symbol] = sorted_tf_dict
+
+    return result
+
+# ======================================================================================= END
+

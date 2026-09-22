@@ -1,16 +1,18 @@
 # f06_risk/limits.py (2)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # Risk limits / hard constraints.
 #
 # این فایل فقط configuration محدودیت‌های Risk Layer است.
-
+"""
+یادداشت خودم:
+    - None یعنی policy برای leverage حساب تعریف نشده است.
+"""
 
 from __future__ import annotations
 from dataclasses import dataclass
-
+from math import isfinite
 
 @dataclass(frozen=True, slots=True)
 class RiskLimits:
@@ -42,6 +44,12 @@ class RiskLimits:
 
     # حداکثر portfolio risk score
     max_portfolio_risk: float = 0.50
+
+    #--------------------
+    # حداکثر leverage مجاز در سطح حساب
+    # None یعنی این hard guard غیرفعال است.
+    max_account_leverage: float | None = None
+    #--------------------
 
     # correlation threshold
     high_correlation_threshold: float = 0.85
@@ -97,3 +105,12 @@ class RiskLimits:
 
             if self.max_positions_per_symbol < 0:
                 raise ValueError("max_positions_per_symbol must be >= 0.")
+
+        if self.max_account_leverage is not None:
+            if not isfinite(float(self.max_account_leverage)):
+                raise ValueError("max_account_leverage must be finite or None.")
+
+            if self.max_account_leverage <= 0.0:
+                raise ValueError("max_account_leverage must be > 0.")
+
+# ============================================================================= END

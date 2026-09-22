@@ -295,8 +295,8 @@ class TradingEnvironment:
         return StepResult(
             observation=self._current_observation(),
             reward=reward,
-            terminated=terminated,
-            truncated=truncated,
+            terminated=self._terminated,
+            truncated=self._truncated,
             info=info,
         )
 
@@ -321,3 +321,4 @@ class TradingEnvironment:
 
         return float(total)
 
+# ============================================================================= ENV

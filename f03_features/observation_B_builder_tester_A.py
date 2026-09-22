@@ -54,6 +54,32 @@ def _cfg(shift=0, drop=False, whitelist=None, blacklist=None):
             },
         },
     }
+
+# ------------------------------------------------------------------- new-1
+def _cfg_candles(
+    *,
+    base_mode="union_min",
+    base_timeframe=None,
+    required=None,
+    names=None,
+):
+    return {
+        "features": {
+            "observation": {
+                "base_timeframe": {
+                    "mode": base_mode,
+                    "timeframe": base_timeframe,
+                },
+            },
+            "candles": {
+                "required": {
+                    "XAUUSD": required or {},
+                },
+                "names": names or [],
+            },
+        },
+    }
+
 # ------------------------------------------------------------------- 4
 def test_builder_requires_config():
     with pytest.raises(ValueError, match="config is required"):
@@ -312,4 +338,203 @@ def test_graph_contract_integration():
         'macd_hist(fast=12,slow=26,signal=9)@H1',
     ]
 
-# ----------------------------------------------------------------------------- END
+# ------------------------------------------------------------------- new-2
+def test_observation_includes_candle_window():
+    """
+    تست اتصال CandleWindowBuilder
+    """
+    ds = MTFDataset(symbol="XAUUSD", base_tf="M1")
+
+    m1 = _frame([
+        "2026-01-01 10:00:00",
+        "2026-01-01 10:01:00",
+        "2026-01-01 10:02:00",
+        "2026-01-01 10:03:00",
+        "2026-01-01 10:04:00",
+    ])
+
+    spec = 'sma(column="close",period=10)@M1'
+    m1[spec] = [1., 2., 3., 4., 5.]
+
+    ds.add("M1", m1)
+
+    cfg = _cfg_candles(
+        required={"M1": 2},
+        names=["close"],
+    )
+
+    out = ObservationBuilder(cfg).build(
+        ds,
+        FeatureGraph([spec]),
+    )
+
+    assert list(out.columns) == [
+        spec,
+        "M1_lag0_close",
+        "M1_lag1_close",
+    ]
+
+# ------------------------------------------------------------------- new-3
+def test_candle_window_uses_last_closed_candle_only():
+    """
+    تست مهم close_time <= T
+    این تست دقیقاً قرارداد lag0 را کنترل می‌کند.
+    """
+    ds = MTFDataset(symbol="XAUUSD", base_tf="M5")
+
+    m1 = _frame([
+        "2026-01-01 10:00:00",
+        "2026-01-01 10:01:00",
+        "2026-01-01 10:02:00",
+        "2026-01-01 10:03:00",
+        "2026-01-01 10:04:00",
+        "2026-01-01 10:05:00",
+        "2026-01-01 10:06:00",
+        "2026-01-01 10:07:00",
+        "2026-01-01 10:08:00",
+        "2026-01-01 10:09:00",
+        "2026-01-01 10:10:00",
+    ])
+
+    spec = 'sma(column="close",period=10)@M1'
+    m1[spec] = [1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11.]
+
+    ds.add("M1", m1)
+
+    cfg = _cfg_candles(
+        base_mode="fixed",
+        base_timeframe="M1",
+        required={"M5": 2},
+        names=["close"],
+    )
+
+    m5 = _frame(
+        [
+            "2026-01-01 10:00:00",
+            "2026-01-01 10:05:00",
+        ],
+        start=100.0,
+    )
+    ds.add("M5", m5)
+
+    out = ObservationBuilder(cfg).build(
+        ds,
+        FeatureGraph([spec]),
+    )
+
+    # M5 candle at 10:00 closes at 10:05.
+    assert pd.isna(
+        out.loc[
+            pd.Timestamp("2026-01-01 10:04:00", tz="UTC"),
+            "M5_lag0_close",
+        ]
+    )
+
+    assert (
+        out.loc[
+            pd.Timestamp("2026-01-01 10:05:00", tz="UTC"),
+            "M5_lag0_close",
+        ]
+        == 100.0
+    )
+
+    assert pd.isna(
+        out.loc[
+            pd.Timestamp("2026-01-01 10:05:00", tz="UTC"),
+            "M5_lag1_close",
+        ]
+    )
+
+    # At 10:10 the second M5 candle is closed, so:
+    # lag0 -> 10:05 candle
+    # lag1 -> 10:00 candle
+    assert (
+        out.loc[
+            pd.Timestamp("2026-01-01 10:10:00", tz="UTC"),
+            "M5_lag0_close",
+        ]
+        == 101.0
+    )
+
+    assert (
+        out.loc[
+            pd.Timestamp("2026-01-01 10:10:00", tz="UTC"),
+            "M5_lag1_close",
+        ]
+        == 100.0
+    )
+
+# ------------------------------------------------------------------- new-4
+def test_union_min_observation_index_does_not_use_dataset_base_tf():
+    """
+    تست مالکیت Observation Index
+    این تست جلوی برگشتن ناخواسته به dataset.base_tf را می‌گیرد.
+    """
+    ds = MTFDataset(symbol="XAUUSD", base_tf="M5")
+
+    m1 = _frame([
+        "2026-01-01 10:00:00",
+        "2026-01-01 10:01:00",
+        "2026-01-01 10:02:00",
+        "2026-01-01 10:03:00",
+    ])
+
+    spec = 'sma(column="close",period=10)@M1'
+    m1[spec] = [1., 2., 3., 4.]
+
+    ds.add("M1", m1)
+
+    cfg = _cfg_candles(
+        base_mode="union_min",
+        required={"M1": 1},
+        names=["close"],
+    )
+
+    out = ObservationBuilder(cfg).build(
+        ds,
+        FeatureGraph([spec]),
+    )
+
+    assert out.index.equals(m1.index)
+    assert len(out) == 4
+
+# ------------------------------------------------------------------- new-5
+def test_candle_observation_does_not_mutate_dataset():
+    """
+    تست عدم تغییر Dataset
+    """
+    ds = MTFDataset(symbol="XAUUSD", base_tf="M5")
+
+    m1 = _frame([
+        "2026-01-01 10:00:00",
+        "2026-01-01 10:01:00",
+        "2026-01-01 10:02:00",
+    ])
+
+    spec = 'sma(column="close",period=10)@M1'
+    m1[spec] = [1., 2., 3.]
+
+    ds.add("M1", m1)
+
+    before = {
+        tf: frame.copy(deep=True)
+        for tf, frame in ds.frames.items()
+    }
+
+    cfg = _cfg_candles(
+        required={"M1": 2},
+        names=["close"],
+    )
+
+    ObservationBuilder(cfg).build(
+        ds,
+        FeatureGraph([spec]),
+    )
+
+    for tf, frame_before in before.items():
+        pd.testing.assert_frame_equal(
+            ds.get(tf),
+            frame_before,
+        )
+
+# ============================================================================= END

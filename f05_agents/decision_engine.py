@@ -1,10 +1,8 @@
-# f05_agents/decision_engine.py (6)
+# f05_agents/decision_engine.py (5)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # Chapter 3 - Symbol-Agent + Meta-Agent
-#
 # Multi-Symbol Decision Engine
 #
 # مسئولیت:
@@ -54,9 +52,7 @@ from f05_agents.contracts import (
     SymbolAgentOutput,
     SymbolContext,
 )
-
 from f05_agents.meta_agent import MetaAgent
-
 from f05_agents.symbol_agent import SymbolAgent
 
 
@@ -102,17 +98,13 @@ class MultiSymbolDecisionEngine:
 
         for symbol, agent in self.symbol_agents.items():
 
-            key = str(symbol).upper().strip()
+            key = str(symbol).replace(" ","")
 
             if not key:
-                raise ValueError(
-                    "symbol key must not be empty"
-                )
+                raise ValueError("symbol key must not be empty")
 
             if not isinstance(agent, SymbolAgent):
-                raise TypeError(
-                    f"Invalid SymbolAgent for {key}"
-                )
+                raise TypeError(f"Invalid SymbolAgent for {key}")
 
             if agent.symbol != key:
                 raise ValueError(
@@ -121,24 +113,21 @@ class MultiSymbolDecisionEngine:
                 )
 
             if key in normalized:
-                raise ValueError(
-                    f"Duplicate symbol: {key}"
-                )
+                raise ValueError(f"Duplicate symbol: {key}")
 
             normalized[key] = agent
 
         if not normalized:
-            raise ValueError(
-                "symbol_agents must not be empty"
-            )
+            raise ValueError("symbol_agents must not be empty")
 
         self.symbol_agents = dict(
             sorted(normalized.items())
         )
 
-    # =========================================================================
+
+    # =====================================================
     # Decision Cycle
-    # =========================================================================
+    # =====================================================
 
     def decide(
         self,
@@ -150,9 +139,7 @@ class MultiSymbolDecisionEngine:
     ) -> PortfolioDecision:
         """
         اجرای یک decision cycle کامل.
-
         تضمین‌های این متد:
-
             1. تمام symbol ها باید حاضر باشند.
             2. Observation هر symbol باید متعلق به همان Agent باشد.
             3. Context هر symbol باید متعلق به همان Agent باشد.
@@ -163,77 +150,68 @@ class MultiSymbolDecisionEngine:
         """
 
         if not str(decision_id).strip():
-            raise ValueError(
-                "decision_id is required"
-            )
+            raise ValueError("decision_id is required")
 
         if portfolio.mode != self.meta_agent.config.mode:
+            raise ValueError("Portfolio mode does not match Meta-Agent mode")
+
+        expected_symbols = set(self.symbol_agents)
+
+        normalized_observations = {
+            str(symbol).replace(" ", ""): observation
+            for symbol, observation in observations.items()
+        }
+        if len(normalized_observations) != len(observations):
             raise ValueError(
-                "Portfolio mode does not match Meta-Agent mode"
+                "Observation symbols collide after removing spaces"
             )
 
-        expected_symbols = set(
-            self.symbol_agents
-        )
-
-        observation_symbols = {
-            str(symbol).upper()
-            for symbol in observations
+        normalized_contexts = {
+            str(symbol).replace(" ", ""): context
+            for symbol, context in contexts.items()
         }
+        if len(normalized_contexts) != len(contexts):
+            raise ValueError(
+                "Context symbols collide after removing spaces"
+            )
 
-        context_symbols = {
-            str(symbol).upper()
-            for symbol in contexts
-        }
+        observation_symbols = set(normalized_observations)
+        context_symbols = set(normalized_contexts)
 
         if observation_symbols != expected_symbols:
-            raise ValueError(
-                "Observation symbols do not match "
-                "registered Symbol-Agents"
-            )
-
+            raise ValueError("Observation symbols do not match registered Symbol-Agents")
+        
         if context_symbols != expected_symbols:
-            raise ValueError(
-                "Context symbols do not match "
-                "registered Symbol-Agents"
-            )
+            raise ValueError("Context symbols do not match registered Symbol-Agents")
 
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------
         # همه Observation ها باید یک timestamp داشته باشند.
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------
 
         observation_timestamps = {
-            observations[symbol].timestamp
+            normalized_observations[symbol].timestamp
             for symbol in expected_symbols
         }
 
         if len(observation_timestamps) != 1:
-            raise ValueError(
-                "All observations in one decision cycle "
-                "must have the same timestamp"
-            )
+            raise ValueError("All observations in one decision cycle must have the same timestamp")
 
         observation_timestamp = next(
             iter(observation_timestamps)
         )
 
         if observation_timestamp != portfolio.timestamp:
-            raise ValueError(
-                "Observation timestamp does not match "
-                "PortfolioContext timestamp"
-            )
+            raise ValueError("Observation timestamp does not match PortfolioContext timestamp")
 
         outputs: dict[str, SymbolAgentOutput] = {}
 
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------
         # Symbol-Agent inference
-        # ---------------------------------------------------------------------
-
+        # -------------------------------------------------
         for symbol in sorted(expected_symbols):
 
-            observation = observations[symbol]
-
-            context = contexts[symbol]
+            observation = normalized_observations[symbol]
+            context = normalized_contexts[symbol]
 
             if observation.symbol != symbol:
                 raise ValueError(
@@ -253,10 +231,9 @@ class MultiSymbolDecisionEngine:
                 decision_id=decision_id,
             )
 
-            # -----------------------------------------------------------------
+            # ---------------------------------------------
             # خروجی Agent باید متعلق به همان چرخه باشد.
-            # -----------------------------------------------------------------
-
+            # ---------------------------------------------
             if output.symbol != symbol:
                 raise ValueError(
                     f"Agent output symbol mismatch: "
@@ -283,83 +260,71 @@ class MultiSymbolDecisionEngine:
 
             outputs[symbol] = output
 
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------
         # Meta-Agent inference
-        # ---------------------------------------------------------------------
-
+        # -------------------------------------------------
         decision = self.meta_agent.decide(
             signals=outputs,
             portfolio=portfolio,
             decision_id=decision_id,
         )
 
-        # ---------------------------------------------------------------------
+        # -------------------------------------------------
         # Audit state
-        # ---------------------------------------------------------------------
-
+        # -------------------------------------------------
         self.last_symbol_outputs = dict(outputs)
-
         self.last_decision = decision
-
         self.decision_count += 1
 
         return decision
 
-    # =========================================================================
+    # =====================================================
     # Agent Access
-    # =========================================================================
+    # =====================================================
 
     def get_symbol_agent(
         self,
         symbol: str,
     ) -> SymbolAgent:
 
-        key = str(symbol).upper().strip()
+        key = str(symbol).replace(" ","")
 
         if key not in self.symbol_agents:
-            raise KeyError(
-                f"Unknown Symbol-Agent: {key}"
-            )
+            raise KeyError(f"Unknown Symbol-Agent: {key}")
 
         return self.symbol_agents[key]
 
-    # =========================================================================
+    # =====================================================
     # Audit Access
-    # =========================================================================
+    # =====================================================
 
     def get_last_symbol_output(
         self,
         symbol: str,
     ) -> SymbolAgentOutput:
 
-        key = str(symbol).upper().strip()
+        key = str(symbol).replace(" ","")
 
         if key not in self.last_symbol_outputs:
-            raise KeyError(
-                f"No previous decision for symbol: {key}"
-            )
+            raise KeyError(f"No previous decision for symbol: {key}")
 
         return self.last_symbol_outputs[key]
 
-    # =========================================================================
+    # =====================================================
     # Lifecycle
-    # =========================================================================
+    # =====================================================
 
     def reset(self) -> None:
         """
         Reset runtime state تمام Agent ها و Engine.
-
         Configuration و Policy تغییر نمی‌کنند.
         """
-
         for agent in self.symbol_agents.values():
             agent.reset()
 
         self.meta_agent.reset()
-
         self.last_symbol_outputs.clear()
-
         self.last_decision = None
-
         self.decision_count = 0
 
+# ============================================================================= END

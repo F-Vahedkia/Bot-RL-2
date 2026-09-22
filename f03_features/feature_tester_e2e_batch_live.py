@@ -144,7 +144,7 @@ def _warmup_for_symbol(
     symbol: str,
     tf: str,
 ) -> int:
-    warmups = cfg.get("__warmups_dicts", {}) or {}
+    warmups = cfg.get("__all_required_bars", {}) or {}
     symbol_warmups = warmups.get(symbol, {}) or {}
 
     try:
@@ -320,7 +320,7 @@ def _dataset(
     base_tf = _base_tf_for_symbol(cfg, symbol)
     timeframes = _timeframes_for_symbol(cfg, symbol)
 
-    warmups = cfg["__warmups_dicts"][symbol]
+    warmups = cfg["__all_required_bars"][symbol]
 
     warmup_span_minutes = max(
         warmups[tf] * _TF_MINUTES[tf]

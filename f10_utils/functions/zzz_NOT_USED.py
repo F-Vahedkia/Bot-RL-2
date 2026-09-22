@@ -16,6 +16,12 @@ def extract_indicator_timeframes(cfg: Dict[str, Any]) -> List[str]:
     result = sorted(tfs, key=lambda tf: _TF_MINUTES.get(tf.upper(), 999999))
     return result
 
+
+
+
+
+
+
 # =================================================================================================
 # 2) twin functions (for use in data_handler.py, ...)
 # دانلود و نرمال‌سازی دیتافریم‌های خام 

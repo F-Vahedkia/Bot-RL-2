@@ -100,7 +100,7 @@ from typing import Any, Dict
 import pandas as pd
 
 from f02_data.live_market_engine import MarketDataEngine
-from f02_data.data_handler_F_3 import DataHandler
+from f02_data.data_handler_G import DataHandler
 from f10_utils.config_completer import config_completer
 
 # =============================================================================
@@ -402,19 +402,19 @@ def validate_data_handler_cache(
     در _cache_dict دریافت کرده باشد.
     """
 
-    warmup_dict = handler._warmup_dict
+    warmup_dict = handler._required_bars
 
     assert_true(
         isinstance(warmup_dict, dict),
         (
-            f"{symbol}: DataHandler._warmup_dict must be dict, "
+            f"{symbol}: DataHandler._required_bars must be dict, "
             f"got {type(warmup_dict)!r}"
         ),
     )
 
     assert_true(
         len(warmup_dict) > 0,
-        f"{symbol}: DataHandler._warmup_dict is empty.",
+        f"{symbol}: DataHandler._required_bars is empty.",
     )
 
     cache = handler._cache_dict
@@ -539,7 +539,7 @@ def validate_latest_dataset(
         f"{symbol}: MTFDataset.frames is empty.",
     )
 
-    for tf in handler._warmup_dict:
+    for tf in handler._required_bars:
         tf = tf.upper()
         assert_true(
             tf in frames,
@@ -555,7 +555,7 @@ def validate_latest_dataset(
             timeframe=tf,
             source_name=f"DataHandler._latest_dataset.frames[{tf!r}]",
         )
-        warmup = handler._warmup_dict[tf]
+        warmup = handler._required_bars[tf]
         assert_true(
             len(df) <= warmup,
             (
@@ -847,9 +847,10 @@ def main() -> int:
     # -----------------------------------------------------------------
 
     data_handlers: Dict[str, DataHandler] = {}
-
+    
     for symbol in symbols:
-        handler = DataHandler(cfg, symbol=symbol)
+        
+        handler = DataHandler(cfg, symbol=symbol, required_bars=None )
         handler.subscribe_to_event_bus(event_bus)
         data_handlers[symbol] = handler
 
@@ -877,7 +878,7 @@ def main() -> int:
     # -----------------------------------------------------------------
 
     engine_thread = threading.Thread(
-        target=engine.start,
+        target=engine.start(cfg["__warmups_dicts"]),
         kwargs={
             "poll_interval_sec": POLL_INTERVAL_SEC,
         },
@@ -1010,7 +1011,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Stopped by user.")
     except Exception:
-        logger.exception("LIVE FULL-PATH TEST FAILED.")
+        logger.exception("`LIVE FULL-PATH TEST FAILED.`")
         raise
 
 # ============================================================================= END

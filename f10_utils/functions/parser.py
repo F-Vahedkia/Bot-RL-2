@@ -437,7 +437,7 @@ def parse_spec(spec: str, mode: str = "train") -> ParsedSpec:
         raw=spec,
         canonical=spec.replace("'", '"'),
     )
-    logger.debug("parse_spec: %s -> %s", spec, ps)
+    logger.debug("parse_spec: %s -> %s \n", spec, ps)
     return ps
 
 

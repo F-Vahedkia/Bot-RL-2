@@ -86,6 +86,8 @@ def load_dataframe(path: Path) -> pd.DataFrame:
             path,
             index_col=0,
         )
+        df.index = pd.to_datetime(df.index, utc=True)
+        df.index.name = "time"
     else:
         raise ValueError(f"Unsupported data format: {path}")
 

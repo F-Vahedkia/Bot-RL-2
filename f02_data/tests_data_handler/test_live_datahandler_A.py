@@ -10,7 +10,9 @@
 
 Run: python -m f02_data.tests_data_handler.test_live_datahandler_A
 """
+
 from __future__ import annotations
+
 import sys, os, threading, logging # , time
 import pandas as pd
 
@@ -20,7 +22,7 @@ from typing import Dict, Any, List # , Optional
 
 sys.path.insert(0, os.path.dirname(__file__) + "/../..")
 
-from f02_data.data_handler_F_3 import DataHandler, BuildParams
+from f02_data.data_handler_G import DataHandler, BuildParams
 from f02_data.mt5_data_loader_E import MT5DataLoader_batch, DownloadPlan
 from f02_data.live_market_engine import EventBus, MT5StreamWorker
 from f10_utils.config_completer import config_completer
@@ -35,21 +37,40 @@ logger = logging.getLogger(__name__)
 class LiveDataHandlerTester:
 
     # =========================================================================
-    def __init__(self, cfg: Dict[str, Any], symbol: str):
+    def __init__(
+        self,
+        cfg: Dict[str, Any],
+        symbol: str,
+        timeframe: str,
+        required_bars: Dict[str, int]
+    ):
         self.cfg = cfg
         
         # تنظیمات تست
         dl = (cfg.get("download_defaults") or {})
         self.symbol = symbol
-        self.base_tf = "M1"
-        self.timeframes: List[str] = list(dl.get("timeframes") or ["M1", "H1", "H4"])
+        self.base_tf = timeframe
+        self.required_bars = dict(required_bars)
+
+        if not self.required_bars:
+            raise ValueError("required_bars cannot be empty.")
+
+        self.timeframes = list(self.required_bars.keys())
+
         if self.base_tf not in self.timeframes:
-            self.timeframes = [self.base_tf] + self.timeframes
+            raise ValueError(
+                f"Base timeframe '{self.base_tf}' is not present in required_bars."
+            )
         
         self.num_live_candles = 3  # تعداد کندل‌های زنده برای جمع‌آوری
         
         self.event_bus = EventBus(queue_size=1000)
-        self.data_handler = DataHandler(cfg=cfg, symbol=symbol, event_bus=self.event_bus)
+        self.data_handler = DataHandler(
+            cfg=cfg,
+            symbol=symbol,
+            required_bars=self.required_bars,
+            event_bus=self.event_bus
+        )
         
         self.live_rows: List[pd.DataFrame] = []
         self.collected = 0
@@ -242,7 +263,7 @@ class LiveDataHandlerTester:
             logger.warning("✗ Some mismatches found.")
         
         # ----- ذخیره نتایج
-        output_dir = Path(__file__).parent.parent / ""
+        output_dir = Path(__file__).parent.parent.parent / ""
         # output_dir.mkdir(exist_ok=True)
         
         build_df.to_csv(output_dir / "batch_output.csv")
@@ -269,7 +290,10 @@ class LiveDataHandlerTester:
         self.worker = MT5StreamWorker(
             cfg=self.cfg,
             event_bus=self.event_bus,
-            # warmups_dicts=self.cfg["__warmups_dicts"],
+            # warmups_dicts=self.cfg["__warmups_dicts"], # اصلاح نیاز دارد
+            warmups_dicts={
+                self.symbol: self.required_bars
+            },
             poll_interval_sec=1.0
         )
         
@@ -304,9 +328,26 @@ class LiveDataHandlerTester:
 # =============================================================================
 def main():
     # cfg = load_config()
-    cfg = config_completer()
+    cfg = config_completer(enable_env_override=True)
 
-    tester = LiveDataHandlerTester(cfg, "BITCOIN")
+    symbol = "BITCOIN"
+    timeframe = "M1"
+
+    required_bars = {
+        timeframe: cfg["__warmups_dicts"][symbol][timeframe]
+    }
+
+    print(f"symbol = {symbol}")
+    print(f"timeframe = {timeframe}")
+    print(f"required_bars = {required_bars}")
+
+    tester = LiveDataHandlerTester(
+        cfg,
+        symbol,
+        timeframe,
+        required_bars,
+    )
+
     success = tester.run()
     
     print("\n" + "=" * 60)

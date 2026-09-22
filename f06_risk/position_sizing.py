@@ -47,7 +47,6 @@ class PositionSizingRequest:
     equity: float
     price: float
     contract_size: float
-
     currency_conversion_rate: float = 1.0
 
     def __post_init__(self) -> None:
@@ -175,3 +174,4 @@ class PositionSizingCalculator:
             volume_lots=volume_lots,
         )
 
+# ============================================================================= END

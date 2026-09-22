@@ -186,16 +186,29 @@ class FeatureExecutionContract:
         if not self.timeframes:
             raise ValueError("At least one timeframe is required")
 
+        normalized_base_tf = self.base_tf.upper()
+        normalized_timeframes = tuple(
+            tf.upper() for tf in self.timeframes
+        )
+
+        if normalized_base_tf not in normalized_timeframes:
+            raise ValueError(
+                f"Base timeframe {normalized_base_tf!r} is not present "
+                f"in timeframes {normalized_timeframes!r}"
+            )
+
         object.__setattr__(self, "mode", mode)
         object.__setattr__(
             self,
             "base_tf",
-            self.base_tf.upper(),
+            # self.base_tf.upper(),
+            normalized_base_tf,
         )
         object.__setattr__(
             self,
             "timeframes",
-            tuple(tf.upper() for tf in self.timeframes),
+            # tuple(tf.upper() for tf in self.timeframes),
+            normalized_timeframes,
         )
         object.__setattr__(
             self,
@@ -214,7 +227,7 @@ class ObservationContract:
     Structural contract for the final observation.
 
     DataFrame output
-        - index is the base-timeframe index
+        - index is the ObservationBuilder-owned observation_index
         - columns are deterministic
         - feature values remain numeric for NumPy conversion
 

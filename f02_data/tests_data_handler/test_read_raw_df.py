@@ -13,7 +13,7 @@ sys.path.insert(
         os.path.join(os.path.dirname(__file__), "../..")
     )
 )
-from f02_data.data_handler_F_3 import _read_raw_df
+from f02_data.data_handler_G import _read_raw_df
 
 
 # =============================================================================

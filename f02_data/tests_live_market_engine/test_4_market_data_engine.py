@@ -3,7 +3,7 @@
 #    1405/05/19-19:38 ==> run result is OK for 7 tests.
 
 # Run:
-# pytest f02_data/tests_live_market_engine/test_4_market_data_engine.py -v
+#     pytest f02_data/tests_live_market_engine/test_4_market_data_engine.py -v
 
 # اجرای تمام فایلهای تستر داخل پوشه:
 # pytest f02_data/tests_live_market_engine/ -v
@@ -81,13 +81,13 @@ class TestMarketDataEngine:
         MockWorker.return_value = mock_worker_instance
         engine = MarketDataEngine(cfg=mock_config)
         engine.start(
-            # warmups_dicts=warmups_dicts,
+            warmups_dicts=warmups_dicts,
             poll_interval_sec=2.0
         )
         MockWorker.assert_called_once_with(
             cfg=mock_config,
             event_bus=engine.event_bus,
-            # warmups_dicts=warmups_dicts,
+            warmups_dicts=warmups_dicts,
             poll_interval_sec=2.0
         )
         mock_worker_instance.start.assert_called_once()
@@ -105,7 +105,7 @@ class TestMarketDataEngine:
         """
         engine = MarketDataEngine(cfg=mock_config)
         engine._running = True
-        engine.start()     # (warmups_dicts=warmups_dicts)
+        engine.start(warmups_dicts=warmups_dicts)
         assert engine.worker is None
 
 
@@ -123,7 +123,7 @@ class TestMarketDataEngine:
         mock_worker = Mock()
         MockWorker.return_value = mock_worker
         engine = MarketDataEngine(cfg=mock_config)
-        engine.start()     # (warmups_dicts=warmups_dicts)
+        engine.start(warmups_dicts=warmups_dicts)
         engine.stop()
         mock_worker.stop.assert_called_once()
         assert engine._running is False

@@ -40,6 +40,7 @@ def _default_config_path() -> Path:
     """  مسیر پیش‌فرض فایل کانفیگ. """
     return project_root() / "f01_config" / "config.yaml"
 
+
 def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False) -> Dict[str, Any]:
     p = Path(path)
     if not p.exists():
@@ -79,6 +80,7 @@ def _read_yaml_file(path: Union[str, Path], *, fail_on_duplicates: bool = False)
         raise ValueError(f"Root of YAML must be a mapping (dict). Got: {type(data)}")
     return data
 
+
 def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
     """merge عمیق دیکشنری‌ها با حفظ نوع‌ها و عدم دست‌کاری base.
     _deep_merge(low importance dict, high importance dict)
@@ -93,11 +95,13 @@ def _deep_merge(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]
             out[k] = copy.deepcopy(v)
     return out
 
+
 def _ensure_dir(d: Union[str, Path]) -> Path:
     p = Path(d)           # تبدیل نمودن d به یک شیء path و ذخیره آن در p 
     p.mkdir(parents=True, exist_ok=True) # در مسیر شیء path پوشه را همراه با والدینش میسازد 
                                          # اگر پوشه مزبور موجود بود، خطا نمیگیرد 
     return p   # در نهایت همان شیء Path را (که حالا مطمئنیم پوشه‌اش روی دیسک وجود دارد) برمی‌گرداند. 
+
 
 def _now_utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

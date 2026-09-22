@@ -20,12 +20,12 @@
 # =======================================================================================
 # Imports
 # =======================================================================================
-# from typing import Dict
+from typing import Dict
 import threading
 import logging
 # from zoneinfo import ZoneInfo
 from f02_data.live_market_engine import MarketDataEngine
-from f02_data.data_handler_F_3 import DataHandler
+from f02_data.data_handler_G import DataHandler
 from f10_utils.config_completer import config_completer
 
 # =======================================================================================
@@ -56,7 +56,7 @@ def main():
     logger.info(f"broker timezone = {broker_timezone}")
 
     # 3) --- warmups dicts
-    # warmups_dicts: Dict[str, Dict[str, int]] = cfg["__warmups_dicts"]
+    warmups_dicts: Dict[str, Dict[str, int]] = cfg["__all_required_bars"]
     # logger.info(f"warmups dicts = {warmups_dicts}")
 
     # 4) --- symbols
@@ -64,16 +64,33 @@ def main():
     symbols = cfg["__symbols"]
     logger.info(f"symbols = {symbols}")
 
-    # 5) --- timeframes
-    # timeframes_dict = {sym: list(warmup.keys()) for sym, warmup in warmups_dicts.items()}
-    timeframes_dict = cfg["__timeframes_dict"]
-    logger.info(f"timeframes dict = {timeframes_dict}")
+    # 5) --- ساخت Scope مستقل required_bars برای هر symbol
+    #
+    # فقط timeframeهایی وارد Scope می‌شوند که واقعاً تعداد candle
+    # موردنیاز مثبت دارند.
+    required_bars_dicts: Dict[str, Dict[str, int]] = {}
+
+    for sym in symbols:
+        source = warmups_dicts.get(sym, {})
+
+        required_bars_dicts[sym] = {
+            tf.upper().replace(" ", ""): int(bars)
+            for tf, bars in source.items()
+            if isinstance(bars, int) and not isinstance(bars, bool) and bars > 0
+        }
+
+        if not required_bars_dicts[sym]:
+            raise ValueError(
+                f"No positive required bars found for symbol '{sym}'."
+            )
+
+    logger.info(f"required_bars_dicts = {required_bars_dicts}")
 
     # -------------------------------------------
     # ساخت موتور و گرفتن event_bus که نقش دفتر یادداشت مشترکین را دارد
     # -------------------------------------------
     # 6) --- MarketDataEngine
-    engine = MarketDataEngine(cfg)
+    engine = MarketDataEngine(cfg, )
     event_bus = engine.get_event_bus()
 
 
@@ -83,14 +100,18 @@ def main():
     # 7) --- loop over all symbols to create DataHandlers
     data_handlers = {}
     for sym in symbols:
-        data_handlers[sym] = DataHandler(cfg, symbol=sym)    #, event_bus=None)
+        data_handlers[sym] = DataHandler(cfg, symbol=sym, required_bars=required_bars_dicts[sym])    #, event_bus=None)
 
         # engine.attach_data_handler(data_handlers[sym])      # متد اتصال موتور به دیتا هندلر که در کلاس موتور بود را حذف کردم تا ایمپورت حلقه ای بوجود نیاید
         data_handlers[sym].subscribe_to_event_bus(event_bus)  # برای اتصال موتور و دیتاهندلر، باید از متد اتصالی که در دیتاهندلر است استفاده بشود
 
     # 8) --- Start Engine (یک بار برای همه نمادها)
     # threading.Thread(target=engine.start, args=(2.0), daemon=True).start()
-    threading.Thread(target=engine.start, daemon=True).start()        
+    threading.Thread(
+        target=engine.start,
+        args=(required_bars_dicts,),
+        daemon=True
+    ).start()        
 
 
     # 9) --- Event loop for all symbols

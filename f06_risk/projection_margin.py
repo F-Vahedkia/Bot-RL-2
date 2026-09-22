@@ -21,6 +21,7 @@
     - calculate_many() همین محاسبات را برای چند symbol انجام می‌دهد.
     - کلاس stateless و broker-independent است.
 """
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
@@ -163,3 +164,4 @@ class ProjectionMarginCalculator:
 
         return results
 
+# ============================================================================= END

@@ -1,8 +1,7 @@
 # f06_risk/action_builder.py (5)
 #
-# Created:
-#     1405/06/19
-#
+# Created: 1405/06/19
+
 # RiskDecision -> PortfolioAction
 #
 # Execution در این فایل انجام نمی‌شود.
@@ -134,3 +133,4 @@ class RiskActionBuilder:
             intents=tuple(intents)
         )
 
+# ============================================================================= END

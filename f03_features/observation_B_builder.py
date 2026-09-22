@@ -17,7 +17,8 @@ from f02_data.mtf_dataset import MTFDataset
 from f03_features.feature_B_graph import FeatureGraph, FeatureNode
 from f03_features.feature_B_store import align_to_base
 from f03_features.feature_C_registry_1 import get_indicator
-
+from f03_features.candle_window_builder import CandleWindowBuilder   # new add
+from f10_utils.functions.constants import _TF_MINUTES                # new add
 
 # =============================================================================
 # Observation Builder
@@ -80,6 +81,42 @@ class ObservationBuilder:
         self.blacklist: tuple[str, ...] = tuple(
             str(x) for x in (observation_cfg.get("features_blacklist", []) or [])
         )
+        # ----- new add start
+        base_tf_cfg = observation_cfg.get("base_timeframe", {}) or {}
+        if not isinstance(base_tf_cfg, dict):
+            raise TypeError(
+                "features.observation.base_timeframe must be a mapping"
+            )
+
+        self.observation_tf_mode = str(
+            base_tf_cfg.get("mode", "union_min")
+        ).strip().lower()
+
+        if self.observation_tf_mode not in {
+            "fixed",
+            "feature_min",
+            "candle_min",
+            "union_min",
+        }:
+            raise ValueError(
+                f"Unsupported base_timeframe.mode: "
+                f"{self.observation_tf_mode!r}"
+            )
+
+        raw_tf = base_tf_cfg.get("timeframe")
+        self.observation_tf: str | None = (
+            str(raw_tf).strip().upper()
+            if raw_tf is not None and str(raw_tf).strip()
+            else None
+        )
+
+        if self.observation_tf_mode == "fixed" and not self.observation_tf:
+            raise ValueError(
+                "base_timeframe.timeframe is required when mode='fixed'"
+            )
+
+        self.candle_builder = CandleWindowBuilder(config)
+        # ----- new add end
 
     # -------------------------------------------------------------------------
     @staticmethod
@@ -270,10 +307,124 @@ class ObservationBuilder:
         return columns
     
     # -------------------------------------------------------------------------
-    def _aligned_dataset(self, dataset: MTFDataset) -> pd.DataFrame:
-        """Create a base-timeframe view without mutating the MTFDataset."""
-        return align_to_base(dataset)
+    # ----- new add-2 start
+    def _resolve_observation_timeframe(
+        self,
+        dataset: MTFDataset,
+        feature_columns: Sequence[str],
+    ) -> str:
+        feature_tfs = {
+            tf.upper()
+            for tf in dataset.timeframes
+            if any(
+                column in dataset.get(tf).columns
+                for column in feature_columns
+            )
+        }
 
+        candle_tfs = set(
+            self.candle_builder.required_for_symbol(dataset.symbol)
+            if self.candle_builder.names
+            else {}
+        )
+
+        mode = self.observation_tf_mode
+
+        if mode == "fixed":
+            assert self.observation_tf is not None
+            return self.observation_tf
+
+        if mode == "feature_min":
+            if not feature_tfs:
+                raise ValueError(
+                    "No Feature timeframe found for feature_min mode"
+                )
+            return min(feature_tfs, key=lambda tf: _TF_MINUTES[tf])
+
+        if mode == "candle_min":
+            if not candle_tfs:
+                raise ValueError(
+                    "No Candle timeframe found for candle_min mode"
+                )
+            return min(candle_tfs, key=lambda tf: _TF_MINUTES[tf])
+
+        candidates = feature_tfs | candle_tfs
+
+        if not candidates:
+            raise ValueError(
+                "No Feature or Candle timeframe available for union_min"
+            )
+
+        return min(candidates, key=lambda tf: _TF_MINUTES[tf])
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _build_observation_index(
+        dataset: MTFDataset,
+        timeframe: str,
+    ) -> pd.DatetimeIndex:
+        timeframe = timeframe.upper()
+
+        if timeframe in dataset.frames:
+            return dataset.get(timeframe).index.copy()
+
+        non_empty = [
+            df
+            for df in dataset.frames.values()
+            if df is not None and not df.empty
+        ]
+
+        if not non_empty:
+            raise ValueError(
+                "Cannot build observation_index from empty MTFDataset"
+            )
+
+        start = min(df.index.min() for df in non_empty)
+        end = max(df.index.max() for df in non_empty)
+
+        freq = f"{_TF_MINUTES[timeframe]}min"
+
+        return pd.date_range(
+            start=start.floor(freq),
+            end=end.floor(freq),
+            freq=freq,
+            name=non_empty[0].index.name,
+        )
+
+    # -------------------------------------------------------------------------
+    @staticmethod
+    def _aligned_dataset(
+        dataset: MTFDataset,
+        observation_index: pd.DatetimeIndex,
+        observation_tf: str,
+    ) -> pd.DataFrame:
+        """
+        Reuse the existing align_to_base() implementation while making
+        observation_tf the temporary alignment base.
+
+        dataset.base_tf is not modified.
+        """
+        temp = dataset.copy()
+        temp.base_tf = observation_tf
+
+        if observation_tf not in temp.frames:
+            # align_to_base() returns immediately for a completely empty
+            # base frame, so keep one dummy column.
+            temp.add(
+                observation_tf,
+                pd.DataFrame(
+                    {"__observation__": np.nan},
+                    index=observation_index,
+                ),
+            )
+
+        aligned = align_to_base(temp)
+
+        if "__observation__" in aligned.columns:
+            aligned = aligned.drop(columns="__observation__")
+
+        return aligned.reindex(observation_index)    
+    # ----- new add-2 end
     # -------------------------------------------------------------------------
     @staticmethod
     def _drop_leading_warmup(
@@ -299,7 +450,7 @@ class ObservationBuilder:
         return obs.loc[first_valid:].copy()
 
     # -------------------------------------------------------------------------
-    def build(
+    def build_old1(
         self,
         dataset: MTFDataset,
         graph: FeatureGraph,
@@ -328,6 +479,96 @@ class ObservationBuilder:
             obs = self._drop_leading_warmup(obs, feature_columns)
 
         return obs
+
+    # -------------------------------------------------------------------------
+    def build(
+        self,
+        dataset: MTFDataset,
+        graph: FeatureGraph,
+    ) -> pd.DataFrame:
+        """
+        Build the final pandas Observation.
+        """
+
+        self._validate_inputs(dataset, graph)
+
+        feature_columns = self._filtered_graph_columns(graph)
+
+        missing = [
+            column
+            for column in feature_columns
+            if not any(
+                column in dataset.get(tf).columns
+                for tf in dataset.timeframes
+            )
+        ]
+
+        if missing:
+            raise KeyError(
+                "Feature columns required by FeatureGraph are missing from "
+                f"the FeatureStore dataset: {missing}"
+            )
+
+        # -------------------------------------------------------------
+        # 1. Observation owns the Observation timeframe/index.
+        # -------------------------------------------------------------
+
+        observation_tf = self._resolve_observation_timeframe(
+            dataset,
+            feature_columns,
+        )
+
+        observation_index = self._build_observation_index(
+            dataset,
+            observation_tf,
+        )
+
+        # -------------------------------------------------------------
+        # 2. Align Features onto observation_index.
+        # -------------------------------------------------------------
+
+        aligned = self._aligned_dataset(
+            dataset,
+            observation_index,
+            observation_tf,
+        )
+
+        obs = aligned.loc[:, feature_columns].copy()
+
+        if self.shift:
+            obs = obs.shift(self.shift)
+
+        if self.drop_na_head:
+            obs = self._drop_leading_warmup(
+                obs,
+                feature_columns,
+            )
+
+        # -------------------------------------------------------------
+        # 3. CandleWindowBuilder uses exactly the same final index.
+        # -------------------------------------------------------------
+
+        candles = self.candle_builder.build(
+            dataset=dataset,
+            observation_index=obs.index,
+            symbol=dataset.symbol,
+        )
+
+        # -------------------------------------------------------------
+        # 4. Final Observation
+        # -------------------------------------------------------------
+
+        overlap = set(obs.columns).intersection(candles.columns)
+        if overlap:
+            raise ValueError(
+                "Observation column collision between features and candles: "
+                f"{sorted(overlap)}"
+            )
+
+        return pd.concat(
+            [obs, candles],
+            axis=1,
+        )
 
     # -------------------------------------------------------------------------
     def build_numpy(

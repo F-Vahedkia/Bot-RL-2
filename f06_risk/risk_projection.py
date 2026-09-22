@@ -4,19 +4,19 @@
 # Chapter 4 - Risk Layer
 #
 # Purpose:
-#   Calculate the portfolio state that would exist AFTER applying a proposed
-#   PortfolioDecision, without executing anything.
+#     - Calculate the portfolio state that would exist AFTER applying a proposed
+#     - PortfolioDecision, without executing anything.
 #
 # Flow:
-#   Current RiskContext + PortfolioDecision
-#       ->
-#   ProjectedRiskState
+#     Current RiskContext + PortfolioDecision
+#           ->
+#     ProjectedRiskState
 #
 # Rules:
-#   - No broker access
-#   - No execution
-#   - No mutation
-#   - Deterministic
+#     - No broker access
+#     - No execution
+#     - No mutation
+#     - Deterministic
 # =============================================================================
 """
 نکاتی که در مرحله دوم بررسی ها chatGPT نوشته است:
@@ -27,6 +27,7 @@
     ...
     بقیه موارد را من در اینجا نیاوردم.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -450,3 +451,5 @@ class RiskProjection:
             projected_position_count=projected_position_count,
             symbols=projected_symbols,
         )
+
+# ============================================================================= END

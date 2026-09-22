@@ -1,5 +1,8 @@
 # f04_env/contracts.py
 
+# =============================================================================
+# Imports
+# =============================================================================
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -9,6 +12,9 @@ import numpy as np
 import pandas as pd
 
 
+# =============================================================================
+# Class-1
+# =============================================================================
 @dataclass(frozen=True, slots=True)
 class ObservationContract:
     """
@@ -46,8 +52,11 @@ class ObservationContract:
         return len(self.columns)
 
 
+# =============================================================================
+# Class-2
+# =============================================================================
 @dataclass(frozen=True, slots=True)
-class PositionIntent:
+class PositionIntent_old:
     """
     Requested position intent for one symbol.
 
@@ -84,6 +93,70 @@ class PositionIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class PositionIntent:
+    """
+    Requested position intent for one symbol.
+
+    This is NOT a broker order and NOT a final execution result.
+
+    target_lots:
+        Final position quantity produced after risk validation /
+        position sizing.
+
+    stop_price:
+        Protective stop-loss price associated with this position intent.
+        It is optional only for flat intents.
+    """
+
+    symbol: str
+    target_side: int = 0
+    target_lots: float = 0.0
+    stop_price: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        symbol = str(self.symbol).upper().strip()
+        if not symbol:
+            raise ValueError("symbol is required")
+
+        side = int(self.target_side)
+        if side not in (-1, 0, 1):
+            raise ValueError("target_side must be -1, 0, or 1")
+
+        lots = float(self.target_lots)
+        if not np.isfinite(lots):
+            raise ValueError("target_lots must be finite")
+
+        if lots < 0.0:
+            raise ValueError("target_lots must be >= 0")
+
+        stop_price = self.stop_price
+        if stop_price is not None:
+            stop_price = float(stop_price)
+
+            if not np.isfinite(stop_price) or stop_price <= 0.0:
+                raise ValueError("stop_price must be a positive finite value")
+
+        if side == 0:
+            if lots != 0.0:
+                raise ValueError("flat intent must have target_lots=0")
+
+            if stop_price is not None:
+                raise ValueError("flat intent must have stop_price=None")
+
+        else:
+            # stop_price is optional for a non-flat position.
+            # Risk / portfolio layers may provide, override, or omit it.
+            pass
+        
+        object.__setattr__(self, "symbol", symbol)
+        object.__setattr__(self, "target_side", side)
+        object.__setattr__(self, "target_lots", lots)
+        object.__setattr__(self, "stop_price", stop_price)
+        
+# =============================================================================
+# Class-3
+# =============================================================================
+@dataclass(frozen=True, slots=True)
 class PortfolioAction:
     """
     Portfolio-level action.
@@ -114,6 +187,9 @@ class PortfolioAction:
         object.__setattr__(self, "intents", normalized)
 
 
+# =============================================================================
+# Class-4
+# =============================================================================
 @dataclass(frozen=True, slots=True)
 class StepResult:
     """
@@ -155,6 +231,9 @@ class StepResult:
         object.__setattr__(self, "info", dict(self.info))
 
 
+# =============================================================================
+# Class-5
+# =============================================================================
 @dataclass(frozen=True, slots=True)
 class EnvironmentConfig:
     """
@@ -217,3 +296,4 @@ class EnvironmentConfig:
         object.__setattr__(self, "max_episode_steps", steps)
         object.__setattr__(self, "leverage", leverage)
 
+# ============================================================================= END
